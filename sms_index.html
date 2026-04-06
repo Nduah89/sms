@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>School Management System</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #1f2937;
+      --soft: #334155;
+      --line: #e5e7eb;
+      --card: #ffffff;
+      --text: #0f172a;
+      --text-soft: #475569;
+      --primary: #2563eb;
+      --primary-2: #1d4ed8;
+      --danger: #dc2626;
+      --success: #16a34a;
+      --warning: #d97706;
+      --radius: 18px;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    }
+    * { box-sizing: border-box; }
+    html, body, #root { margin: 0; min-height: 100%; font-family: Inter, Arial, sans-serif; background: #f8fafc; color: var(--text); }
+    a { color: inherit; text-decoration: none; }
+    button, input, select, textarea { font: inherit; }
+    .app-shell { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+    .sidebar {
+      background: linear-gradient(180deg, var(--bg), #111827);
+      color: white;
+      padding: 20px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+    }
+    .brand { display: flex; gap: 12px; align-items: center; margin-bottom: 24px; }
+    .brand-badge { width: 46px; height: 46px; border-radius: 14px; background: rgba(255,255,255,0.1); display: grid; place-items: center; font-weight: 800; }
+    .sidebar h1 { font-size: 18px; margin: 0; }
+    .muted { color: #94a3b8; }
+    .nav-group { margin-bottom: 18px; }
+    .nav-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; margin: 0 0 8px; }
+    .nav-btn {
+      width: 100%; border: 0; background: transparent; color: white; padding: 12px 14px; border-radius: 14px;
+      text-align: left; cursor: pointer; margin-bottom: 6px;
+    }
+    .nav-btn:hover, .nav-btn.active { background: rgba(255,255,255,0.08); }
+    .main { padding: 24px; overflow-x: hidden; }
+    .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+    .topbar .page-title h2 { margin: 0 0 4px; font-size: 28px; }
+    .topbar .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .btn {
+      border: 0; border-radius: 14px; padding: 11px 16px; cursor: pointer; font-weight: 600;
+      background: var(--primary); color: white; box-shadow: var(--shadow);
+    }
+    .btn.secondary { background: white; color: var(--text); border: 1px solid #cbd5e1; box-shadow: none; }
+    .btn.danger { background: var(--danger); }
+    .btn.warning { background: var(--warning); }
+    .btn.success { background: var(--success); }
+    .grid { display: grid; gap: 16px; }
+    .cards-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .cards-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .cards-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card {
+      background: var(--card); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow);
+      border: 1px solid #eef2f7;
+    }
+    .metric { font-size: 30px; font-weight: 800; margin: 8px 0 0; }
+    .subtle { color: var(--text-soft); }
+    .toolbar { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    .field, .field-inline { display: flex; flex-direction: column; gap: 7px; }
+    .field-inline { flex: 1 1 200px; }
+    .field input, .field select, .field textarea, .field-inline input, .field-inline select, .field-inline textarea {
+      width: 100%; border: 1px solid #cbd5e1; padding: 12px 14px; border-radius: 14px; background: white;
+    }
+    .form-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .form-grid-3 { display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .table-wrap { overflow: auto; border-radius: 16px; border: 1px solid #e2e8f0; }
+    table { width: 100%; border-collapse: collapse; background: white; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid #e2e8f0; text-align: left; white-space: nowrap; }
+    th { background: #f8fafc; font-size: 13px; color: #334155; }
+    .chip { display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+    .chip.success { background: #dcfce7; color: #166534; }
+    .chip.warning { background: #fef3c7; color: #92400e; }
+    .chip.danger { background: #fee2e2; color: #991b1b; }
+    .chip.info { background: #dbeafe; color: #1d4ed8; }
+    .split { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 16px; }
+    .auth-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: linear-gradient(160deg, #e0f2fe, #f8fafc 40%, #dbeafe); }
+    .auth-card { max-width: 1100px; width: 100%; background: white; border-radius: 26px; box-shadow: var(--shadow); overflow: hidden; display: grid; grid-template-columns: 1fr 1fr; }
+    .auth-left { padding: 36px; background: linear-gradient(180deg, #0f172a, #1d4ed8); color: white; }
+    .auth-right { padding: 32px; }
+    .auth-tabs { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+    .auth-tab { border: 1px solid #cbd5e1; background: white; color: var(--text); padding: 10px 14px; border-radius: 999px; cursor: pointer; }
+    .auth-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
+    .banner { border-radius: 16px; padding: 14px 16px; margin-bottom: 14px; }
+    .banner.warning { background: #fff7ed; color: #9a3412; }
+    .banner.success { background: #ecfdf5; color: #166534; }
+    .banner.danger { background: #fef2f2; color: #991b1b; }
+    .mobile-nav-toggle { display: none; }
+    .empty { padding: 30px; text-align: center; color: var(--text-soft); }
+    .printable { background: white; padding: 24px; border-radius: 18px; border: 1px solid #cbd5e1; }
+    .chat-box { height: 420px; overflow: auto; border: 1px solid #e2e8f0; border-radius: 16px; padding: 12px; background: #f8fafc; }
+    .msg { margin-bottom: 10px; }
+    .msg.mine { text-align: right; }
+    .msg .bubble { display: inline-block; max-width: 78%; padding: 10px 14px; border-radius: 16px; background: white; border: 1px solid #e2e8f0; }
+    .msg.mine .bubble { background: #dbeafe; border-color: #bfdbfe; }
+    .footer-note { margin-top: 18px; color: var(--text-soft); font-size: 13px; }
+    @media (max-width: 1120px) {
+      .cards-4, .cards-3, .form-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .split, .auth-card, .form-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 880px) {
+      .app-shell { grid-template-columns: 1fr; }
+      .sidebar { position: fixed; left: 0; top: 0; transform: translateX(-100%); width: 280px; transition: 0.25s ease; z-index: 40; }
+      .sidebar.open { transform: translateX(0); }
+      .mobile-nav-toggle { display: inline-flex; }
+      .cards-4, .cards-3, .cards-2, .form-grid, .form-grid-3 { grid-template-columns: 1fr; }
+      .main { padding: 16px; }
+    }
+    @media print {
+      .sidebar, .topbar .actions, .toolbar, .no-print { display: none !important; }
+      body { background: white; }
+      .main { padding: 0; }
+      .card, .printable { box-shadow: none; border: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useMemo, useRef, useState } = React;
+
+    const SUPABASE_URL = "https://YOUR_PROJECT.supabase.co";
+    const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+    const STORAGE_BUCKET = "school-assets";
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const ROLE = {
+      SUPER_ADMIN: "super_admin",
+      ADMIN: "admin",
+      PRINCIPAL: "principal",
+      TEACHER: "teacher",
+      STUDENT: "student",
+      PARENT: "parent",
+      ACCOUNTS: "accounts_office"
+    };
+
+    const NAV_BY_ROLE = {
+      [ROLE.SUPER_ADMIN]: ["super-dashboard", "schools", "approvals", "licenses", "system-control", "audit-log"],
+      [ROLE.ADMIN]: ["dashboard", "users", "students", "teachers", "parents", "accounts-staff", "principals", "classes", "subjects", "attendance", "grades", "timetable", "fees", "reports", "chat", "notifications", "audit-log"],
+      [ROLE.PRINCIPAL]: ["principal-dashboard", "students", "teachers", "classes", "attendance-summary", "performance-summary", "reports", "timetable", "chat", "notifications"],
+      [ROLE.TEACHER]: ["teacher-dashboard", "attendance", "grades", "timetable", "students", "chat", "notifications"],
+      [ROLE.STUDENT]: ["student-dashboard", "my-grades", "my-attendance", "my-fees", "timetable", "chat", "notifications"],
+      [ROLE.PARENT]: ["parent-dashboard", "children", "my-grades", "my-attendance", "my-fees", "chat", "notifications"],
+      [ROLE.ACCOUNTS]: ["accounts-dashboard", "fees", "fee-statements", "students", "notifications"]
+    };
+
+    const PAGE_LABELS = {
+      "super-dashboard": "Super Admin Dashboard",
+      schools: "Schools",
+      approvals: "School Approvals",
+      licenses: "Licensing",
+      "system-control": "System Control",
+      "audit-log": "Audit Log",
+      dashboard: "Admin Dashboard",
+      users: "Users & Credentials",
+      students: "Students",
+      teachers: "Teachers",
+      parents: "Parents",
+      "accounts-staff": "Accounts Office Staff",
+      principals: "Principals",
+      classes: "Classes",
+      subjects: "Subjects & Assignments",
+      attendance: "Attendance",
+      grades: "Grades",
+      timetable: "Timetable",
+      fees: "Fees",
+      reports: "Reports",
+      chat: "Chat",
+      notifications: "Notifications",
+      "principal-dashboard": "Principal Dashboard",
+      "attendance-summary": "Attendance Summary",
+      "performance-summary": "Academic Performance",
+      "teacher-dashboard": "Teacher Dashboard",
+      "student-dashboard": "Student Dashboard",
+      "parent-dashboard": "Parent Dashboard",
+      "accounts-dashboard": "Accounts Office Dashboard",
+      "my-grades": "My Grades",
+      "my-attendance": "My Attendance",
+      "my-fees": "My Fees",
+      children: "Linked Children",
+      "fee-statements": "Fee Statements"
+    };
+
+    const genderOptions = ["Male", "Female"];
+    const attendanceOptions = ["Present", "Absent", "Late"];
+    const paymentStatusOptions = ["Paid", "Partially Paid", "Unpaid"];
+    const termOptions = ["Term 1", "Term 2", "Term 3"];
+
+    function classNames(...arr) { return arr.filter(Boolean).join(" "); }
+    function formatDate(value) { return value ? new Date(value).toLocaleDateString() : ""; }
+    function formatCurrency(value) { return new Intl.NumberFormat("en-GH", { style: "currency", currency: "GHS" }).format(Number(value || 0)); }
+    function todayISO() { return new Date().toISOString().slice(0, 10); }
+
+    function getPageAccess(role, key) { return (NAV_BY_ROLE[role] || []).includes(key); }
+
+    function useSupabaseTable(table, select = "*") {
+      const [rows, setRows] = useState([]);
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState("");
+
+      const fetchRows = async (queryBuilder) => {
+        setLoading(true);
+        setError("");
+        let query = supabaseClient.from(table).select(select);
+        if (queryBuilder) query = queryBuilder(query);
+        const { data, error } = await query;
+        if (error) setError(error.message);
+        setRows(data || []);
+        setLoading(false);
+        return { data, error };
+      };
+
+      return { rows, setRows, loading, error, fetchRows };
+    }
+
+    async function getCurrentProfile() {
+      const { data: authData } = await supabaseClient.auth.getUser();
+      const authUser = authData?.user;
+      if (!authUser) return null;
+      const { data, error } = await supabaseClient
+        .from("v_current_user_profile")
+        .select("*")
+        .single();
+      if (error) return { authUser, profile: null };
+      return { authUser, profile: data };
+    }
+
+    async function signIn(email, password) {
+      return supabaseClient.auth.signInWithPassword({ email, password });
+    }
+
+    async function signOut() {
+      return supabaseClient.auth.signOut();
+    }
+
+    async function changePassword(newPassword) {
+      return supabaseClient.auth.updateUser({ password: newPassword });
+    }
+
+    async function uploadFile(path, file) {
+      return supabaseClient.storage.from(STORAGE_BUCKET).upload(path, file, { upsert: true });
+    }
+
+    function AuthScreen({ onAuthed }) {
+      const [tab, setTab] = useState("login");
+      const [status, setStatus] = useState({ type: "", text: "" });
+      const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+      const [registerForm, setRegisterForm] = useState({
+        school_name: "", school_address: "", school_contact: "", municipality: "", school_code: "", years_requested: 1,
+        admin_full_name: "", admin_email: "", admin_phone: "", password: ""
+      });
+      const [superForm, setSuperForm] = useState({ email: "", password: "" });
+      const logoRef = useRef(null);
+
+      const handleLogin = async (e, isSuper = false) => {
+        e.preventDefault();
+        setStatus({ type: "", text: "" });
+        const form = isSuper ? superForm : loginForm;
+        const { error } = await signIn(form.email, form.password);
+        if (error) return setStatus({ type: "danger", text: error.message });
+        onAuthed();
+      };
+
+      const handleRegister = async (e) => {
+        e.preventDefault();
+        setStatus({ type: "", text: "" });
+        const payload = {
+          school_name: registerForm.school_name,
+          school_address: registerForm.school_address,
+          school_contact: registerForm.school_contact,
+          municipality: registerForm.municipality,
+          school_code: registerForm.school_code,
+          years_requested: Number(registerForm.years_requested),
+          admin_full_name: registerForm.admin_full_name,
+          admin_email: registerForm.admin_email,
+          admin_phone: registerForm.admin_phone,
+          requested_password: registerForm.password
+        };
+        const { data, error } = await supabaseClient.rpc("public_register_school_admin", { payload });
+        if (error) return setStatus({ type: "danger", text: error.message });
+        const file = logoRef.current?.files?.[0];
+        if (file && data) {
+          await uploadFile(`school-registrations/${data}/${Date.now()}-${file.name}`, file);
+        }
+        setStatus({ type: "success", text: "Registration submitted. Await Super Admin approval." });
+        setTab("login");
+      };
+
+      return (
+        <div className="auth-shell">
+          <div className="auth-card">
+            <div className="auth-left">
+              <h1 style={{fontSize: 34, marginBottom: 8}}>School Management System</h1>
+              <p className="muted" style={{color: '#cbd5e1'}}>Multi tenant school operations platform with isolated school data, role based access, attendance, grading, fees, reports, chat, notifications, and licensing controls.</p>
+              <div className="grid cards-2" style={{marginTop: 26}}>
+                <div className="card" style={{background:'rgba(255,255,255,0.06)', color:'white', borderColor:'rgba(255,255,255,0.1)'}}>
+                  <strong>Schools</strong>
+                  <div className="subtle" style={{color:'#cbd5e1', marginTop: 8}}>Nursery to JHS 3, one platform, isolated data per school.</div>
+                </div>
+                <div className="card" style={{background:'rgba(255,255,255,0.06)', color:'white', borderColor:'rgba(255,255,255,0.1)'}}>
+                  <strong>Scalable</strong>
+                  <div className="subtle" style={{color:'#cbd5e1', marginTop: 8}}>Designed for 5000 plus students and 500 plus users with server side queries.</div>
+                </div>
+              </div>
+            </div>
+            <div className="auth-right">
+              <div className="auth-tabs">
+                <button className={classNames("auth-tab", tab === "login" && "active")} onClick={() => setTab("login")}>School Login</button>
+                <button className={classNames("auth-tab", tab === "register" && "active")} onClick={() => setTab("register")}>School Registration</button>
+                <button className={classNames("auth-tab", tab === "super" && "active")} onClick={() => setTab("super")}>Super Admin Login</button>
+              </div>
+              {status.text && <div className={classNames("banner", status.type)}>{status.text}</div>}
+              {tab === "login" && (
+                <form onSubmit={(e) => handleLogin(e, false)} className="grid">
+                  <div className="field"><label>Email</label><input value={loginForm.email} onChange={(e) => setLoginForm({...loginForm, email: e.target.value})} required /></div>
+                  <div className="field"><label>Password</label><input type="password" value={loginForm.password} onChange={(e) => setLoginForm({...loginForm, password: e.target.value})} required /></div>
+                  <button className="btn">Login</button>
+                </form>
+              )}
+              {tab === "super" && (
+                <form onSubmit={(e) => handleLogin(e, true)} className="grid">
+                  <div className="field"><label>Super Admin Email</label><input value={superForm.email} onChange={(e) => setSuperForm({...superForm, email: e.target.value})} required /></div>
+                  <div className="field"><label>Password</label><input type="password" value={superForm.password} onChange={(e) => setSuperForm({...superForm, password: e.target.value})} required /></div>
+                  <button className="btn">Login as Super Admin</button>
+                </form>
+              )}
+              {tab === "register" && (
+                <form onSubmit={handleRegister} className="grid">
+                  <div className="form-grid">
+                    <div className="field"><label>School Full Name</label><input value={registerForm.school_name} onChange={(e) => setRegisterForm({...registerForm, school_name: e.target.value})} required /></div>
+                    <div className="field"><label>School Code</label><input value={registerForm.school_code} onChange={(e) => setRegisterForm({...registerForm, school_code: e.target.value})} required /></div>
+                    <div className="field"><label>School Contact</label><input value={registerForm.school_contact} onChange={(e) => setRegisterForm({...registerForm, school_contact: e.target.value})} required /></div>
+                    <div className="field"><label>Municipality</label><input value={registerForm.municipality} onChange={(e) => setRegisterForm({...registerForm, municipality: e.target.value})} required /></div>
+                    <div className="field"><label>School Address</label><input value={registerForm.school_address} onChange={(e) => setRegisterForm({...registerForm, school_address: e.target.value})} required /></div>
+                    <div className="field"><label>Years Requested</label><select value={registerForm.years_requested} onChange={(e) => setRegisterForm({...registerForm, years_requested: e.target.value})}>{Array.from({length:100}, (_,i)=>i+1).map(v => <option key={v} value={v}>{v} Year{v>1?'s':''}</option>)}</select></div>
+                    <div className="field"><label>Admin Full Name</label><input value={registerForm.admin_full_name} onChange={(e) => setRegisterForm({...registerForm, admin_full_name: e.target.value})} required /></div>
+                    <div className="field"><label>Admin Email</label><input value={registerForm.admin_email} onChange={(e) => setRegisterForm({...registerForm, admin_email: e.target.value})} required /></div>
+                    <div className="field"><label>Admin Phone</label><input value={registerForm.admin_phone} onChange={(e) => setRegisterForm({...registerForm, admin_phone: e.target.value})} required /></div>
+                    <div className="field"><label>Initial Password</label><input type="password" value={registerForm.password} onChange={(e) => setRegisterForm({...registerForm, password: e.target.value})} required /></div>
+                    <div className="field"><label>School Logo</label><input type="file" ref={logoRef} accept="image/*" /></div>
+                  </div>
+                  <button className="btn">Submit Registration</button>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function Sidebar({ role, page, setPage, user, school, onLogout, mobileOpen, setMobileOpen }) {
+      const entries = NAV_BY_ROLE[role] || [];
+      return (
+        <aside className={classNames("sidebar", mobileOpen && "open")}>
+          <div className="brand">
+            <div className="brand-badge">SMS</div>
+            <div>
+              <h1>{school?.name || "School System"}</h1>
+              <div className="muted">{user?.full_name || "User"}</div>
+            </div>
+          </div>
+          <div className="nav-group">
+            <div className="nav-label">Navigation</div>
+            {entries.map(key => (
+              <button key={key} className={classNames("nav-btn", page === key && "active")} onClick={() => { setPage(key); setMobileOpen(false); }}>
+                {PAGE_LABELS[key] || key}
+              </button>
+            ))}
+          </div>
+          <div className="nav-group">
+            <div className="nav-label">Session</div>
+            <button className="nav-btn" onClick={onLogout}>Logout</button>
+          </div>
+        </aside>
+      );
+    }
+
+    function MetricCards({ items }) {
+      return (
+        <div className="grid cards-4">
+          {items.map((item, idx) => (
+            <div className="card" key={idx}>
+              <div className="subtle">{item.label}</div>
+              <div className="metric">{item.value}</div>
+              {item.note && <div className="footer-note">{item.note}</div>}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    function GenericCrudPage({ title, description, columns, rows, formState, setFormState, onSave, onDelete, onEdit, loading, filters, children, extraActions }) {
+      return (
+        <div className="grid">
+          <div className="card">
+            <h3 style={{marginTop:0}}>{title}</h3>
+            <p className="subtle">{description}</p>
+            {filters}
+            <div className="form-grid-3">
+              {Object.keys(formState).map((key) => (
+                <div className="field" key={key}>
+                  <label>{key.replace(/_/g, " ")}</label>
+                  <input value={formState[key] ?? ""} onChange={(e)=>setFormState({...formState, [key]: e.target.value})} />
+                </div>
+              ))}
+            </div>
+            <div style={{display:'flex', gap:10, marginTop:16, flexWrap:'wrap'}}>
+              <button className="btn" onClick={onSave}>Save</button>
+              {extraActions}
+            </div>
+            {children}
+          </div>
+          <div className="card">
+            <div className="topbar" style={{marginBottom: 10}}>
+              <div className="page-title"><h2 style={{fontSize:22, marginBottom:0}}>{title} List</h2></div>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead><tr>{columns.map(c => <th key={c.key}>{c.label}</th>)}<th>Actions</th></tr></thead>
+                <tbody>
+                  {!loading && rows.length === 0 && <tr><td colSpan={columns.length + 1}><div className="empty">No records found</div></td></tr>}
+                  {rows.map(row => (
+                    <tr key={row.id}>
+                      {columns.map(c => <td key={c.key}>{c.render ? c.render(row[c.key], row) : row[c.key]}</td>)}
+                      <td>
+                        <div style={{display:'flex', gap:8}}>
+                          <button className="btn secondary" onClick={() => onEdit(row)}>Edit</button>
+                          <button className="btn danger" onClick={() => onDelete(row.id)}>Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function ReportsView({ school, selectedReport, gradeRows, feeRows, currentStudent }) {
+      const gradeTotal = gradeRows.reduce((sum, row) => sum + Number(row.total_score || 0), 0);
+      const gradeAverage = gradeRows.length ? gradeTotal / gradeRows.length : 0;
+      const feeDue = feeRows.reduce((sum, row) => sum + Number(row.amount_due || 0), 0);
+      const feePaid = feeRows.reduce((sum, row) => sum + Number(row.amount_paid || 0), 0);
+      return (
+        <div className="card printable">
+          <div style={{display:'flex', justifyContent:'space-between', flexWrap:'wrap', gap:12}}>
+            <div>
+              <h2 style={{margin:'0 0 6px'}}>{school?.name || 'School Name'}</h2>
+              <div className="subtle">Generated: {new Date().toLocaleString()}</div>
+            </div>
+            <button className="btn no-print" onClick={() => window.print()}>Print</button>
+          </div>
+          {selectedReport === 'grade' ? (
+            <div>
+              <h3>Student Grade Report</h3>
+              <p><strong>Student:</strong> {currentStudent?.full_name || 'N/A'}</p>
+              <p><strong>Class:</strong> {currentStudent?.class_name || 'N/A'}</p>
+              <div className="table-wrap"><table><thead><tr><th>Subject</th><th>Assignment</th><th>Test</th><th>Exam</th><th>Total</th><th>Average</th><th>Term</th><th>Academic Year</th></tr></thead><tbody>
+                {gradeRows.map(r => <tr key={r.id}><td>{r.subject_name}</td><td>{r.assignment_score}</td><td>{r.test_score}</td><td>{r.exam_score}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td></tr>)}
+              </tbody></table></div>
+              <p><strong>Totals:</strong> {gradeTotal}</p>
+              <p><strong>Average:</strong> {gradeAverage.toFixed(2)}</p>
+            </div>
+          ) : (
+            <div>
+              <h3>Student Fee Statement</h3>
+              <p><strong>Student:</strong> {currentStudent?.full_name || 'N/A'}</p>
+              <p><strong>Class:</strong> {currentStudent?.class_name || 'N/A'}</p>
+              <div className="table-wrap"><table><thead><tr><th>Term</th><th>Academic Year</th><th>Amount Due</th><th>Amount Paid</th><th>Balance</th><th>Status</th><th>Payment Date</th><th>Method</th></tr></thead><tbody>
+                {feeRows.map(r => <tr key={r.id}><td>{r.term_name}</td><td>{r.academic_year}</td><td>{formatCurrency(r.amount_due)}</td><td>{formatCurrency(r.amount_paid)}</td><td>{formatCurrency(r.balance)}</td><td>{r.payment_status}</td><td>{formatDate(r.payment_date)}</td><td>{r.payment_method}</td></tr>)}
+              </tbody></table></div>
+              <p><strong>Total Due:</strong> {formatCurrency(feeDue)}</p>
+              <p><strong>Total Paid:</strong> {formatCurrency(feePaid)}</p>
+              <p><strong>Outstanding Balance:</strong> {formatCurrency(feeDue - feePaid)}</p>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function App() {
+      const [sessionReady, setSessionReady] = useState(false);
+      const [profile, setProfile] = useState(null);
+      const [school, setSchool] = useState(null);
+      const [page, setPage] = useState("dashboard");
+      const [mobileOpen, setMobileOpen] = useState(false);
+      const [notice, setNotice] = useState({ type: "", text: "" });
+      const [selectedReport, setSelectedReport] = useState("grade");
+      const [currentStudent, setCurrentStudent] = useState(null);
+      const [passwordForm, setPasswordForm] = useState({ newPassword: "" });
+
+      const studentsHook = useSupabaseTable("v_students_admin", "*");
+      const teachersHook = useSupabaseTable("v_teachers_admin", "*");
+      const parentsHook = useSupabaseTable("v_parents_admin", "*");
+      const accountsHook = useSupabaseTable("v_accounts_staff_admin", "*");
+      const principalsHook = useSupabaseTable("v_principals_admin", "*");
+      const classesHook = useSupabaseTable("classes", "*");
+      const subjectsHook = useSupabaseTable("v_subject_assignments", "*");
+      const attendanceHook = useSupabaseTable("v_attendance_full", "*");
+      const gradesHook = useSupabaseTable("v_grades_full", "*");
+      const feesHook = useSupabaseTable("v_fee_payments_full", "*");
+      const schoolsHook = useSupabaseTable("schools", "*");
+      const registrationsHook = useSupabaseTable("school_registrations", "*");
+      const auditHook = useSupabaseTable("audit_logs", "*");
+      const notificationsHook = useSupabaseTable("notifications", "*");
+      const timetableHook = useSupabaseTable("v_timetables_full", "*");
+      const chatHook = useSupabaseTable("v_chat_messages_full", "*");
+
+      const [studentForm, setStudentForm] = useState({ id: "", full_name: "", student_no: "", class_id: "", gender: "", date_of_birth: "", guardian_contact: "", address: "" });
+      const [teacherForm, setTeacherForm] = useState({ id: "", full_name: "", staff_no: "", phone: "", email: "", subject_specialty: "" });
+      const [parentForm, setParentForm] = useState({ id: "", full_name: "", phone: "", email: "", relationship_to_student: "", address: "" });
+      const [classForm, setClassForm] = useState({ id: "", name: "", level_group: "", section: "", capacity: "" });
+      const [subjectForm, setSubjectForm] = useState({ id: "", subject_name: "", class_id: "", teacher_id: "" });
+      const [attendanceForm, setAttendanceForm] = useState({ id: "", student_id: "", class_id: "", attendance_date: todayISO(), status: "Present", remarks: "" });
+      const [gradeForm, setGradeForm] = useState({ id: "", student_id: "", class_id: "", subject_id: "", term_name: "Term 1", academic_year: new Date().getFullYear().toString(), assignment_score: 0, test_score: 0, exam_score: 0 });
+      const [feeForm, setFeeForm] = useState({ id: "", student_id: "", term_name: "Term 1", academic_year: new Date().getFullYear().toString(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
+      const [notificationForm, setNotificationForm] = useState({ id: "", title: "", message: "", audience_role: "all" });
+      const [chatForm, setChatForm] = useState({ recipient_profile_id: "", message_text: "" });
+      const [importStatus, setImportStatus] = useState("");
+
+      const role = profile?.role_name;
+      const licenseExpired = school?.license_state === "expired" || school?.system_locked_for_usage;
+      const daysRemaining = school?.license_end_date ? Math.ceil((new Date(school.license_end_date) - new Date()) / 86400000) : null;
+
+      const loadCore = async () => {
+        const data = await getCurrentProfile();
+        const p = data?.profile || null;
+        setProfile(p);
+        if (p?.school_id) {
+          const { data: schoolData } = await supabaseClient.from("schools").select("*").eq("id", p.school_id).single();
+          setSchool(schoolData || null);
+          const initialPage = NAV_BY_ROLE[p.role_name]?.[0] || "dashboard";
+          setPage(initialPage);
+        } else if (p?.role_name === ROLE.SUPER_ADMIN) {
+          setPage("super-dashboard");
+        }
+        setSessionReady(true);
+      };
+
+      const refreshAll = async () => {
+        if (!profile) return;
+        await Promise.all([
+          studentsHook.fetchRows(), teachersHook.fetchRows(), parentsHook.fetchRows(), accountsHook.fetchRows(), principalsHook.fetchRows(),
+          classesHook.fetchRows(), subjectsHook.fetchRows(), attendanceHook.fetchRows(), gradesHook.fetchRows(), feesHook.fetchRows(),
+          schoolsHook.fetchRows((q)=>q.order('created_at', { ascending:false })), registrationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
+          auditHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(100)), notificationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
+          timetableHook.fetchRows((q)=>q.order('day_of_week')), chatHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(200))
+        ]);
+      };
+
+      useEffect(() => {
+        supabaseClient.auth.getSession().then(async ({ data }) => {
+          if (data.session) await loadCore(); else setSessionReady(true);
+        });
+        const { data: sub } = supabaseClient.auth.onAuthStateChange(async (_evt, session) => {
+          if (session) await loadCore(); else { setProfile(null); setSchool(null); setSessionReady(true); }
+        });
+        return () => sub.subscription.unsubscribe();
+      }, []);
+
+      useEffect(() => {
+        if (profile) refreshAll();
+      }, [profile?.id]);
+
+      useEffect(() => {
+        const channels = [
+          supabaseClient.channel('students-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, refreshAll).subscribe(),
+          supabaseClient.channel('teachers-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'teachers' }, refreshAll).subscribe(),
+          supabaseClient.channel('fees-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'fee_payments' }, refreshAll).subscribe(),
+          supabaseClient.channel('chat-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, refreshAll).subscribe()
+        ];
+        return () => channels.forEach(ch => supabaseClient.removeChannel(ch));
+      }, [profile?.id]);
+
+      const withNotice = async (fn, successText) => {
+        setNotice({ type: "", text: "" });
+        const { error } = await fn();
+        if (error) return setNotice({ type: "danger", text: error.message });
+        setNotice({ type: "success", text: successText });
+        await refreshAll();
+      };
+
+      const saveEntity = async (table, form, resetFn, extra = {}) => {
+        const payload = { ...form, ...extra };
+        if (!payload.id) delete payload.id;
+        return withNotice(async () => {
+          const query = payload.id ? supabaseClient.from(table).update(payload).eq('id', payload.id) : supabaseClient.from(table).insert(payload);
+          const res = await query;
+          resetFn();
+          return res;
+        }, `${table} saved successfully`);
+      };
+
+      const deleteEntity = async (table, id) => withNotice(async () => supabaseClient.from(table).delete().eq('id', id), `${table} deleted successfully`);
+
+      const handleSchoolApproval = async (registrationId, action) => {
+        await withNotice(async () => supabaseClient.rpc('process_school_registration', { reg_id: registrationId, decision: action }), `Registration ${action}`);
+      };
+
+      const handleLicenseUpdate = async (schoolId, years, trialMode = false) => {
+        await withNotice(async () => supabaseClient.rpc('extend_school_license', { p_school_id: schoolId, years_to_add: years, trial_mode: trialMode }), 'License updated');
+      };
+
+      const handleSchoolLock = async (schoolId, locked, fullLock = false) => {
+        await withNotice(async () => supabaseClient.rpc('set_school_lock_state', { p_school_id: schoolId, p_locked: locked, p_full_lock: fullLock }), 'Lock state updated');
+      };
+
+      const handleFirstLoginPasswordChange = async () => {
+        const { error } = await changePassword(passwordForm.newPassword);
+        if (error) return setNotice({ type: 'danger', text: error.message });
+        await withNotice(async () => supabaseClient.from('profiles').update({ force_password_change: false }).eq('id', profile.id), 'Password changed successfully');
+      };
+
+      const handleBulkStudentImport = (file) => {
+        if (!file) return;
+        setImportStatus('Parsing CSV...');
+        window.Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          complete: async (result) => {
+            const rows = result.data.map(r => ({
+              full_name: r.full_name,
+              student_no: r.student_no,
+              gender: r.gender,
+              date_of_birth: r.date_of_birth,
+              guardian_contact: r.guardian_contact,
+              address: r.address,
+              class_id: r.class_id
+            }));
+            setImportStatus(`Uploading ${rows.length} students...`);
+            const chunkSize = 500;
+            for (let i = 0; i < rows.length; i += chunkSize) {
+              const chunk = rows.slice(i, i + chunkSize);
+              const { error } = await supabaseClient.from('students').insert(chunk);
+              if (error) {
+                setImportStatus(`Import failed at row ${i + 1}: ${error.message}`);
+                return;
+              }
+              setImportStatus(`Imported ${Math.min(i + chunk.length, rows.length)} of ${rows.length}`);
+            }
+            setImportStatus('Import completed successfully');
+            refreshAll();
+          },
+          error: (error) => setImportStatus(error.message)
+        });
+      };
+
+      const exportCsv = (rows, fileName) => {
+        const csv = window.Papa.unparse(rows);
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = fileName; a.click(); URL.revokeObjectURL(url);
+      };
+
+      const dashboardMetrics = useMemo(() => {
+        const base = {
+          studentCount: studentsHook.rows.length,
+          teacherCount: teachersHook.rows.length,
+          parentCount: parentsHook.rows.length,
+          accountsCount: accountsHook.rows.length,
+          principalCount: principalsHook.rows.length,
+          classCount: classesHook.rows.length,
+          unpaidCount: feesHook.rows.filter(x => Number(x.balance) > 0).length,
+          recentAccounts: auditHook.rows.filter(x => x.action_type === 'CREATE').length
+        };
+        return base;
+      }, [studentsHook.rows, teachersHook.rows, parentsHook.rows, accountsHook.rows, principalsHook.rows, classesHook.rows, feesHook.rows, auditHook.rows]);
+
+      if (!sessionReady) return <div className="auth-shell"><div className="card">Loading...</div></div>;
+      if (!profile) return <AuthScreen onAuthed={loadCore} />;
+
+      if (profile.force_password_change) {
+        return (
+          <div className="auth-shell">
+            <div className="card" style={{maxWidth:540, width:'100%'}}>
+              <h2>Change Temporary Password</h2>
+              <p className="subtle">You must change your password before continuing.</p>
+              {notice.text && <div className={classNames('banner', notice.type)}>{notice.text}</div>}
+              <div className="field"><label>New Password</label><input type="password" value={passwordForm.newPassword} onChange={(e)=>setPasswordForm({newPassword:e.target.value})} /></div>
+              <div style={{marginTop:16}}><button className="btn" onClick={handleFirstLoginPasswordChange}>Update Password</button></div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="app-shell">
+          <Sidebar role={role} page={page} setPage={setPage} user={profile} school={school} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onLogout={async()=>{await signOut(); setProfile(null);}} />
+          <main className="main">
+            <div className="topbar">
+              <div className="page-title">
+                <div className="actions"><button className="btn secondary mobile-nav-toggle" onClick={() => setMobileOpen(!mobileOpen)}>Menu</button></div>
+                <h2>{PAGE_LABELS[page] || "Dashboard"}</h2>
+                <div className="subtle">{school?.name || 'System Administration'}</div>
+              </div>
+              <div className="actions">
+                {daysRemaining !== null && daysRemaining <= 14 && !licenseExpired && <div className="banner warning">License reminder: {daysRemaining} day(s) remaining.</div>}
+                {licenseExpired && role !== ROLE.SUPER_ADMIN && <div className="banner danger">System has being limited to login-logout only, period usage over, contact the Super Admin for more extended period Thank You!</div>}
+              </div>
+            </div>
+
+            {notice.text && <div className={classNames("banner", notice.type)}>{notice.text}</div>}
+
+            {page === 'super-dashboard' && (
+              <div className="grid">
+                <MetricCards items={[
+                  { label: 'Total Schools', value: schoolsHook.rows.length },
+                  { label: 'Approved Schools', value: schoolsHook.rows.filter(s=>s.approval_status==='approved').length },
+                  { label: 'Pending Approvals', value: registrationsHook.rows.filter(r=>r.status==='pending').length },
+                  { label: 'Recently Created Accounts', value: auditHook.rows.filter(r=>r.action_type==='CREATE').length }
+                ]} />
+                <div className="split">
+                  <div className="card">
+                    <h3>Schools Overview</h3>
+                    <div className="table-wrap"><table><thead><tr><th>School</th><th>Code</th><th>Status</th><th>License</th><th>End Date</th><th>Actions</th></tr></thead><tbody>
+                      {schoolsHook.rows.map(s => <tr key={s.id}><td>{s.name}</td><td>{s.school_code}</td><td><span className={classNames('chip', s.approval_status==='approved' ? 'success' : s.approval_status==='pending' ? 'warning' : 'danger')}>{s.approval_status}</span></td><td>{s.license_state}</td><td>{formatDate(s.license_end_date)}</td><td><div style={{display:'flex', gap:8, flexWrap:'wrap'}}><button className="btn secondary" onClick={()=>handleLicenseUpdate(s.id, 1, true)}>1 Month Trial</button><button className="btn success" onClick={()=>handleLicenseUpdate(s.id, 1, false)}>+1 Year</button><button className="btn warning" onClick={()=>handleSchoolLock(s.id, true, false)}>Usage Lock</button><button className="btn danger" onClick={()=>handleSchoolLock(s.id, true, true)}>Full Lock</button></div></td></tr>)}
+                    </tbody></table></div>
+                  </div>
+                  <div className="card">
+                    <h3>Global System Control</h3>
+                    <p className="subtle">Use with care. Global system shutdown disables all school activity except Super Admin access.</p>
+                    <button className="btn danger" onClick={()=>withNotice(async()=>supabaseClient.rpc('set_global_system_shutdown', { p_shutdown: true }), 'Global shutdown enabled')}>Shutdown Entire System</button>
+                    <button className="btn secondary" style={{marginLeft:8}} onClick={()=>withNotice(async()=>supabaseClient.rpc('set_global_system_shutdown', { p_shutdown: false }), 'Global shutdown disabled')}>Restore System</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {page === 'approvals' && (
+              <div className="card">
+                <h3>Pending School Registrations</h3>
+                <div className="table-wrap"><table><thead><tr><th>School</th><th>Code</th><th>Years</th><th>Admin</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+                  {registrationsHook.rows.map(r => <tr key={r.id}><td>{r.school_name}</td><td>{r.school_code}</td><td>{r.years_requested}</td><td>{r.admin_full_name}</td><td>{r.admin_email}</td><td>{r.status}</td><td><div style={{display:'flex', gap:8}}><button className="btn success" onClick={()=>handleSchoolApproval(r.id, 'approved')}>Approve</button><button className="btn danger" onClick={()=>handleSchoolApproval(r.id, 'denied')}>Deny</button></div></td></tr>)}
+                </tbody></table></div>
+              </div>
+            )}
+
+            {page === 'licenses' && (
+              <div className="card">
+                <h3>License Management</h3>
+                <div className="table-wrap"><table><thead><tr><th>School</th><th>State</th><th>Start</th><th>End</th><th>Reminder Days</th><th>Extend</th></tr></thead><tbody>
+                  {schoolsHook.rows.map(s => <tr key={s.id}><td>{s.name}</td><td>{s.license_state}</td><td>{formatDate(s.license_start_date)}</td><td>{formatDate(s.license_end_date)}</td><td>{s.license_reminder_days}</td><td><div style={{display:'flex', gap:8, flexWrap:'wrap'}}>{[1,2,3,5,10].map(y => <button key={y} className="btn secondary" onClick={()=>handleLicenseUpdate(s.id, y, false)}>+{y}Y</button>)}</div></td></tr>)}
+                </tbody></table></div>
+              </div>
+            )}
+
+            {page === 'system-control' && (
+              <div className="card">
+                <h3>System Control</h3>
+                <p className="subtle">This page is reserved for Super Admin global control. Use SQL functions and RLS aware RPC calls only.</p>
+                <ul>
+                  <li>Lock or unlock a school</li>
+                  <li>Apply one month trial access</li>
+                  <li>Extend subscription from 1 year to 100 years</li>
+                  <li>Restrict expired schools to login and logout only</li>
+                </ul>
+              </div>
+            )}
+
+            {page === 'dashboard' && (
+              <div className="grid">
+                <MetricCards items={[
+                  { label: 'Total Students', value: dashboardMetrics.studentCount },
+                  { label: 'Total Teachers', value: dashboardMetrics.teacherCount },
+                  { label: 'Total Parents', value: dashboardMetrics.parentCount },
+                  { label: 'Accounts Office Staff', value: dashboardMetrics.accountsCount },
+                  { label: 'Principals', value: dashboardMetrics.principalCount },
+                  { label: 'Classes', value: dashboardMetrics.classCount },
+                  { label: 'Attendance Records', value: attendanceHook.rows.length },
+                  { label: 'Recently Created Accounts', value: dashboardMetrics.recentAccounts }
+                ]} />
+                <div className="split">
+                  <div className="card">
+                    <h3>Recent Notifications</h3>
+                    {notificationsHook.rows.slice(0, 6).map(n => <div key={n.id} style={{padding:'10px 0', borderBottom:'1px solid #e2e8f0'}}><strong>{n.title}</strong><div className="subtle">{n.message}</div></div>)}
+                  </div>
+                  <div className="card">
+                    <h3>Fee Status Summary</h3>
+                    <div className="metric">{dashboardMetrics.unpaidCount}</div>
+                    <div className="subtle">Students with unpaid balances</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {page === 'principal-dashboard' && (
+              <div className="grid">
+                <MetricCards items={[
+                  { label: 'Total Students', value: studentsHook.rows.length },
+                  { label: 'Total Teachers', value: teachersHook.rows.length },
+                  { label: 'Attendance Overview', value: attendanceHook.rows.length },
+                  { label: 'Performance Records', value: gradesHook.rows.length }
+                ]} />
+                <div className="card"><h3>Academic Oversight</h3><p className="subtle">Principal access is limited to students, teachers, classes, attendance summaries, academic performance, teacher assignments, and academic reporting only.</p></div>
+              </div>
+            )}
+
+            {page === 'teacher-dashboard' && (
+              <MetricCards items={[
+                { label: 'Assigned Classes', value: [...new Set(subjectsHook.rows.map(x=>x.class_name).filter(Boolean))].length },
+                { label: 'Assigned Subjects', value: [...new Set(subjectsHook.rows.map(x=>x.subject_name).filter(Boolean))].length },
+                { label: 'Attendance Tasks', value: attendanceHook.rows.filter(x=>x.marked_by_profile_id===profile.id).length },
+                { label: 'Grading Tasks', value: gradesHook.rows.filter(x=>x.teacher_profile_id===profile.id).length }
+              ]} />
+            )}
+
+            {page === 'student-dashboard' && (
+              <MetricCards items={[
+                { label: 'Timetable Entries', value: timetableHook.rows.length },
+                { label: 'Attendance Summary', value: attendanceHook.rows.length },
+                { label: 'Grades', value: gradesHook.rows.length },
+                { label: 'Outstanding Balance', value: formatCurrency(feesHook.rows.reduce((s,r)=>s+Number(r.balance||0),0)) }
+              ]} />
+            )}
+
+            {page === 'parent-dashboard' && (
+              <MetricCards items={[
+                { label: 'Linked Children', value: [...new Set(feesHook.rows.map(x=>x.student_id))].length },
+                { label: 'Attendance Records', value: attendanceHook.rows.length },
+                { label: 'Grades Available', value: gradesHook.rows.length },
+                { label: 'Outstanding Balance', value: formatCurrency(feesHook.rows.reduce((s,r)=>s+Number(r.balance||0),0)) }
+              ]} />
+            )}
+
+            {page === 'accounts-dashboard' && (
+              <MetricCards items={[
+                { label: 'Total Collections', value: formatCurrency(feesHook.rows.reduce((s,r)=>s+Number(r.amount_paid||0),0)) },
+                { label: 'Recent Payments', value: feesHook.rows.filter(r=>r.payment_date===todayISO()).length },
+                { label: 'Unpaid Balances', value: feesHook.rows.filter(r=>Number(r.balance)>0).length },
+                { label: 'Fee Updates', value: auditHook.rows.filter(r=>r.table_name==='fee_payments').length }
+              ]} />
+            )}
+
+            {page === 'students' && (
+              <GenericCrudPage
+                title="Student Management"
+                description="Add, edit, archive, filter, import, and export student records. All writes go to Supabase, not localStorage."
+                columns={[
+                  { key: 'full_name', label: 'Full Name' },
+                  { key: 'student_no', label: 'Student ID' },
+                  { key: 'class_name', label: 'Class' },
+                  { key: 'gender', label: 'Gender' },
+                  { key: 'guardian_contact', label: 'Guardian Contact' },
+                  { key: 'status', label: 'Status', render: v => <span className={classNames('chip', v === 'active' ? 'success' : 'warning')}>{v}</span> }
+                ]}
+                rows={studentsHook.rows}
+                loading={studentsHook.loading}
+                formState={studentForm}
+                setFormState={setStudentForm}
+                onSave={() => saveEntity('students', studentForm, ()=>setStudentForm({ id: '', full_name: '', student_no: '', class_id: '', gender: '', date_of_birth: '', guardian_contact: '', address: '' }))}
+                onDelete={(id) => deleteEntity('students', id)}
+                onEdit={(row) => setStudentForm({ id: row.id, full_name: row.full_name, student_no: row.student_no, class_id: row.class_id, gender: row.gender, date_of_birth: row.date_of_birth, guardian_contact: row.guardian_contact, address: row.address })}
+                extraActions={<><button className="btn secondary" onClick={()=>exportCsv(studentsHook.rows, 'students.csv')}>Export CSV</button><label className="btn secondary">Import CSV<input hidden type="file" accept=".csv" onChange={(e)=>handleBulkStudentImport(e.target.files?.[0])} /></label></>}
+              >
+                {importStatus && <div className="footer-note">{importStatus}</div>}
+              </GenericCrudPage>
+            )}
+
+            {page === 'teachers' && (
+              <GenericCrudPage
+                title="Teacher Management"
+                description="Create teachers and assign them later to classes and subjects."
+                columns={[
+                  { key: 'full_name', label: 'Full Name' },
+                  { key: 'staff_no', label: 'Staff No' },
+                  { key: 'email', label: 'Email' },
+                  { key: 'phone', label: 'Phone' },
+                  { key: 'subject_specialty', label: 'Specialty' }
+                ]}
+                rows={teachersHook.rows}
+                loading={teachersHook.loading}
+                formState={teacherForm}
+                setFormState={setTeacherForm}
+                onSave={() => saveEntity('teachers', teacherForm, ()=>setTeacherForm({ id: '', full_name: '', staff_no: '', phone: '', email: '', subject_specialty: '' }))}
+                onDelete={(id) => deleteEntity('teachers', id)}
+                onEdit={(row) => setTeacherForm({ id: row.id, full_name: row.full_name, staff_no: row.staff_no, phone: row.phone, email: row.email, subject_specialty: row.subject_specialty })}
+              />
+            )}
+
+            {page === 'parents' && (
+              <GenericCrudPage
+                title="Parent Management"
+                description="Link parents to one or more children using parent_student_links in the database."
+                columns={[
+                  { key: 'full_name', label: 'Full Name' },
+                  { key: 'phone', label: 'Phone' },
+                  { key: 'email', label: 'Email' },
+                  { key: 'relationship_to_student', label: 'Relationship' },
+                  { key: 'linked_students_count', label: 'Children' }
+                ]}
+                rows={parentsHook.rows}
+                loading={parentsHook.loading}
+                formState={parentForm}
+                setFormState={setParentForm}
+                onSave={() => saveEntity('parents', parentForm, ()=>setParentForm({ id: '', full_name: '', phone: '', email: '', relationship_to_student: '', address: '' }))}
+                onDelete={(id) => deleteEntity('parents', id)}
+                onEdit={(row) => setParentForm({ id: row.id, full_name: row.full_name, phone: row.phone, email: row.email, relationship_to_student: row.relationship_to_student, address: row.address })}
+              />
+            )}
+
+            {page === 'accounts-staff' && (
+              <div className="card">
+                <h3>Accounts Office Staff</h3>
+                <div className="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Phone</th></tr></thead><tbody>{accountsHook.rows.map(r => <tr key={r.id}><td>{r.full_name}</td><td>{r.email}</td><td>{r.phone}</td></tr>)}</tbody></table></div>
+              </div>
+            )}
+
+            {page === 'principals' && (
+              <div className="card">
+                <h3>Principals</h3>
+                <div className="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Status</th></tr></thead><tbody>{principalsHook.rows.map(r => <tr key={r.id}><td>{r.full_name}</td><td>{r.email}</td><td>{r.phone}</td><td>{r.status}</td></tr>)}</tbody></table></div>
+              </div>
+            )}
+
+            {page === 'users' && (
+              <div className="card">
+                <h3>User Accounts & Credentials</h3>
+                <p className="subtle">Use the RPC functions in the SQL schema for Admin controlled account creation, resets, activation, deactivation, archive, and forced first login password changes.</p>
+                <div className="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Status</th><th>Force Password Change</th></tr></thead><tbody>
+                  {[...studentsHook.rows, ...teachersHook.rows, ...parentsHook.rows, ...accountsHook.rows, ...principalsHook.rows].map(r => <tr key={r.profile_id || r.id}><td>{r.full_name}</td><td>{r.role_name || r.profile_role || 'linked'}</td><td>{r.email}</td><td>{r.account_status || r.status}</td><td>{String(r.force_password_change ?? false)}</td></tr>)}
+                </tbody></table></div>
+              </div>
+            )}
+
+            {page === 'classes' && (
+              <GenericCrudPage
+                title="Classes"
+                description="Manage Nursery, KG, Class 1 to 6, and JHS 1 to 3 structures."
+                columns={[{ key:'name', label:'Class' }, { key:'level_group', label:'Level Group' }, { key:'section', label:'Section' }, { key:'capacity', label:'Capacity' }]}
+                rows={classesHook.rows}
+                loading={classesHook.loading}
+                formState={classForm}
+                setFormState={setClassForm}
+                onSave={() => saveEntity('classes', classForm, ()=>setClassForm({ id: '', name: '', level_group: '', section: '', capacity: '' }))}
+                onDelete={(id) => deleteEntity('classes', id)}
+                onEdit={(row) => setClassForm(row)}
+              />
+            )}
+
+            {page === 'subjects' && (
+              <div className="grid">
+                <div className="card">
+                  <h3>Subject and Teacher Assignment</h3>
+                  <div className="form-grid-3">
+                    <div className="field"><label>Subject Name</label><input value={subjectForm.subject_name} onChange={(e)=>setSubjectForm({...subjectForm, subject_name:e.target.value})} /></div>
+                    <div className="field"><label>Class ID</label><input value={subjectForm.class_id} onChange={(e)=>setSubjectForm({...subjectForm, class_id:e.target.value})} /></div>
+                    <div className="field"><label>Teacher ID</label><input value={subjectForm.teacher_id} onChange={(e)=>setSubjectForm({...subjectForm, teacher_id:e.target.value})} /></div>
+                  </div>
+                  <div style={{marginTop:16}}><button className="btn" onClick={()=>saveEntity('teacher_subject_assignments', subjectForm, ()=>setSubjectForm({ id:'', subject_name:'', class_id:'', teacher_id:'' }))}>Save Assignment</button></div>
+                </div>
+                <div className="card">
+                  <div className="table-wrap"><table><thead><tr><th>Subject</th><th>Class</th><th>Teacher</th></tr></thead><tbody>{subjectsHook.rows.map(r => <tr key={r.id}><td>{r.subject_name}</td><td>{r.class_name}</td><td>{r.teacher_name}</td></tr>)}</tbody></table></div>
+                </div>
+              </div>
+            )}
+
+            {page === 'attendance' && (
+              <div className="grid">
+                <div className="card">
+                  <h3>Daily Attendance</h3>
+                  <div className="form-grid-3">
+                    <div className="field"><label>Student ID</label><input value={attendanceForm.student_id} onChange={(e)=>setAttendanceForm({...attendanceForm, student_id:e.target.value})} /></div>
+                    <div className="field"><label>Class ID</label><input value={attendanceForm.class_id} onChange={(e)=>setAttendanceForm({...attendanceForm, class_id:e.target.value})} /></div>
+                    <div className="field"><label>Date</label><input type="date" value={attendanceForm.attendance_date} onChange={(e)=>setAttendanceForm({...attendanceForm, attendance_date:e.target.value})} /></div>
+                    <div className="field"><label>Status</label><select value={attendanceForm.status} onChange={(e)=>setAttendanceForm({...attendanceForm, status:e.target.value})}>{attendanceOptions.map(x => <option key={x}>{x}</option>)}</select></div>
+                    <div className="field"><label>Remarks</label><input value={attendanceForm.remarks} onChange={(e)=>setAttendanceForm({...attendanceForm, remarks:e.target.value})} /></div>
+                  </div>
+                  <div style={{marginTop:16}}><button className="btn" disabled={licenseExpired && role !== ROLE.SUPER_ADMIN} onClick={()=>saveEntity('attendance', attendanceForm, ()=>setAttendanceForm({ id:'', student_id:'', class_id:'', attendance_date: todayISO(), status: 'Present', remarks: '' }), { marked_by_profile_id: profile.id })}>Save Attendance</button></div>
+                </div>
+                <div className="card">
+                  <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Status</th><th>Teacher</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.status}</td><td>{r.marked_by_name}</td></tr>)}</tbody></table></div>
+                </div>
+              </div>
+            )}
+
+            {(page === 'attendance-summary' || page === 'my-attendance') && (
+              <div className="card">
+                <h3>Attendance Summary</h3>
+                <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Status</th><th>Remarks</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.status}</td><td>{r.remarks}</td></tr>)}</tbody></table></div>
+              </div>
+            )}
+
+            {page === 'grades' && (
+              <div className="grid">
+                <div className="card">
+                  <h3>Grades & Results</h3>
+                  <div className="form-grid-3">
+                    <div className="field"><label>Student ID</label><input value={gradeForm.student_id} onChange={(e)=>setGradeForm({...gradeForm, student_id:e.target.value})} /></div>
+                    <div className="field"><label>Class ID</label><input value={gradeForm.class_id} onChange={(e)=>setGradeForm({...gradeForm, class_id:e.target.value})} /></div>
+                    <div className="field"><label>Subject ID</label><input value={gradeForm.subject_id} onChange={(e)=>setGradeForm({...gradeForm, subject_id:e.target.value})} /></div>
+                    <div className="field"><label>Term</label><select value={gradeForm.term_name} onChange={(e)=>setGradeForm({...gradeForm, term_name:e.target.value})}>{termOptions.map(x => <option key={x}>{x}</option>)}</select></div>
+                    <div className="field"><label>Academic Year</label><input value={gradeForm.academic_year} onChange={(e)=>setGradeForm({...gradeForm, academic_year:e.target.value})} /></div>
+                    <div className="field"><label>Assignment</label><input type="number" value={gradeForm.assignment_score} onChange={(e)=>setGradeForm({...gradeForm, assignment_score:e.target.value})} /></div>
+                    <div className="field"><label>Test</label><input type="number" value={gradeForm.test_score} onChange={(e)=>setGradeForm({...gradeForm, test_score:e.target.value})} /></div>
+                    <div className="field"><label>Exam</label><input type="number" value={gradeForm.exam_score} onChange={(e)=>setGradeForm({...gradeForm, exam_score:e.target.value})} /></div>
+                  </div>
+                  <div style={{marginTop:16}}><button className="btn" disabled={licenseExpired && role !== ROLE.SUPER_ADMIN} onClick={()=>saveEntity('grades', gradeForm, ()=>setGradeForm({ id:'', student_id:'', class_id:'', subject_id:'', term_name:'Term 1', academic_year:new Date().getFullYear().toString(), assignment_score:0, test_score:0, exam_score:0 }), { teacher_profile_id: profile.id })}>Save Grade</button></div>
+                </div>
+                <div className="card">
+                  <div className="table-wrap"><table><thead><tr><th>Student</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Year</th></tr></thead><tbody>{gradesHook.rows.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{r.subject_name}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td></tr>)}</tbody></table></div>
+                </div>
+              </div>
+            )}
+
+            {(page === 'performance-summary' || page === 'my-grades') && (
+              <div className="card">
+                <h3>Academic Performance Summary</h3>
+                <div className="table-wrap"><table><thead><tr><th>Student</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Year</th></tr></thead><tbody>{gradesHook.rows.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{r.subject_name}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td></tr>)}</tbody></table></div>
+              </div>
+            )}
+
+            {page === 'timetable' && (
+              <div className="card">
+                <h3>Timetable</h3>
+                <div className="table-wrap"><table><thead><tr><th>Class</th><th>Day</th><th>Start</th><th>End</th><th>Subject</th><th>Teacher</th></tr></thead><tbody>{timetableHook.rows.map(r => <tr key={r.id}><td>{r.class_name}</td><td>{r.day_of_week}</td><td>{r.start_time}</td><td>{r.end_time}</td><td>{r.subject_name}</td><td>{r.teacher_name}</td></tr>)}</tbody></table></div>
+              </div>
+            )}
+
+            {(page === 'fees' || page === 'my-fees' || page === 'fee-statements') && (
+              <div className="grid">
+                {(role === ROLE.ADMIN || role === ROLE.ACCOUNTS) && (
+                  <div className="card">
+                    <h3>Fee Payment Records</h3>
+                    <div className="form-grid-3">
+                      <div className="field"><label>Student ID</label><input value={feeForm.student_id} onChange={(e)=>setFeeForm({...feeForm, student_id:e.target.value})} /></div>
+                      <div className="field"><label>Term</label><select value={feeForm.term_name} onChange={(e)=>setFeeForm({...feeForm, term_name:e.target.value})}>{termOptions.map(x => <option key={x}>{x}</option>)}</select></div>
+                      <div className="field"><label>Academic Year</label><input value={feeForm.academic_year} onChange={(e)=>setFeeForm({...feeForm, academic_year:e.target.value})} /></div>
+                      <div className="field"><label>Amount Due</label><input type="number" value={feeForm.amount_due} onChange={(e)=>setFeeForm({...feeForm, amount_due:e.target.value})} /></div>
+                      <div className="field"><label>Amount Paid</label><input type="number" value={feeForm.amount_paid} onChange={(e)=>setFeeForm({...feeForm, amount_paid:e.target.value})} /></div>
+                      <div className="field"><label>Payment Date</label><input type="date" value={feeForm.payment_date} onChange={(e)=>setFeeForm({...feeForm, payment_date:e.target.value})} /></div>
+                      <div className="field"><label>Method</label><input value={feeForm.payment_method} onChange={(e)=>setFeeForm({...feeForm, payment_method:e.target.value})} /></div>
+                      <div className="field"><label>Status</label><select value={feeForm.payment_status} onChange={(e)=>setFeeForm({...feeForm, payment_status:e.target.value})}>{paymentStatusOptions.map(x => <option key={x}>{x}</option>)}</select></div>
+                      <div className="field"><label>Remarks</label><input value={feeForm.remarks} onChange={(e)=>setFeeForm({...feeForm, remarks:e.target.value})} /></div>
+                    </div>
+                    <div style={{marginTop:16}}><button className="btn" onClick={()=>saveEntity('fee_payments', feeForm, ()=>setFeeForm({ id:'', student_id:'', term_name:'Term 1', academic_year:new Date().getFullYear().toString(), amount_due:0, amount_paid:0, payment_date:todayISO(), payment_method:'Cash', payment_status:'Unpaid', remarks:'' }), { recorded_by_profile_id: profile.id })}>Save Payment</button></div>
+                  </div>
+                )}
+                <div className="card">
+                  <h3>Fee Statements</h3>
+                  <div className="toolbar">
+                    <button className="btn secondary" onClick={()=>{ setSelectedReport('fee'); setPage('reports'); }}>Printable Fee Statement View</button>
+                    <button className="btn secondary" onClick={()=>exportCsv(feesHook.rows, 'fee-payments.csv')}>Export CSV</button>
+                  </div>
+                  <div className="table-wrap"><table><thead><tr><th>Student</th><th>Term</th><th>Year</th><th>Due</th><th>Paid</th><th>Balance</th><th>Status</th></tr></thead><tbody>{feesHook.rows.map(r => <tr key={r.id} onClick={()=>setCurrentStudent({ full_name: r.student_name, class_name: r.class_name, student_id: r.student_id })}><td>{r.student_name}</td><td>{r.term_name}</td><td>{r.academic_year}</td><td>{formatCurrency(r.amount_due)}</td><td>{formatCurrency(r.amount_paid)}</td><td>{formatCurrency(r.balance)}</td><td>{r.payment_status}</td></tr>)}</tbody></table></div>
+                </div>
+              </div>
+            )}
+
+            {page === 'reports' && <ReportsView school={school} selectedReport={selectedReport} gradeRows={gradesHook.rows.filter(r => !currentStudent || r.student_id === currentStudent.student_id)} feeRows={feesHook.rows.filter(r => !currentStudent || r.student_id === currentStudent.student_id)} currentStudent={currentStudent} />}
+
+            {page === 'chat' && (
+              <div className="grid cards-2">
+                <div className="card">
+                  <h3>Chat</h3>
+                  <div className="chat-box">
+                    {chatHook.rows.slice().reverse().map(m => <div key={m.id} className={classNames('msg', m.sender_profile_id === profile.id && 'mine')}><div className="bubble"><strong>{m.sender_name}</strong><div>{m.message_text}</div><div className="subtle" style={{fontSize:12, marginTop:4}}>{new Date(m.created_at).toLocaleString()}</div></div></div>)}
+                  </div>
+                </div>
+                <div className="card">
+                  <h3>Send Message</h3>
+                  <div className="field"><label>Recipient Profile ID</label><input value={chatForm.recipient_profile_id} onChange={(e)=>setChatForm({...chatForm, recipient_profile_id:e.target.value})} /></div>
+                  <div className="field"><label>Message</label><textarea rows="6" value={chatForm.message_text} onChange={(e)=>setChatForm({...chatForm, message_text:e.target.value})}></textarea></div>
+                  <div style={{marginTop:16}}><button className="btn" onClick={()=>saveEntity('chat_messages', chatForm, ()=>setChatForm({ recipient_profile_id:'', message_text:'' }), { sender_profile_id: profile.id })}>Send</button></div>
+                  <p className="footer-note">Monitoring rules are enforced in SQL policies and views. Student to student chat is restricted to JHS same class. Admin monitors all. Teachers monitor assigned classes. Principal has no chat monitoring access.</p>
+                </div>
+              </div>
+            )}
+
+            {page === 'notifications' && (
+              <div className="grid cards-2">
+                {(role === ROLE.ADMIN || role === ROLE.SUPER_ADMIN) && <div className="card"><h3>Send Notification</h3><div className="field"><label>Title</label><input value={notificationForm.title} onChange={(e)=>setNotificationForm({...notificationForm, title:e.target.value})} /></div><div className="field"><label>Message</label><textarea rows="5" value={notificationForm.message} onChange={(e)=>setNotificationForm({...notificationForm, message:e.target.value})}></textarea></div><div className="field"><label>Audience Role</label><input value={notificationForm.audience_role} onChange={(e)=>setNotificationForm({...notificationForm, audience_role:e.target.value})} /></div><div style={{marginTop:16}}><button className="btn" onClick={()=>saveEntity('notifications', notificationForm, ()=>setNotificationForm({ id:'', title:'', message:'', audience_role:'all' }), { created_by_profile_id: profile.id })}>Publish Notification</button></div></div>}
+                <div className="card"><h3>Notifications Feed</h3>{notificationsHook.rows.map(n => <div key={n.id} style={{padding:'12px 0', borderBottom:'1px solid #e2e8f0'}}><strong>{n.title}</strong><div>{n.message}</div><div className="subtle">Audience: {n.audience_role} | {new Date(n.created_at).toLocaleString()}</div></div>)}</div>
+              </div>
+            )}
+
+            {page === 'audit-log' && (
+              <div className="card">
+                <h3>Audit Log</h3>
+                <div className="table-wrap"><table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Table</th><th>Record</th><th>Summary</th></tr></thead><tbody>{auditHook.rows.map(r => <tr key={r.id}><td>{new Date(r.created_at).toLocaleString()}</td><td>{r.actor_name || r.actor_profile_id}</td><td>{r.action_type}</td><td>{r.table_name}</td><td>{r.record_id}</td><td>{r.summary}</td></tr>)}</tbody></table></div>
+              </div>
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
