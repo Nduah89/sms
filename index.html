@@ -1013,6 +1013,97 @@
         await withNotice(async () => supabaseClient.rpc('set_school_lock_state', { p_school_id: schoolId, p_locked: locked, p_full_lock: fullLock }), 'Lock state updated');
       };
 
+      const handleRestrictExpiredSchools = async () => {
+        await withNotice(
+          async () => supabaseClient.rpc('super_admin_restrict_expired_schools'),
+          'Expired schools restricted to login and logout only'
+        );
+      };
+
+      const renderSystemControlPage = () => {
+        const rows = Array.isArray(schoolsHook.rows) ? schoolsHook.rows : [];
+        const yearOptions = [1,2,3,5,10,15,20,25,30,40,50,75,100];
+        return (
+          <div className="card">
+            <h3>System Control</h3>
+            <p className="subtle">Super Admin can lock or unlock schools, apply one month trial access, extend subscription periods from 1 year to 100 years, and restrict expired schools to login and logout only.</p>
+            <div style={{display:'flex', gap:8, flexWrap:'wrap', marginBottom:16}}>
+              <button className="btn warning" onClick={handleRestrictExpiredSchools}>Restrict Expired Schools Now</button>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>School</th>
+                    <th>Code</th>
+                    <th>Status</th>
+                    <th>License</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Usage Lock</th>
+                    <th>Full Lock</th>
+                    <th>Trial</th>
+                    <th>Extend Subscription</th>
+                    <th>Restriction State</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.length === 0 && (
+                    <tr>
+                      <td colSpan={11}><div className="empty">No schools found</div></td>
+                    </tr>
+                  )}
+                  {rows.map((s) => {
+                    const expired = !!(s.license_end_date && new Date(s.license_end_date) < new Date(new Date().toDateString()));
+                    return (
+                      <tr key={s.id}>
+                        <td>{s.name}</td>
+                        <td>{s.school_code || '-'}</td>
+                        <td><span className={classNames('chip', s.approval_status === 'approved' ? 'success' : s.approval_status === 'pending' ? 'warning' : 'danger')}>{s.approval_status || '-'}</span></td>
+                        <td>{s.license_state || '-'}</td>
+                        <td>{formatDate(s.license_start_date)}</td>
+                        <td>{formatDate(s.license_end_date)}</td>
+                        <td>
+                          <button
+                            className={classNames('btn', s.system_locked_for_usage ? 'success' : 'warning')}
+                            onClick={() => handleSchoolLock(s.id, !s.system_locked_for_usage, false)}
+                          >
+                            {s.system_locked_for_usage ? 'Unlock Usage' : 'Lock Usage'}
+                          </button>
+                        </td>
+                        <td>
+                          <button
+                            className={classNames('btn', s.is_full_locked ? 'success' : 'danger')}
+                            onClick={() => handleSchoolLock(s.id, !s.is_full_locked, true)}
+                          >
+                            {s.is_full_locked ? 'Unlock School' : 'Full Lock'}
+                          </button>
+                        </td>
+                        <td>
+                          <button className="btn secondary" onClick={() => handleLicenseUpdate(s.id, 1, true)}>1 Month Trial</button>
+                        </td>
+                        <td>
+                          <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                            {yearOptions.map((years) => (
+                              <button key={years} className="btn secondary" onClick={() => handleLicenseUpdate(s.id, years, false)}>+{years}Y</button>
+                            ))}
+                          </div>
+                        </td>
+                        <td>
+                          <span className={classNames('chip', expired || s.system_locked_for_usage ? 'danger' : 'success')}>
+                            {expired || s.system_locked_for_usage ? 'Login/Logout Only' : 'Fully Usable'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      };
+
       const handleFirstLoginPasswordChange = async () => {
         const { error } = await changePassword(passwordForm.newPassword);
         if (error) return setNotice({ type: 'danger', text: error.message });
@@ -1333,19 +1424,7 @@
                 </tbody></table></div>
               </div>
             )}
-
-            {page === 'system-control' && (
-              <div className="card">
-                <h3>System Control</h3>
-                <p className="subtle">This page is reserved for Super Admin global control. Use SQL functions and RLS aware RPC calls only.</p>
-                <ul>
-                  <li>Lock or unlock a school</li>
-                  <li>Apply one month trial access</li>
-                  <li>Extend subscription from 1 year to 100 years</li>
-                  <li>Restrict expired schools to login and logout only</li>
-                </ul>
-              </div>
-            )}
+            {page === 'system-control' && renderSystemControlPage()}
 
             {page === 'dashboard' && (
               <div className="grid">
