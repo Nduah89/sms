@@ -203,6 +203,7 @@
     const attendanceOptions = ["Present", "Absent", "Late"];
     const paymentStatusOptions = ["Paid", "Partially Paid", "Unpaid"];
     const termOptions = ["Term 1", "Term 2", "Term 3"];
+    const SCHOOL_LOGIN_ALLOWED_ROLES = new Set(["admin", "principal", "teacher", "student", "parent", "accounts_office"]);
 
     function classNames(...arr) { return arr.filter(Boolean).join(" "); }
     function formatDate(value) { return value ? new Date(value).toLocaleDateString() : ""; }
@@ -251,6 +252,7 @@
     }
 
     async function signOut() {
+      try { window.sessionStorage.removeItem("sms_login_surface"); } catch {}
       return supabaseClient.auth.signOut();
     }
 
@@ -285,8 +287,14 @@
         e.preventDefault();
         setStatus({ type: "", text: "" });
         const form = isSuper ? superForm : loginForm;
+        try {
+          window.sessionStorage.setItem("sms_login_surface", isSuper ? "super_admin" : "school");
+        } catch {}
         const { error } = await signIn(form.email, form.password);
-        if (error) return setStatus({ type: "danger", text: getFriendlyErrorMessage(error) });
+        if (error) {
+          try { window.sessionStorage.removeItem("sms_login_surface"); } catch {}
+          return setStatus({ type: "danger", text: getFriendlyErrorMessage(error) });
+        }
         // Let onAuthStateChange handle bootstrap after sign in to avoid race conditions.
         setStatus({ type: "success", text: "Login successful. Preparing your dashboard..." });
       };
@@ -572,6 +580,36 @@
             setSchool(null);
             const reason = data?.profileError?.message ? ` Details: ${data.profileError.message}` : '';
             setNotice({ type: 'danger', text: `Login succeeded, but no readable profile record was found for this user. Check public.profiles, the v_current_user_profile view, and RLS.${reason}` });
+            return;
+          }
+
+          const selectedLoginSurface = (() => {
+            try { return window.sessionStorage.getItem('sms_login_surface'); } catch { return null; }
+          })();
+          const isSuperAdminProfile = p.role_name === ROLE.SUPER_ADMIN || p.is_super_admin === true;
+
+          if (selectedLoginSurface === 'school') {
+            if (isSuperAdminProfile) {
+              await signOut();
+              setProfile(null);
+              setSchool(null);
+              setNotice({ type: 'danger', text: 'Super Admin must use the Super Admin Login section.' });
+              return;
+            }
+            if (!SCHOOL_LOGIN_ALLOWED_ROLES.has(p.role_name)) {
+              await signOut();
+              setProfile(null);
+              setSchool(null);
+              setNotice({ type: 'danger', text: 'This account is not allowed to use the School Login section.' });
+              return;
+            }
+          }
+
+          if (selectedLoginSurface === 'super_admin' && !isSuperAdminProfile) {
+            await signOut();
+            setProfile(null);
+            setSchool(null);
+            setNotice({ type: 'danger', text: 'Only the Super Admin can use the Super Admin Login section. Please use School Login.' });
             return;
           }
 
