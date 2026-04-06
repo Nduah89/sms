@@ -154,7 +154,7 @@
 
     const NAV_BY_ROLE = {
       [ROLE.SUPER_ADMIN]: ["super-dashboard", "schools", "approvals", "licenses", "system-control", "audit-log"],
-      [ROLE.ADMIN]: ["dashboard", "users", "students", "teachers", "parents", "accounts-staff", "principals", "classes", "subjects", "attendance", "grades", "timetable", "fees", "reports", "chat", "notifications", "audit-log"],
+      [ROLE.ADMIN]: ["dashboard", "users", "school-logo", "students", "teachers", "parents", "accounts-staff", "principals", "classes", "subjects", "attendance", "grades", "timetable", "fees", "reports", "chat", "notifications", "audit-log"],
       [ROLE.PRINCIPAL]: ["principal-dashboard", "students", "teachers", "classes", "attendance-summary", "performance-summary", "reports", "timetable", "chat", "notifications"],
       [ROLE.TEACHER]: ["teacher-dashboard", "attendance", "grades", "timetable", "students", "chat", "notifications"],
       [ROLE.STUDENT]: ["student-dashboard", "my-grades", "my-attendance", "my-fees", "timetable", "chat", "notifications"],
@@ -171,6 +171,7 @@
       "audit-log": "Audit Log",
       dashboard: "Admin Dashboard",
       users: "Users & Credentials",
+      "school-logo": "School Logo",
       students: "Students",
       teachers: "Teachers",
       parents: "Parents",
@@ -427,7 +428,8 @@
       );
     }
 
-    function GenericCrudPage({ title, description, columns, rows, formState, setFormState, onSave, onDelete, onEdit, loading, filters, children, extraActions, rowActions }) {
+    function GenericCrudPage({ title, description, columns, rows, formState, setFormState, onSave, onDelete, onEdit, loading, filters, children, extraActions, rowActions, fields }) {
+      const renderedFields = fields || Object.keys(formState).map((key) => ({ key, label: key.replace(/_/g, " "), type: "text" }));
       return (
         <div className="grid">
           <div className="card">
@@ -435,12 +437,36 @@
             <p className="subtle">{description}</p>
             {filters}
             <div className="form-grid-3">
-              {Object.keys(formState).map((key) => (
-                <div className="field" key={key}>
-                  <label>{key.replace(/_/g, " ")}</label>
-                  <input value={formState[key] ?? ""} onChange={(e)=>setFormState({...formState, [key]: e.target.value})} />
-                </div>
-              ))}
+              {renderedFields.map((field) => {
+                const key = field.key;
+                const label = field.label || key.replace(/_/g, ' ');
+                const value = formState[key] ?? (field.type === 'multiselect' ? [] : '');
+                const setValue = (next) => setFormState({ ...formState, [key]: next });
+                return (
+                  <div className="field" key={key}>
+                    <label>{label}</label>
+                    {field.type === 'select' ? (
+                      <select value={value} onChange={(e) => setValue(e.target.value)}>
+                        {(field.options || []).map((opt) => {
+                          const option = typeof opt === 'string' ? { value: opt, label: opt } : opt;
+                          return <option key={option.value} value={option.value}>{option.label}</option>;
+                        })}
+                      </select>
+                    ) : field.type === 'date' ? (
+                      <input type="date" value={value || ''} onChange={(e) => setValue(e.target.value)} />
+                    ) : field.type === 'multiselect' ? (
+                      <select multiple value={Array.isArray(value) ? value : []} onChange={(e) => setValue(Array.from(e.target.selectedOptions).map(o => o.value))} style={{minHeight:120}}>
+                        {(field.options || []).map((opt) => {
+                          const option = typeof opt === 'string' ? { value: opt, label: opt } : opt;
+                          return <option key={option.value} value={option.value}>{option.label}</option>;
+                        })}
+                      </select>
+                    ) : (
+                      <input type={field.type || 'text'} value={value ?? ''} onChange={(e)=>setValue(e.target.value)} placeholder={field.placeholder || ''} />
+                    )}
+                  </div>
+                );
+              })}
             </div>
             <div style={{display:'flex', gap:10, marginTop:16, flexWrap:'wrap'}}>
               <button className="btn" onClick={onSave}>Save</button>
@@ -458,10 +484,10 @@
                 <tbody>
                   {!loading && rows.length === 0 && <tr><td colSpan={columns.length + 1}><div className="empty">No records found</div></td></tr>}
                   {rows.map(row => (
-                    <tr key={row.id}>
+                    <tr key={row.id || row.profile_id}>
                       {columns.map(c => <td key={c.key}>{c.render ? c.render(row[c.key], row) : row[c.key]}</td>)}
                       <td>
-                        <div style={{display:'flex', gap:8}}>
+                        <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
                           <button className="btn secondary" onClick={() => onEdit(row)}>Edit</button>
                           <button className="btn danger" onClick={() => onDelete(row.id, row)}>Delete</button>
                           {rowActions ? rowActions(row) : null}
@@ -543,15 +569,22 @@
       const schoolsHook = useSupabaseTable("schools", "*");
       const schoolAdminRefsHook = useSupabaseTable("v_school_admin_login_references", "*");
       const userLoginRefsHook = useSupabaseTable("v_user_login_references", "*");
+      const managedUsersHook = useSupabaseTable("v_managed_users_admin", "*");
       const registrationsHook = useSupabaseTable("school_registrations", "*");
       const auditHook = useSupabaseTable("audit_logs", "*");
       const notificationsHook = useSupabaseTable("notifications", "*");
       const timetableHook = useSupabaseTable("v_timetables_full", "*");
       const chatHook = useSupabaseTable("v_chat_messages_full", "*");
 
-      const [studentForm, setStudentForm] = useState({ id: "", full_name: "", student_no: "", class_id: "", gender: "", date_of_birth: "", guardian_contact: "", address: "" });
-      const [teacherForm, setTeacherForm] = useState({ id: "", full_name: "", staff_no: "", phone: "", email: "", subject_specialty: "" });
-      const [parentForm, setParentForm] = useState({ id: "", full_name: "", phone: "", email: "", relationship_to_student: "", address: "" });
+      const buildManagedForm = (roleName = 'student') => ({
+        profile_id: "", role_name: roleName, full_name: "", email: "", username: "", phone: "", account_status: "active", force_password_change: 'true',
+        class_id: "", gender: "Male", date_of_birth: "", guardian_contact: "", address: "", student_no: "", staff_no: "",
+        subject_specialty: "", qualification: "", assigned_subjects: [], assigned_class_ids: [], relationship_to_student: ""
+      });
+      const [studentForm, setStudentForm] = useState(buildManagedForm('student'));
+      const [teacherForm, setTeacherForm] = useState(buildManagedForm('teacher'));
+      const [parentForm, setParentForm] = useState(buildManagedForm('parent'));
+      const [userForm, setUserForm] = useState(buildManagedForm('student'));
       const [classForm, setClassForm] = useState({ id: "", name: "", level_group: "", section: "", capacity: "" });
       const [subjectForm, setSubjectForm] = useState({ id: "", subject_name: "", class_id: "", teacher_id: "" });
       const [attendanceForm, setAttendanceForm] = useState({ id: "", student_id: "", class_id: "", attendance_date: todayISO(), status: "Present", remarks: "" });
@@ -560,12 +593,27 @@
       const [notificationForm, setNotificationForm] = useState({ id: "", title: "", message: "", audience_role: "all" });
       const [chatForm, setChatForm] = useState({ recipient_profile_id: "", message_text: "" });
       const [importStatus, setImportStatus] = useState("");
+      const [accountControlDrafts, setAccountControlDrafts] = useState({});
+      const schoolLogoRef = useRef(null);
       const bootingRef = useRef(false);
 
       const role = profile?.role_name;
       const canSchoolAdminManageUsers = role === ROLE.ADMIN;
       const licenseExpired = school?.license_state === "expired" || school?.system_locked_for_usage;
       const daysRemaining = school?.license_end_date ? Math.ceil((new Date(school.license_end_date) - new Date()) / 86400000) : null;
+
+      const genderOptions = [{ value: '', label: 'Select Gender' }, { value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }];
+      const statusOptions = [{ value: 'active', label: 'Active' }, { value: 'deactivated', label: 'Deactivated' }, { value: 'archived', label: 'Archived' }];
+      const yesNoOptions = [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }];
+      const subjectOptions = ['Mathematics','RME','Social','English','Science','French','CAD','CAT','Computing','Twi'];
+      const qualificationOptions = ['PhD','MSc Degree','Bachelor','HND','Diploma','SHS'];
+      const managedRoleOptions = [
+        { value: 'student', label: 'Student' },
+        { value: 'teacher', label: 'Teacher' },
+        { value: 'parent', label: 'Parent' },
+        { value: 'principal', label: 'Principal' },
+        { value: 'accounts_office', label: 'Accounts Office Staff' }
+      ];
 
       const loadCore = async (authUserOverride = null) => {
         if (bootingRef.current) return;
@@ -647,7 +695,7 @@
         await Promise.all([
           studentsHook.fetchRows(), teachersHook.fetchRows(), parentsHook.fetchRows(), accountsHook.fetchRows(), principalsHook.fetchRows(),
           classesHook.fetchRows(), subjectsHook.fetchRows(), attendanceHook.fetchRows(), gradesHook.fetchRows(), feesHook.fetchRows(),
-          schoolsHook.fetchRows((q)=>q.order('created_at', { ascending:false })), schoolAdminRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), userLoginRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), registrationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
+          schoolsHook.fetchRows((q)=>q.order('created_at', { ascending:false })), schoolAdminRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), userLoginRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), managedUsersHook.fetchRows((q)=>q.order('full_name')), registrationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
           auditHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(100)), notificationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
           timetableHook.fetchRows((q)=>q.order('day_of_week')), chatHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(200))
         ]);
@@ -1027,8 +1075,148 @@
         return base;
       }, [studentsHook.rows, teachersHook.rows, parentsHook.rows, accountsHook.rows, principalsHook.rows, classesHook.rows, feesHook.rows, auditHook.rows]);
 
+      const classOptions = useMemo(() => [{ value: '', label: 'Select Class' }, ...(classesHook.rows || []).map(c => ({ value: c.id, label: c.name }))], [classesHook.rows]);
+      const classNameMap = useMemo(() => Object.fromEntries((classesHook.rows || []).map(c => [c.id, c.name])), [classesHook.rows]);
+
+      const getManagedControlDraft = (row) => accountControlDrafts[row.profile_id] || {
+        account_status: row.account_status || row.status || 'active',
+        force_password_change: String(row.force_password_change ?? true)
+      };
+
+      const updateManagedControlDraft = (profileId, patch) => {
+        setAccountControlDrafts(prev => ({
+          ...prev,
+          [profileId]: { ...(prev[profileId] || {}), ...patch }
+        }));
+      };
+
+      const generateStudentNoForCurrentSchool = async (setter) => {
+        const { data, error } = await supabaseClient.rpc('generate_student_no', { p_school_id: school?.id });
+        if (error) return setNotice({ type: 'danger', text: error.message || 'Failed to generate student number' });
+        setter((prev) => ({ ...prev, student_no: data || '' }));
+      };
+
+      const generateStaffNoForCurrentSchool = async (setter) => {
+        const { data, error } = await supabaseClient.rpc('generate_staff_no', { p_school_id: school?.id });
+        if (error) return setNotice({ type: 'danger', text: error.message || 'Failed to generate staff number' });
+        setter((prev) => ({ ...prev, staff_no: data || '' }));
+      };
+
+      const normalizeBoolean = (value) => value === true || value === 'true';
+
+      const resetManagedForm = (setter, roleName) => setter(buildManagedForm(roleName));
+
+      const saveManagedUserRecord = async (form, setter, fallbackRole = null) => {
+        if (!canSchoolAdminManageUsers) {
+          setNotice({ type: 'danger', text: 'Only the school admin can create or edit managed user records.' });
+          return;
+        }
+
+        const roleName = form.role_name || fallbackRole;
+        if (!roleName) {
+          setNotice({ type: 'danger', text: 'Select a role before saving.' });
+          return;
+        }
+
+        const payload = {
+          p_role: roleName,
+          p_profile_id: form.profile_id || null,
+          p_full_name: form.full_name || null,
+          p_email: form.email || null,
+          p_phone: form.phone || null,
+          p_username: form.username || null,
+          p_account_status: form.account_status || 'active',
+          p_force_password_change: normalizeBoolean(form.force_password_change),
+          p_class_id: form.class_id || null,
+          p_gender: form.gender || null,
+          p_date_of_birth: form.date_of_birth || null,
+          p_guardian_contact: form.guardian_contact || null,
+          p_address: form.address || null,
+          p_student_no: form.student_no || null,
+          p_staff_no: form.staff_no || null,
+          p_subject_specialty: form.subject_specialty || null,
+          p_qualification: form.qualification || null,
+          p_assigned_subjects: Array.isArray(form.assigned_subjects) ? form.assigned_subjects : [],
+          p_assigned_class_ids: Array.isArray(form.assigned_class_ids) ? form.assigned_class_ids : [],
+          p_relationship_to_student: form.relationship_to_student || null
+        };
+
+        const { error } = await supabaseClient.rpc('upsert_managed_user_record', payload);
+        if (error) {
+          setNotice({ type: 'danger', text: error.message || 'Failed to save managed user record' });
+          return;
+        }
+
+        setNotice({ type: 'success', text: `${roleName.replace('_',' ')} record saved successfully.` });
+        resetManagedForm(setter, roleName);
+        await refreshAll();
+      };
+
+      const applyManagedUserControls = async (row) => {
+        const draft = getManagedControlDraft(row);
+        const { error } = await supabaseClient.rpc('set_managed_user_account_state', {
+          p_profile_id: row.profile_id,
+          p_account_status: draft.account_status,
+          p_force_password_change: normalizeBoolean(draft.force_password_change)
+        });
+        if (error) {
+          setNotice({ type: 'danger', text: error.message || 'Failed to update account controls' });
+          return;
+        }
+        setNotice({ type: 'success', text: 'User account controls updated.' });
+        await refreshAll();
+      };
+
+      const fillManagedUserForm = (row) => {
+        const base = buildManagedForm(row.role_name || 'student');
+        setUserForm({
+          ...base,
+          profile_id: row.profile_id || '',
+          role_name: row.role_name || base.role_name,
+          full_name: row.full_name || '',
+          email: row.email || '',
+          username: row.username || '',
+          phone: row.phone || row.profile_phone || '',
+          account_status: row.account_status || row.status || 'active',
+          force_password_change: String(row.force_password_change ?? true),
+          class_id: row.class_id || '',
+          gender: row.gender || 'Male',
+          date_of_birth: row.date_of_birth || '',
+          guardian_contact: row.guardian_contact || '',
+          address: row.address || '',
+          student_no: row.student_no || '',
+          staff_no: row.staff_no || '',
+          subject_specialty: row.subject_specialty || '',
+          qualification: row.qualification || '',
+          assigned_subjects: row.assigned_subjects || [],
+          assigned_class_ids: row.assigned_class_ids || [],
+          relationship_to_student: row.relationship_to_student || ''
+        });
+        setPage('users');
+      };
+
+      const handleSchoolLogoUpload = async () => {
+        if (!school?.id) return setNotice({ type: 'danger', text: 'No school record loaded.' });
+        const file = schoolLogoRef.current?.files?.[0];
+        if (!file) return setNotice({ type: 'danger', text: 'Choose a logo image first.' });
+        const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+        const path = `${school.id}/logo-${Date.now()}.${ext}`;
+        const { error: uploadError } = await uploadFile(path, file);
+        if (uploadError) return setNotice({ type: 'danger', text: uploadError.message || 'Failed to upload school logo' });
+        const { data: publicData } = supabaseClient.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+        const { error: updateError } = await supabaseClient.from('schools').update({
+          logo_url: publicData?.publicUrl || null,
+          logo_updated_at: new Date().toISOString()
+        }).eq('id', school.id);
+        if (updateError) return setNotice({ type: 'danger', text: updateError.message || 'Failed to update school logo record' });
+        setNotice({ type: 'success', text: 'School logo updated successfully.' });
+        if (schoolLogoRef.current) schoolLogoRef.current.value = '';
+        await refreshAll();
+      };
+
       const schoolAdminRefMap = useMemo(() => Object.fromEntries((schoolAdminRefsHook.rows || []).map(r => [r.school_id, r])), [schoolAdminRefsHook.rows]);
       const managedUserRefMap = useMemo(() => Object.fromEntries((userLoginRefsHook.rows || []).map(r => [r.profile_id, r])), [userLoginRefsHook.rows]);
+      const managedUsersRows = managedUsersHook.rows || [];
 
       const copyText = async (text, successText = 'Copied to clipboard') => {
         try {
@@ -1233,30 +1421,81 @@
               ]} />
             )}
 
+            {page === 'school-logo' && role === ROLE.ADMIN && (
+              <div className="grid">
+                <div className="card">
+                  <h3>School Logo</h3>
+                  <p className="subtle">Upload or change the system logo for this school only. Each school keeps its own isolated logo path and database record.</p>
+                  <div style={{display:'flex', gap:20, alignItems:'flex-start', flexWrap:'wrap'}}>
+                    <div style={{minWidth:220}}>
+                      {school?.logo_url ? <img src={school.logo_url} alt="School Logo" style={{maxWidth:220, maxHeight:220, borderRadius:12, border:'1px solid #dbe4f0', padding:8, background:'#fff'}} /> : <div className="empty">No school logo uploaded yet</div>}
+                    </div>
+                    <div style={{flex:1, minWidth:260}}>
+                      <div className="field"><label>Choose Logo</label><input type="file" ref={schoolLogoRef} accept="image/*" /></div>
+                      <div style={{display:'flex', gap:10, marginTop:12, flexWrap:'wrap'}}>
+                        <button className="btn" onClick={handleSchoolLogoUpload}>Upload / Change Logo</button>
+                        {school?.logo_updated_at && <div className="subtle">Last Updated: {formatDate(school.logo_updated_at)}</div>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {page === 'students' && (
               <GenericCrudPage
                 title="Student Management"
-                description="Add, edit, archive, filter, import, and export student records. All writes go to Supabase, not localStorage."
+                description="Manage student records with class selection, gender, auto generated student number, and date of birth. Saving here updates the linked profile and reflects under Users & Credentials immediately."
                 columns={[
                   { key: 'full_name', label: 'Full Name' },
-                  { key: 'student_no', label: 'Student ID' },
+                  { key: 'student_no', label: 'Student No' },
                   { key: 'class_name', label: 'Class' },
                   { key: 'gender', label: 'Gender' },
-                  { key: 'guardian_contact', label: 'Guardian Contact' },
-                  { key: 'status', label: 'Status', render: v => <span className={classNames('chip', v === 'active' ? 'success' : 'warning')}>{v}</span> }
+                  { key: 'date_of_birth', label: 'Date of Birth', render: v => formatDate(v) },
+                  { key: 'account_status', label: 'Account', render: v => <span className={classNames('chip', v === 'active' ? 'success' : v === 'archived' ? 'warning' : 'danger')}>{v}</span> }
                 ]}
                 rows={studentsHook.rows}
                 loading={studentsHook.loading}
                 formState={studentForm}
                 setFormState={setStudentForm}
-                onSave={() => saveEntity('students', studentForm, ()=>setStudentForm({ id: '', full_name: '', student_no: '', class_id: '', gender: '', date_of_birth: '', guardian_contact: '', address: '' }))}
+                fields={[
+                  { key: 'full_name', label: 'Full Name' },
+                  { key: 'email', label: 'Email', type: 'email' },
+                  { key: 'username', label: 'Username' },
+                  { key: 'phone', label: 'Phone' },
+                  { key: 'student_no', label: 'Student No' },
+                  { key: 'class_id', label: 'Class ID', type: 'select', options: classOptions },
+                  { key: 'gender', label: 'Gender', type: 'select', options: genderOptions },
+                  { key: 'date_of_birth', label: 'Date of Birth', type: 'date' },
+                  { key: 'guardian_contact', label: 'Guardian Contact' },
+                  { key: 'address', label: 'Address' },
+                  { key: 'account_status', label: 'Account Status', type: 'select', options: statusOptions },
+                  { key: 'force_password_change', label: 'Force First Login Password Change', type: 'select', options: yesNoOptions }
+                ]}
+                onSave={() => saveManagedUserRecord(studentForm, setStudentForm, 'student')}
                 onDelete={(id, row) => handleDeleteManagedUser(row)}
-                onEdit={(row) => setStudentForm({ id: row.id, full_name: row.full_name, student_no: row.student_no, class_id: row.class_id, gender: row.gender, date_of_birth: row.date_of_birth, guardian_contact: row.guardian_contact, address: row.address })}
+                onEdit={(row) => setStudentForm({
+                  ...buildManagedForm('student'),
+                  profile_id: row.profile_id || '',
+                  role_name: 'student',
+                  full_name: row.full_name || '',
+                  email: row.email || '',
+                  username: row.username || '',
+                  phone: row.profile_phone || '',
+                  account_status: row.account_status || row.status || 'active',
+                  force_password_change: String(row.force_password_change ?? true),
+                  class_id: row.class_id || '',
+                  gender: row.gender || 'Male',
+                  date_of_birth: row.date_of_birth || '',
+                  guardian_contact: row.guardian_contact || '',
+                  address: row.address || '',
+                  student_no: row.student_no || ''
+                })}
                 rowActions={(row) => canSchoolAdminManageUsers ? <>
                   <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
                   <button className="btn secondary" onClick={() => copyText(buildManagedUserReferenceText(row), 'User credential reference copied to clipboard')}>Copy Credentials</button>
                 </> : null}
-                extraActions={<><button className="btn secondary" onClick={()=>exportCsv(studentsHook.rows, 'students.csv')}>Export CSV</button><label className="btn secondary">Import CSV<input hidden type="file" accept=".csv" onChange={(e)=>handleBulkStudentImport(e.target.files?.[0])} /></label></>}
+                extraActions={<><button className="btn secondary" onClick={()=>generateStudentNoForCurrentSchool(setStudentForm)}>Generate Student No</button><button className="btn secondary" onClick={()=>exportCsv(studentsHook.rows, 'students.csv')}>Export CSV</button><label className="btn secondary">Import CSV<input hidden type="file" accept=".csv" onChange={(e)=>handleBulkStudentImport(e.target.files?.[0])} /></label></>}
               >
                 {importStatus && <div className="footer-note">{importStatus}</div>}
               </GenericCrudPage>
@@ -1265,32 +1504,64 @@
             {page === 'teachers' && (
               <GenericCrudPage
                 title="Teacher Management"
-                description="Create teachers and assign them later to classes and subjects."
+                description="Create and maintain teacher records with class selection, subject specialty, qualification, assigned subjects, and assigned classes."
                 columns={[
                   { key: 'full_name', label: 'Full Name' },
                   { key: 'staff_no', label: 'Staff No' },
-                  { key: 'email', label: 'Email' },
-                  { key: 'phone', label: 'Phone' },
-                  { key: 'subject_specialty', label: 'Specialty' }
+                  { key: 'class_name', label: 'Class' },
+                  { key: 'subject_specialty', label: 'Subject Specialty' },
+                  { key: 'qualification', label: 'Qualification' },
+                  { key: 'account_status', label: 'Account', render: v => <span className={classNames('chip', v === 'active' ? 'success' : v === 'archived' ? 'warning' : 'danger')}>{v}</span> }
                 ]}
                 rows={teachersHook.rows}
                 loading={teachersHook.loading}
                 formState={teacherForm}
                 setFormState={setTeacherForm}
-                onSave={() => saveEntity('teachers', teacherForm, ()=>setTeacherForm({ id: '', full_name: '', staff_no: '', phone: '', email: '', subject_specialty: '' }))}
+                fields={[
+                  { key: 'full_name', label: 'Full Name' },
+                  { key: 'email', label: 'Email', type: 'email' },
+                  { key: 'username', label: 'Username' },
+                  { key: 'phone', label: 'Phone' },
+                  { key: 'staff_no', label: 'Staff No' },
+                  { key: 'class_id', label: 'Class ID', type: 'select', options: classOptions },
+                  { key: 'subject_specialty', label: 'Subject Specialty', type: 'select', options: [{ value: '', label: 'Select Specialty' }, ...subjectOptions.map(v => ({ value: v, label: v }))] },
+                  { key: 'qualification', label: 'Qualification', type: 'select', options: [{ value: '', label: 'Select Qualification' }, ...qualificationOptions.map(v => ({ value: v, label: v }))] },
+                  { key: 'assigned_subjects', label: 'Assign Subjects', type: 'multiselect', options: subjectOptions.map(v => ({ value: v, label: v })) },
+                  { key: 'assigned_class_ids', label: 'Assign Classes', type: 'multiselect', options: classOptions.filter(o => o.value) },
+                  { key: 'account_status', label: 'Account Status', type: 'select', options: statusOptions },
+                  { key: 'force_password_change', label: 'Force First Login Password Change', type: 'select', options: yesNoOptions }
+                ]}
+                onSave={() => saveManagedUserRecord(teacherForm, setTeacherForm, 'teacher')}
                 onDelete={(id, row) => handleDeleteManagedUser(row)}
-                onEdit={(row) => setTeacherForm({ id: row.id, full_name: row.full_name, staff_no: row.staff_no, phone: row.phone, email: row.email, subject_specialty: row.subject_specialty })}
+                onEdit={(row) => setTeacherForm({
+                  ...buildManagedForm('teacher'),
+                  profile_id: row.profile_id || '',
+                  role_name: 'teacher',
+                  full_name: row.full_name || '',
+                  email: row.profile_email || row.email || '',
+                  username: row.username || '',
+                  phone: row.phone || '',
+                  account_status: row.account_status || row.status || 'active',
+                  force_password_change: String(row.force_password_change ?? true),
+                  staff_no: row.staff_no || '',
+                  class_id: row.class_id || '',
+                  subject_specialty: row.subject_specialty || '',
+                  qualification: row.qualification || '',
+                  assigned_subjects: row.assigned_subjects || [],
+                  assigned_class_ids: row.assigned_class_ids || []
+                })}
                 rowActions={(row) => canSchoolAdminManageUsers ? <>
                   <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
                   <button className="btn secondary" onClick={() => copyText(buildManagedUserReferenceText(row), 'User credential reference copied to clipboard')}>Copy Credentials</button>
                 </> : null}
+                extraActions={<button className="btn secondary" onClick={()=>generateStaffNoForCurrentSchool(setTeacherForm)}>Generate Staff No</button>}
               />
             )}
 
             {page === 'parents' && (
               <GenericCrudPage
                 title="Parent Management"
-                description="Link parents to one or more children using parent_student_links in the database."
+                description="Manage parent records and keep them linked to user accounts for credential provisioning."
                 columns={[
                   { key: 'full_name', label: 'Full Name' },
                   { key: 'phone', label: 'Phone' },
@@ -1302,9 +1573,31 @@
                 loading={parentsHook.loading}
                 formState={parentForm}
                 setFormState={setParentForm}
-                onSave={() => saveEntity('parents', parentForm, ()=>setParentForm({ id: '', full_name: '', phone: '', email: '', relationship_to_student: '', address: '' }))}
+                fields={[
+                  { key: 'full_name', label: 'Full Name' },
+                  { key: 'email', label: 'Email', type: 'email' },
+                  { key: 'username', label: 'Username' },
+                  { key: 'phone', label: 'Phone' },
+                  { key: 'relationship_to_student', label: 'Relationship' },
+                  { key: 'address', label: 'Address' },
+                  { key: 'account_status', label: 'Account Status', type: 'select', options: statusOptions },
+                  { key: 'force_password_change', label: 'Force First Login Password Change', type: 'select', options: yesNoOptions }
+                ]}
+                onSave={() => saveManagedUserRecord(parentForm, setParentForm, 'parent')}
                 onDelete={(id, row) => handleDeleteManagedUser(row)}
-                onEdit={(row) => setParentForm({ id: row.id, full_name: row.full_name, phone: row.phone, email: row.email, relationship_to_student: row.relationship_to_student, address: row.address })}
+                onEdit={(row) => setParentForm({
+                  ...buildManagedForm('parent'),
+                  profile_id: row.profile_id || '',
+                  role_name: 'parent',
+                  full_name: row.full_name || '',
+                  email: row.email || '',
+                  username: row.username || '',
+                  phone: row.phone || '',
+                  account_status: row.account_status || row.status || 'active',
+                  force_password_change: String(row.force_password_change ?? true),
+                  relationship_to_student: row.relationship_to_student || '',
+                  address: row.address || ''
+                })}
                 rowActions={(row) => canSchoolAdminManageUsers ? <>
                   <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
                   <button className="btn secondary" onClick={() => copyText(buildManagedUserReferenceText(row), 'User credential reference copied to clipboard')}>Copy Credentials</button>
@@ -1360,28 +1653,65 @@
             )}
 
             {page === 'users' && (
-              <div className="card">
-                <h3>User Accounts & Credentials</h3>
-                <p className="subtle">School admin only. Create or reset credentials for managed users in this school. The latest temporary password is saved for reference and overwritten on each reset.</p>
-                <div className="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Status</th><th>Force Password Change</th><th>Latest Temp Password</th><th>Issued At</th><th>Actions</th></tr></thead><tbody>
-                  {[...studentsHook.rows, ...teachersHook.rows, ...parentsHook.rows, ...accountsHook.rows, ...principalsHook.rows].map(r => {
-                    const ref = managedUserRefMap[r.profile_id || r.id];
-                    return <tr key={r.profile_id || r.id}>
-                      <td>{r.full_name}</td>
-                      <td>{r.role_name || r.profile_role || 'linked'}</td>
-                      <td>{r.email}</td>
-                      <td>{r.account_status || r.status}</td>
-                      <td>{String(r.force_password_change ?? false)}</td>
-                      <td>{ref?.temporary_password || '-'}</td>
-                      <td>{ref?.issued_at ? formatDate(ref.issued_at) : '-'}</td>
-                      <td>{canSchoolAdminManageUsers ? <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-                        <button className="btn" onClick={()=>handleProvisionManagedUser(r)}>{ref ? 'Reset Login' : 'Create Login'}</button>
-                        <button className="btn secondary" onClick={()=>copyText(buildManagedUserReferenceText(r), 'User credential reference copied to clipboard')}>Copy</button>
-                        <button className="btn danger" onClick={()=>handleDeleteManagedUser(r)}>Permanent Delete</button>
-                      </div> : <span className="subtle">School admin only</span>}</td>
-                    </tr>
-                  })}
-                </tbody></table></div>
+              <div className="grid">
+                <div className="card">
+                  <h3>User Accounts & Credentials</h3>
+                  <p className="subtle">Create and manage Principal, Teacher, Student, Parent, and Accounts Office staff records here. Changes reflect immediately in the relevant user sections.</p>
+                  <div className="form-grid-3">
+                    <div className="field"><label>Role</label><select value={userForm.role_name} onChange={(e)=>setUserForm(buildManagedForm(e.target.value))}>{managedRoleOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+                    <div className="field"><label>Full Name</label><input value={userForm.full_name} onChange={(e)=>setUserForm({...userForm, full_name:e.target.value})} /></div>
+                    <div className="field"><label>Email</label><input type="email" value={userForm.email} onChange={(e)=>setUserForm({...userForm, email:e.target.value})} /></div>
+                    <div className="field"><label>Username</label><input value={userForm.username} onChange={(e)=>setUserForm({...userForm, username:e.target.value})} /></div>
+                    <div className="field"><label>Phone</label><input value={userForm.phone} onChange={(e)=>setUserForm({...userForm, phone:e.target.value})} /></div>
+                    <div className="field"><label>Account Status</label><select value={userForm.account_status} onChange={(e)=>setUserForm({...userForm, account_status:e.target.value})}>{statusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+                    <div className="field"><label>Force First Login Password Change</label><select value={String(userForm.force_password_change)} onChange={(e)=>setUserForm({...userForm, force_password_change:e.target.value})}>{yesNoOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+                    {(userForm.role_name === 'student' || userForm.role_name === 'teacher') && <div className="field"><label>Class ID</label><select value={userForm.class_id} onChange={(e)=>setUserForm({...userForm, class_id:e.target.value})}>{classOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>}
+                    {userForm.role_name === 'student' && <><div className="field"><label>Student No</label><input value={userForm.student_no} onChange={(e)=>setUserForm({...userForm, student_no:e.target.value})} /></div><div className="field"><label>Gender</label><select value={userForm.gender} onChange={(e)=>setUserForm({...userForm, gender:e.target.value})}>{genderOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div><div className="field"><label>Date of Birth</label><input type="date" value={userForm.date_of_birth} onChange={(e)=>setUserForm({...userForm, date_of_birth:e.target.value})} /></div><div className="field"><label>Guardian Contact</label><input value={userForm.guardian_contact} onChange={(e)=>setUserForm({...userForm, guardian_contact:e.target.value})} /></div><div className="field"><label>Address</label><input value={userForm.address} onChange={(e)=>setUserForm({...userForm, address:e.target.value})} /></div></>}
+                    {userForm.role_name === 'teacher' && <><div className="field"><label>Staff No</label><input value={userForm.staff_no} onChange={(e)=>setUserForm({...userForm, staff_no:e.target.value})} /></div><div className="field"><label>Subject Specialty</label><select value={userForm.subject_specialty} onChange={(e)=>setUserForm({...userForm, subject_specialty:e.target.value})}><option value="">Select Specialty</option>{subjectOptions.map(v => <option key={v} value={v}>{v}</option>)}</select></div><div className="field"><label>Qualification</label><select value={userForm.qualification} onChange={(e)=>setUserForm({...userForm, qualification:e.target.value})}><option value="">Select Qualification</option>{qualificationOptions.map(v => <option key={v} value={v}>{v}</option>)}</select></div><div className="field"><label>Assign Subjects</label><select multiple value={userForm.assigned_subjects} onChange={(e)=>setUserForm({...userForm, assigned_subjects:Array.from(e.target.selectedOptions).map(o=>o.value)})} style={{minHeight:120}}>{subjectOptions.map(v => <option key={v} value={v}>{v}</option>)}</select></div><div className="field"><label>Assign Classes</label><select multiple value={userForm.assigned_class_ids} onChange={(e)=>setUserForm({...userForm, assigned_class_ids:Array.from(e.target.selectedOptions).map(o=>o.value)})} style={{minHeight:120}}>{classOptions.filter(o=>o.value).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div></>}
+                    {userForm.role_name === 'parent' && <><div className="field"><label>Relationship to Student</label><input value={userForm.relationship_to_student} onChange={(e)=>setUserForm({...userForm, relationship_to_student:e.target.value})} /></div><div className="field"><label>Address</label><input value={userForm.address} onChange={(e)=>setUserForm({...userForm, address:e.target.value})} /></div></>}
+                  </div>
+                  <div style={{display:'flex', gap:10, marginTop:16, flexWrap:'wrap'}}>
+                    <button className="btn" onClick={()=>saveManagedUserRecord(userForm, setUserForm, userForm.role_name)}>Save User Record</button>
+                    {userForm.role_name === 'student' && <button className="btn secondary" onClick={()=>generateStudentNoForCurrentSchool(setUserForm)}>Generate Student No</button>}
+                    {userForm.role_name === 'teacher' && <button className="btn secondary" onClick={()=>generateStaffNoForCurrentSchool(setUserForm)}>Generate Staff No</button>}
+                    <button className="btn secondary" onClick={()=>setUserForm(buildManagedForm('student'))}>Reset Form</button>
+                  </div>
+                </div>
+                <div className="card">
+                  <h3>Managed User Accounts</h3>
+                  <div className="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Username</th><th>Status</th><th>Force Password Change</th><th>Latest Temp Password</th><th>Issued At</th><th>Actions</th></tr></thead><tbody>
+                    {managedUsersRows.length === 0 && <tr><td colSpan="9"><div className="empty">No managed user records found</div></td></tr>}
+                    {managedUsersRows.map(r => {
+                      const ref = managedUserRefMap[r.profile_id];
+                      const draft = getManagedControlDraft(r);
+                      return <tr key={r.profile_id}>
+                        <td>{r.full_name}</td>
+                        <td>{r.role_name}</td>
+                        <td>{r.email || '-'}</td>
+                        <td>{r.username || '-'}</td>
+                        <td>
+                          <select value={draft.account_status} onChange={(e)=>updateManagedControlDraft(r.profile_id, { account_status: e.target.value })}>
+                            {statusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </select>
+                        </td>
+                        <td>
+                          <select value={draft.force_password_change} onChange={(e)=>updateManagedControlDraft(r.profile_id, { force_password_change: e.target.value })}>
+                            {yesNoOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </select>
+                        </td>
+                        <td>{ref?.temporary_password || '-'}</td>
+                        <td>{ref?.issued_at ? formatDate(ref.issued_at) : '-'}</td>
+                        <td>{canSchoolAdminManageUsers ? <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                          <button className="btn secondary" onClick={()=>fillManagedUserForm(r)}>Edit</button>
+                          <button className="btn secondary" onClick={()=>applyManagedUserControls(r)}>Apply Controls</button>
+                          <button className="btn" onClick={()=>handleProvisionManagedUser(r)}>{ref ? 'Reset Login' : 'Create Login'}</button>
+                          <button className="btn secondary" onClick={()=>copyText(buildManagedUserReferenceText(r), 'User credential reference copied to clipboard')}>Copy</button>
+                          <button className="btn danger" onClick={()=>handleDeleteManagedUser(r)}>Delete</button>
+                        </div> : <span className="subtle">School admin only</span>}</td>
+                      </tr>
+                    })}
+                  </tbody></table></div>
+                </div>
               </div>
             )}
 
