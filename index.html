@@ -139,7 +139,7 @@
 
     const SUPABASE_URL = "https://ccsghmcxinuvgndzlfry.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_ieRCsI82gXzIOhxqouQJvg_rOXmB__2";
-    const STORAGE_BUCKET = "school-assets";
+    const STORAGE_BUCKET = "school-logos";
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const ROLE = {
@@ -259,6 +259,14 @@
       return supabaseClient.storage.from(STORAGE_BUCKET).upload(path, file, { upsert: true });
     }
 
+    function getFriendlyErrorMessage(error) {
+      const message = error?.message || "Unexpected error";
+      if (/Failed to fetch/i.test(message)) {
+        return "Network or configuration error. Confirm the Supabase URL and publishable key are correct, your internet connection is working, and open this app through http://localhost or a hosted site instead of file://.";
+      }
+      return message;
+    }
+
     function AuthScreen({ onAuthed }) {
       const [tab, setTab] = useState("login");
       const [status, setStatus] = useState({ type: "", text: "" });
@@ -275,8 +283,9 @@
         setStatus({ type: "", text: "" });
         const form = isSuper ? superForm : loginForm;
         const { error } = await signIn(form.email, form.password);
-        if (error) return setStatus({ type: "danger", text: error.message });
-        onAuthed();
+        if (error) return setStatus({ type: "danger", text: getFriendlyErrorMessage(error) });
+        // Let onAuthStateChange handle bootstrap after sign in to avoid race conditions.
+        setStatus({ type: "success", text: "Login successful. Preparing your dashboard..." });
       };
 
       const handleRegister = async (e) => {
@@ -295,7 +304,7 @@
           requested_password: registerForm.password
         };
         const { data, error } = await supabaseClient.rpc("public_register_school_admin", { payload });
-        if (error) return setStatus({ type: "danger", text: error.message });
+        if (error) return setStatus({ type: "danger", text: getFriendlyErrorMessage(error) });
         const file = logoRef.current?.files?.[0];
         if (file && data) {
           await uploadFile(`school-registrations/${data}/${Date.now()}-${file.name}`, file);
@@ -543,18 +552,44 @@
       const daysRemaining = school?.license_end_date ? Math.ceil((new Date(school.license_end_date) - new Date()) / 86400000) : null;
 
       const loadCore = async () => {
-        const data = await getCurrentProfile();
-        const p = data?.profile || null;
-        setProfile(p);
-        if (p?.school_id) {
-          const { data: schoolData } = await supabaseClient.from("schools").select("*").eq("id", p.school_id).single();
-          setSchool(schoolData || null);
-          const initialPage = NAV_BY_ROLE[p.role_name]?.[0] || "dashboard";
-          setPage(initialPage);
-        } else if (p?.role_name === ROLE.SUPER_ADMIN) {
-          setPage("super-dashboard");
+        setSessionReady(false);
+        try {
+          const data = await getCurrentProfile();
+          const p = data?.profile || null;
+          setProfile(p);
+
+          if (!p) {
+            setSchool(null);
+            setNotice({ type: 'danger', text: 'Login succeeded, but no profile record was found for this user. Check public.profiles and RLS.' });
+            return;
+          }
+
+          if (p.school_id) {
+            const { data: schoolData, error: schoolError } = await supabaseClient
+              .from("schools")
+              .select("*")
+              .eq("id", p.school_id)
+              .maybeSingle();
+
+            if (schoolError) {
+              setNotice({ type: 'danger', text: `Profile loaded, but school record could not be read: ${schoolError.message}` });
+            }
+
+            setSchool(schoolData || null);
+            const initialPage = NAV_BY_ROLE[p.role_name]?.[0] || "dashboard";
+            setPage(initialPage);
+          } else if (p.role_name === ROLE.SUPER_ADMIN) {
+            setSchool(null);
+            setPage("super-dashboard");
+          }
+        } catch (err) {
+          console.error('loadCore failed:', err);
+          setProfile(null);
+          setSchool(null);
+          setNotice({ type: 'danger', text: err?.message || 'Application bootstrap failed during login.' });
+        } finally {
+          setSessionReady(true);
         }
-        setSessionReady(true);
       };
 
       const refreshAll = async () => {
