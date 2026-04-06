@@ -675,7 +675,31 @@
       const deleteEntity = async (table, id) => withNotice(async () => supabaseClient.from(table).delete().eq('id', id), `${table} deleted successfully`);
 
       const handleSchoolApproval = async (registrationId, action) => {
-        await withNotice(async () => supabaseClient.rpc('process_school_registration', { reg_id: registrationId, decision: action }), `Registration ${action}`);
+        setNotice({ type: '', text: '' });
+
+        if (action === 'approved') {
+          const { error } = await supabaseClient.rpc('approve_school_registration', {
+            p_registration_id: registrationId
+          });
+          if (error) {
+            setNotice({ type: 'danger', text: error.message || 'Failed to approve registration' });
+            return;
+          }
+          setNotice({ type: 'success', text: 'School registration approved successfully' });
+          await refreshAll();
+          return;
+        }
+
+        const { error } = await supabaseClient.rpc('process_school_registration', {
+          reg_id: registrationId,
+          decision: action
+        });
+        if (error) {
+          setNotice({ type: 'danger', text: error.message || `Failed to mark registration ${action}` });
+          return;
+        }
+        setNotice({ type: 'success', text: `Registration ${action}` });
+        await refreshAll();
       };
 
       const handleProvisionSchoolAdmin = async (schoolId) => {
@@ -717,20 +741,46 @@
         if (!confirmed) return;
 
         setNotice({ type: '', text: '' });
-        const { data, error } = await supabaseClient.functions.invoke('delete-school-registration', {
-          body: { registrationId }
-        });
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        const token = sessionData?.session?.access_token;
 
-        if (error) {
-          setNotice({ type: 'danger', text: error.message || 'Failed to permanently delete school registration' });
+        if (!token) {
+          setNotice({ type: 'danger', text: 'No active session token found. Please log in again.' });
           return;
         }
 
-        setNotice({
-          type: 'success',
-          text: data?.message || `${schoolName || 'School record'} deleted permanently.`
-        });
-        await refreshAll();
+        try {
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/delete-school-registration`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ registrationId })
+          });
+
+          const payload = await res.json().catch(() => ({}));
+
+          if (!res.ok) {
+            setNotice({
+              type: 'danger',
+              text: payload?.error || `Delete failed with status ${res.status}`
+            });
+            return;
+          }
+
+          setNotice({
+            type: 'success',
+            text: payload?.message || `${schoolName || 'School record'} deleted permanently.`
+          });
+          await refreshAll();
+        } catch (err) {
+          setNotice({
+            type: 'danger',
+            text: err?.message || 'Failed to send a request to the Edge Function'
+          });
+        }
       };
 
       const buildSchoolAdminReferenceText = (schoolRow) => {
