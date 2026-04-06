@@ -139,7 +139,7 @@
 
     const SUPABASE_URL = "https://ccsghmcxinuvgndzlfry.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_ieRCsI82gXzIOhxqouQJvg_rOXmB__2";
-    const STORAGE_BUCKET = "school-logos";
+    const STORAGE_BUCKET = "school-assets";
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const ROLE = {
@@ -259,14 +259,6 @@
       return supabaseClient.storage.from(STORAGE_BUCKET).upload(path, file, { upsert: true });
     }
 
-    function getFriendlyErrorMessage(error) {
-      const message = error?.message || "Unexpected error";
-      if (/Failed to fetch/i.test(message)) {
-        return "Network or configuration error. Confirm the Supabase URL and publishable key are correct, your internet connection is working, and open this app through http://localhost or a hosted site instead of file://.";
-      }
-      return message;
-    }
-
     function AuthScreen({ onAuthed }) {
       const [tab, setTab] = useState("login");
       const [status, setStatus] = useState({ type: "", text: "" });
@@ -283,7 +275,7 @@
         setStatus({ type: "", text: "" });
         const form = isSuper ? superForm : loginForm;
         const { error } = await signIn(form.email, form.password);
-        if (error) return setStatus({ type: "danger", text: getFriendlyErrorMessage(error) });
+        if (error) return setStatus({ type: "danger", text: error.message });
         onAuthed();
       };
 
@@ -303,7 +295,7 @@
           requested_password: registerForm.password
         };
         const { data, error } = await supabaseClient.rpc("public_register_school_admin", { payload });
-        if (error) return setStatus({ type: "danger", text: getFriendlyErrorMessage(error) });
+        if (error) return setStatus({ type: "danger", text: error.message });
         const file = logoRef.current?.files?.[0];
         if (file && data) {
           await uploadFile(`school-registrations/${data}/${Date.now()}-${file.name}`, file);
