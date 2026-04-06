@@ -419,7 +419,7 @@
       );
     }
 
-    function GenericCrudPage({ title, description, columns, rows, formState, setFormState, onSave, onDelete, onEdit, loading, filters, children, extraActions }) {
+    function GenericCrudPage({ title, description, columns, rows, formState, setFormState, onSave, onDelete, onEdit, loading, filters, children, extraActions, rowActions }) {
       return (
         <div className="grid">
           <div className="card">
@@ -455,7 +455,8 @@
                       <td>
                         <div style={{display:'flex', gap:8}}>
                           <button className="btn secondary" onClick={() => onEdit(row)}>Edit</button>
-                          <button className="btn danger" onClick={() => onDelete(row.id)}>Delete</button>
+                          <button className="btn danger" onClick={() => onDelete(row.id, row)}>Delete</button>
+                          {rowActions ? rowActions(row) : null}
                         </div>
                       </td>
                     </tr>
@@ -533,6 +534,7 @@
       const feesHook = useSupabaseTable("v_fee_payments_full", "*");
       const schoolsHook = useSupabaseTable("schools", "*");
       const schoolAdminRefsHook = useSupabaseTable("v_school_admin_login_references", "*");
+      const userLoginRefsHook = useSupabaseTable("v_user_login_references", "*");
       const registrationsHook = useSupabaseTable("school_registrations", "*");
       const auditHook = useSupabaseTable("audit_logs", "*");
       const notificationsHook = useSupabaseTable("notifications", "*");
@@ -553,6 +555,7 @@
       const bootingRef = useRef(false);
 
       const role = profile?.role_name;
+      const canSchoolAdminManageUsers = role === ROLE.ADMIN;
       const licenseExpired = school?.license_state === "expired" || school?.system_locked_for_usage;
       const daysRemaining = school?.license_end_date ? Math.ceil((new Date(school.license_end_date) - new Date()) / 86400000) : null;
 
@@ -606,7 +609,7 @@
         await Promise.all([
           studentsHook.fetchRows(), teachersHook.fetchRows(), parentsHook.fetchRows(), accountsHook.fetchRows(), principalsHook.fetchRows(),
           classesHook.fetchRows(), subjectsHook.fetchRows(), attendanceHook.fetchRows(), gradesHook.fetchRows(), feesHook.fetchRows(),
-          schoolsHook.fetchRows((q)=>q.order('created_at', { ascending:false })), schoolAdminRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), registrationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
+          schoolsHook.fetchRows((q)=>q.order('created_at', { ascending:false })), schoolAdminRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), userLoginRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), registrationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
           auditHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(100)), notificationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
           timetableHook.fetchRows((q)=>q.order('day_of_week')), chatHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(200))
         ]);
@@ -796,6 +799,126 @@
         ].join('\n');
       };
 
+      const buildManagedUserReferenceText = (row) => {
+        const ref = managedUserRefMap[row.profile_id || row.id];
+        if (!ref) return `${row.full_name || 'User'}\nNo saved login credential reference.`;
+        return [
+          `School: ${ref.school_name || school?.name || ''}`,
+          `Role: ${ref.role_name || row.role_name || ''}`,
+          `Name: ${ref.full_name || row.full_name || ''}`,
+          `Email: ${ref.email || row.email || ''}`,
+          `Username: ${ref.username || row.username || ''}`,
+          `Temporary Password: ${ref.temporary_password || ''}`,
+          `Login URL: ${ref.login_url || window.location.origin + window.location.pathname}`,
+          `Issued At: ${formatDate(ref.issued_at)}`
+        ].join('\n');
+      };
+
+      const handleProvisionManagedUser = async (row) => {
+        if (!canSchoolAdminManageUsers) {
+          setNotice({ type: 'danger', text: 'Only the school admin can create or reset managed user credentials.' });
+          return;
+        }
+
+        const profileId = row.profile_id || row.id;
+        if (!profileId) {
+          setNotice({ type: 'danger', text: 'No linked profile was found for this record.' });
+          return;
+        }
+
+        setNotice({ type: '', text: '' });
+        const { data, error } = await supabaseClient.functions.invoke('provision-school-user', {
+          body: {
+            profileId,
+            loginUrl: window.location.origin + window.location.pathname
+          }
+        });
+
+        if (error) {
+          setNotice({ type: 'danger', text: error.message || 'Failed to provision user credentials' });
+          return;
+        }
+
+        const credentialsText = [
+          `School: ${data?.schoolName || school?.name || ''}`,
+          `Role: ${data?.roleName || row.role_name || ''}`,
+          `Name: ${data?.fullName || row.full_name || ''}`,
+          `Email: ${data?.email || row.email || ''}`,
+          `Username: ${data?.username || row.username || ''}`,
+          `Temporary Password: ${data?.temporaryPassword || ''}`,
+          `Login URL: ${data?.loginUrl || window.location.origin + window.location.pathname}`,
+          '',
+          'The user must log in with the temporary password and will be forced to change it on first login.'
+        ].join('\n');
+
+        await copyText(credentialsText, data?.mode === 'reset'
+          ? 'User credentials reset. Latest credentials copied to clipboard and saved for reference.'
+          : 'User login created. Credentials copied to clipboard and saved for reference.');
+
+        window.alert(credentialsText);
+        await refreshAll();
+      };
+
+      const handleDeleteManagedUser = async (row) => {
+        if (!canSchoolAdminManageUsers) {
+          setNotice({ type: 'danger', text: 'Only the school admin can permanently delete managed users.' });
+          return;
+        }
+
+        const profileId = row.profile_id || row.id;
+        if (!profileId) {
+          setNotice({ type: 'danger', text: 'No linked profile was found for this record.' });
+          return;
+        }
+
+        const confirmed = window.confirm(
+          `Permanently delete ${row.full_name || 'this user'}? This will remove the user profile, linked role record, saved login reference, and related dependent records. This action cannot be undone.`
+        );
+        if (!confirmed) return;
+
+        setNotice({ type: '', text: '' });
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        const token = sessionData?.session?.access_token;
+
+        if (!token) {
+          setNotice({ type: 'danger', text: 'No active session token found. Please log in again.' });
+          return;
+        }
+
+        try {
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/delete-school-user`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ profileId })
+          });
+
+          const payload = await res.json().catch(() => ({}));
+
+          if (!res.ok) {
+            setNotice({
+              type: 'danger',
+              text: payload?.error || `User delete failed with status ${res.status}`
+            });
+            return;
+          }
+
+          setNotice({
+            type: 'success',
+            text: payload?.message || `${row.full_name || 'User'} deleted permanently.`
+          });
+          await refreshAll();
+        } catch (err) {
+          setNotice({
+            type: 'danger',
+            text: err?.message || 'Failed to send a request to the Edge Function'
+          });
+        }
+      };
+
       const handleLicenseUpdate = async (schoolId, years, trialMode = false) => {
         await withNotice(async () => supabaseClient.rpc('extend_school_license', { p_school_id: schoolId, years_to_add: years, trial_mode: trialMode }), 'License updated');
       };
@@ -867,6 +990,7 @@
       }, [studentsHook.rows, teachersHook.rows, parentsHook.rows, accountsHook.rows, principalsHook.rows, classesHook.rows, feesHook.rows, auditHook.rows]);
 
       const schoolAdminRefMap = useMemo(() => Object.fromEntries((schoolAdminRefsHook.rows || []).map(r => [r.school_id, r])), [schoolAdminRefsHook.rows]);
+      const managedUserRefMap = useMemo(() => Object.fromEntries((userLoginRefsHook.rows || []).map(r => [r.profile_id, r])), [userLoginRefsHook.rows]);
 
       const copyText = async (text, successText = 'Copied to clipboard') => {
         try {
@@ -1088,8 +1212,12 @@
                 formState={studentForm}
                 setFormState={setStudentForm}
                 onSave={() => saveEntity('students', studentForm, ()=>setStudentForm({ id: '', full_name: '', student_no: '', class_id: '', gender: '', date_of_birth: '', guardian_contact: '', address: '' }))}
-                onDelete={(id) => deleteEntity('students', id)}
+                onDelete={(id, row) => handleDeleteManagedUser(row)}
                 onEdit={(row) => setStudentForm({ id: row.id, full_name: row.full_name, student_no: row.student_no, class_id: row.class_id, gender: row.gender, date_of_birth: row.date_of_birth, guardian_contact: row.guardian_contact, address: row.address })}
+                rowActions={(row) => canSchoolAdminManageUsers ? <>
+                  <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
+                  <button className="btn secondary" onClick={() => copyText(buildManagedUserReferenceText(row), 'User credential reference copied to clipboard')}>Copy Credentials</button>
+                </> : null}
                 extraActions={<><button className="btn secondary" onClick={()=>exportCsv(studentsHook.rows, 'students.csv')}>Export CSV</button><label className="btn secondary">Import CSV<input hidden type="file" accept=".csv" onChange={(e)=>handleBulkStudentImport(e.target.files?.[0])} /></label></>}
               >
                 {importStatus && <div className="footer-note">{importStatus}</div>}
@@ -1112,8 +1240,12 @@
                 formState={teacherForm}
                 setFormState={setTeacherForm}
                 onSave={() => saveEntity('teachers', teacherForm, ()=>setTeacherForm({ id: '', full_name: '', staff_no: '', phone: '', email: '', subject_specialty: '' }))}
-                onDelete={(id) => deleteEntity('teachers', id)}
+                onDelete={(id, row) => handleDeleteManagedUser(row)}
                 onEdit={(row) => setTeacherForm({ id: row.id, full_name: row.full_name, staff_no: row.staff_no, phone: row.phone, email: row.email, subject_specialty: row.subject_specialty })}
+                rowActions={(row) => canSchoolAdminManageUsers ? <>
+                  <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
+                  <button className="btn secondary" onClick={() => copyText(buildManagedUserReferenceText(row), 'User credential reference copied to clipboard')}>Copy Credentials</button>
+                </> : null}
               />
             )}
 
@@ -1133,31 +1265,84 @@
                 formState={parentForm}
                 setFormState={setParentForm}
                 onSave={() => saveEntity('parents', parentForm, ()=>setParentForm({ id: '', full_name: '', phone: '', email: '', relationship_to_student: '', address: '' }))}
-                onDelete={(id) => deleteEntity('parents', id)}
+                onDelete={(id, row) => handleDeleteManagedUser(row)}
                 onEdit={(row) => setParentForm({ id: row.id, full_name: row.full_name, phone: row.phone, email: row.email, relationship_to_student: row.relationship_to_student, address: row.address })}
+                rowActions={(row) => canSchoolAdminManageUsers ? <>
+                  <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
+                  <button className="btn secondary" onClick={() => copyText(buildManagedUserReferenceText(row), 'User credential reference copied to clipboard')}>Copy Credentials</button>
+                </> : null}
               />
             )}
 
             {page === 'accounts-staff' && (
               <div className="card">
                 <h3>Accounts Office Staff</h3>
-                <div className="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Phone</th></tr></thead><tbody>{accountsHook.rows.map(r => <tr key={r.id}><td>{r.full_name}</td><td>{r.email}</td><td>{r.phone}</td></tr>)}</tbody></table></div>
+                <div className="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Credentials</th><th>Actions</th></tr></thead><tbody>
+                  {accountsHook.rows.length === 0 && <tr><td colSpan="5"><div className="empty">No records found</div></td></tr>}
+                  {accountsHook.rows.map(r => {
+                    const ref = managedUserRefMap[r.profile_id];
+                    return <tr key={r.id}>
+                      <td>{r.full_name}</td>
+                      <td>{r.email}</td>
+                      <td>{r.phone}</td>
+                      <td>{ref ? <div className="subtle"><div>{ref.email || '-'}</div><div>Temp: {ref.temporary_password}</div><div>Issued: {formatDate(ref.issued_at)}</div></div> : <span className="subtle">No credentials saved yet</span>}</td>
+                      <td>{canSchoolAdminManageUsers ? <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                        <button className="btn" onClick={()=>handleProvisionManagedUser(r)}>{ref ? 'Reset Login' : 'Create Login'}</button>
+                        <button className="btn secondary" onClick={()=>copyText(buildManagedUserReferenceText(r), 'User credential reference copied to clipboard')}>Copy</button>
+                        <button className="btn danger" onClick={()=>handleDeleteManagedUser(r)}>Permanent Delete</button>
+                      </div> : <span className="subtle">School admin only</span>}</td>
+                    </tr>
+                  })}
+                </tbody></table></div>
               </div>
             )}
 
             {page === 'principals' && (
               <div className="card">
                 <h3>Principals</h3>
-                <div className="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Status</th></tr></thead><tbody>{principalsHook.rows.map(r => <tr key={r.id}><td>{r.full_name}</td><td>{r.email}</td><td>{r.phone}</td><td>{r.status}</td></tr>)}</tbody></table></div>
+                <div className="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th>Credentials</th><th>Actions</th></tr></thead><tbody>
+                  {principalsHook.rows.length === 0 && <tr><td colSpan="6"><div className="empty">No records found</div></td></tr>}
+                  {principalsHook.rows.map(r => {
+                    const ref = managedUserRefMap[r.profile_id];
+                    return <tr key={r.id}>
+                      <td>{r.full_name}</td>
+                      <td>{r.email}</td>
+                      <td>{r.phone}</td>
+                      <td>{r.status}</td>
+                      <td>{ref ? <div className="subtle"><div>{ref.email || '-'}</div><div>Temp: {ref.temporary_password}</div><div>Issued: {formatDate(ref.issued_at)}</div></div> : <span className="subtle">No credentials saved yet</span>}</td>
+                      <td>{canSchoolAdminManageUsers ? <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                        <button className="btn" onClick={()=>handleProvisionManagedUser(r)}>{ref ? 'Reset Login' : 'Create Login'}</button>
+                        <button className="btn secondary" onClick={()=>copyText(buildManagedUserReferenceText(r), 'User credential reference copied to clipboard')}>Copy</button>
+                        <button className="btn danger" onClick={()=>handleDeleteManagedUser(r)}>Permanent Delete</button>
+                      </div> : <span className="subtle">School admin only</span>}</td>
+                    </tr>
+                  })}
+                </tbody></table></div>
               </div>
             )}
 
             {page === 'users' && (
               <div className="card">
                 <h3>User Accounts & Credentials</h3>
-                <p className="subtle">Use the RPC functions in the SQL schema for Admin controlled account creation, resets, activation, deactivation, archive, and forced first login password changes.</p>
-                <div className="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Status</th><th>Force Password Change</th></tr></thead><tbody>
-                  {[...studentsHook.rows, ...teachersHook.rows, ...parentsHook.rows, ...accountsHook.rows, ...principalsHook.rows].map(r => <tr key={r.profile_id || r.id}><td>{r.full_name}</td><td>{r.role_name || r.profile_role || 'linked'}</td><td>{r.email}</td><td>{r.account_status || r.status}</td><td>{String(r.force_password_change ?? false)}</td></tr>)}
+                <p className="subtle">School admin only. Create or reset credentials for managed users in this school. The latest temporary password is saved for reference and overwritten on each reset.</p>
+                <div className="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Status</th><th>Force Password Change</th><th>Latest Temp Password</th><th>Issued At</th><th>Actions</th></tr></thead><tbody>
+                  {[...studentsHook.rows, ...teachersHook.rows, ...parentsHook.rows, ...accountsHook.rows, ...principalsHook.rows].map(r => {
+                    const ref = managedUserRefMap[r.profile_id || r.id];
+                    return <tr key={r.profile_id || r.id}>
+                      <td>{r.full_name}</td>
+                      <td>{r.role_name || r.profile_role || 'linked'}</td>
+                      <td>{r.email}</td>
+                      <td>{r.account_status || r.status}</td>
+                      <td>{String(r.force_password_change ?? false)}</td>
+                      <td>{ref?.temporary_password || '-'}</td>
+                      <td>{ref?.issued_at ? formatDate(ref.issued_at) : '-'}</td>
+                      <td>{canSchoolAdminManageUsers ? <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                        <button className="btn" onClick={()=>handleProvisionManagedUser(r)}>{ref ? 'Reset Login' : 'Create Login'}</button>
+                        <button className="btn secondary" onClick={()=>copyText(buildManagedUserReferenceText(r), 'User credential reference copied to clipboard')}>Copy</button>
+                        <button className="btn danger" onClick={()=>handleDeleteManagedUser(r)}>Permanent Delete</button>
+                      </div> : <span className="subtle">School admin only</span>}</td>
+                    </tr>
+                  })}
                 </tbody></table></div>
               </div>
             )}
