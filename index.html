@@ -231,16 +231,19 @@
       return { rows, setRows, loading, error, fetchRows };
     }
 
-    async function getCurrentProfile() {
-      const { data: authData } = await supabaseClient.auth.getUser();
-      const authUser = authData?.user;
+    async function getCurrentProfile(authUserOverride = null) {
+      let authUser = authUserOverride;
+      if (!authUser) {
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        authUser = sessionData?.session?.user || null;
+      }
       if (!authUser) return null;
       const { data, error } = await supabaseClient
         .from("v_current_user_profile")
         .select("*")
         .single();
-      if (error) return { authUser, profile: null };
-      return { authUser, profile: data };
+      if (error) return { authUser, profile: null, profileError: error };
+      return { authUser, profile: data, profileError: null };
     }
 
     async function signIn(email, password) {
@@ -546,21 +549,25 @@
       const [notificationForm, setNotificationForm] = useState({ id: "", title: "", message: "", audience_role: "all" });
       const [chatForm, setChatForm] = useState({ recipient_profile_id: "", message_text: "" });
       const [importStatus, setImportStatus] = useState("");
+      const bootingRef = useRef(false);
 
       const role = profile?.role_name;
       const licenseExpired = school?.license_state === "expired" || school?.system_locked_for_usage;
       const daysRemaining = school?.license_end_date ? Math.ceil((new Date(school.license_end_date) - new Date()) / 86400000) : null;
 
-      const loadCore = async () => {
+      const loadCore = async (authUserOverride = null) => {
+        if (bootingRef.current) return;
+        bootingRef.current = true;
         setSessionReady(false);
         try {
-          const data = await getCurrentProfile();
+          const data = await getCurrentProfile(authUserOverride);
           const p = data?.profile || null;
           setProfile(p);
 
           if (!p) {
             setSchool(null);
-            setNotice({ type: 'danger', text: 'Login succeeded, but no profile record was found for this user. Check public.profiles and RLS.' });
+            const reason = data?.profileError?.message ? ` Details: ${data.profileError.message}` : '';
+            setNotice({ type: 'danger', text: `Login succeeded, but no readable profile record was found for this user. Check public.profiles, the v_current_user_profile view, and RLS.${reason}` });
             return;
           }
 
@@ -588,6 +595,7 @@
           setSchool(null);
           setNotice({ type: 'danger', text: err?.message || 'Application bootstrap failed during login.' });
         } finally {
+          bootingRef.current = false;
           setSessionReady(true);
         }
       };
@@ -604,12 +612,29 @@
       };
 
       useEffect(() => {
-        supabaseClient.auth.getSession().then(async ({ data }) => {
-          if (data.session) await loadCore(); else setSessionReady(true);
+        supabaseClient.auth.getSession().then(({ data }) => {
+          if (data.session) {
+            loadCore(data.session.user);
+          } else {
+            setSessionReady(true);
+          }
         });
-        const { data: sub } = supabaseClient.auth.onAuthStateChange(async (_evt, session) => {
-          if (session) await loadCore(); else { setProfile(null); setSchool(null); setSessionReady(true); }
+
+        const { data: sub } = supabaseClient.auth.onAuthStateChange((evt, session) => {
+          if (!session) {
+            setProfile(null);
+            setSchool(null);
+            setSessionReady(true);
+            return;
+          }
+
+          if (evt === 'SIGNED_IN' || evt === 'INITIAL_SESSION' || evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED') {
+            window.setTimeout(() => {
+              loadCore(session.user);
+            }, 0);
+          }
         });
+
         return () => sub.subscription.unsubscribe();
       }, []);
 
