@@ -811,6 +811,9 @@
       const isSuperAdmin = role === ROLE.SUPER_ADMIN;
       const canSchoolAdminManageUsers = role === ROLE.ADMIN;
       const showManagedWelcome = [ROLE.STUDENT, ROLE.TEACHER, ROLE.PARENT, ROLE.PRINCIPAL, ROLE.ACCOUNTS].includes(role);
+      const effectiveNotice = page === 'approvals' && notice.text === 'Only the school admin can permanently delete managed users.'
+        ? { type: '', text: '' }
+        : notice;
 
       const requireSuperAdminAction = () => {
         if (isSuperAdmin) return true;
@@ -1788,7 +1791,7 @@
               </div>
             </div>
 
-            {notice.text && <div className={classNames("banner", notice.type)}>{notice.text}</div>}
+            {effectiveNotice.text && <div className={classNames("banner", effectiveNotice.type)}>{effectiveNotice.text}</div>}
 
             {page === 'super-dashboard' && (
               <div className="grid">
