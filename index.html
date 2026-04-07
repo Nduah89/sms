@@ -489,7 +489,66 @@
         admin_full_name: "", admin_email: "", admin_phone: "", password: ""
       });
       const [superForm, setSuperForm] = useState({ email: "", password: "" });
+      const [isGeneratingSchoolCode, setIsGeneratingSchoolCode] = useState(false);
       const logoRef = useRef(null);
+
+      const buildSchoolCodeBase = (schoolName) => {
+        const words = String(schoolName || '')
+          .toUpperCase()
+          .replace(/[^A-Z0-9\s]/g, ' ')
+          .split(/\s+/)
+          .filter(Boolean);
+
+        const initials = words.map((word) => word[0]).join('').slice(0, 6);
+        const fallback = words.join('').slice(0, 6);
+        return (initials || fallback || 'SCH').toUpperCase();
+      };
+
+      const buildLocalSchoolCode = (schoolName) => {
+        const base = buildSchoolCodeBase(schoolName);
+        const seed = String(schoolName || '')
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, '')
+          .split('')
+          .reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+        const suffix = String((seed % 900) + 100).padStart(3, '0');
+        return `${base}${suffix}`;
+      };
+
+      const requestGeneratedSchoolCode = async (schoolName) => {
+        const trimmedName = String(schoolName || '').trim();
+        if (!trimmedName) return '';
+        const fallbackCode = buildLocalSchoolCode(trimmedName);
+        const { data, error } = await supabaseClient.rpc('generate_school_code', { p_school_name: trimmedName });
+        if (error) return fallbackCode;
+        return String(data || fallbackCode).toUpperCase();
+      };
+
+      useEffect(() => {
+        const trimmedName = String(registerForm.school_name || '').trim();
+
+        if (!trimmedName) {
+          setRegisterForm((prev) => ({ ...prev, school_code: '' }));
+          return;
+        }
+
+        let active = true;
+        const timer = setTimeout(async () => {
+          setIsGeneratingSchoolCode(true);
+          const generatedCode = await requestGeneratedSchoolCode(trimmedName);
+          if (!active) return;
+          setRegisterForm((prev) => {
+            if (String(prev.school_name || '').trim() !== trimmedName) return prev;
+            return { ...prev, school_code: generatedCode };
+          });
+          setIsGeneratingSchoolCode(false);
+        }, 350);
+
+        return () => {
+          active = false;
+          clearTimeout(timer);
+        };
+      }, [registerForm.school_name]);
 
       const handleLogin = async (e, isSuper = false) => {
         e.preventDefault();
@@ -510,12 +569,18 @@
       const handleRegister = async (e) => {
         e.preventDefault();
         setStatus({ type: "", text: "" });
+
+        const resolvedSchoolCode = await requestGeneratedSchoolCode(registerForm.school_name);
+        if (!resolvedSchoolCode) {
+          return setStatus({ type: "danger", text: "Enter the school name first so the system can generate a unique school code." });
+        }
+
         const payload = {
           school_name: registerForm.school_name,
           school_address: registerForm.school_address,
           school_contact: registerForm.school_contact,
           municipality: registerForm.municipality,
-          school_code: registerForm.school_code,
+          school_code: resolvedSchoolCode,
           years_requested: Number(registerForm.years_requested),
           admin_full_name: registerForm.admin_full_name,
           admin_email: registerForm.admin_email,
@@ -528,7 +593,8 @@
         if (file && data) {
           await uploadFile(`school-registrations/${data}/${Date.now()}-${file.name}`, file);
         }
-        setStatus({ type: "success", text: "Registration submitted. Await Super Admin approval." });
+        setRegisterForm((prev) => ({ ...prev, school_code: resolvedSchoolCode }));
+        setStatus({ type: "success", text: `Registration submitted. School code: ${resolvedSchoolCode}. Await Super Admin approval.` });
         setTab("login");
       };
 
@@ -574,7 +640,11 @@
                 <form onSubmit={handleRegister} className="grid">
                   <div className="form-grid">
                     <div className="field"><label>School Full Name</label><input value={registerForm.school_name} onChange={(e) => setRegisterForm({...registerForm, school_name: e.target.value})} required /></div>
-                    <div className="field"><label>School Code</label><input value={registerForm.school_code} onChange={(e) => setRegisterForm({...registerForm, school_code: e.target.value})} required /></div>
+                    <div className="field">
+                      <label>School Code (Auto Generated)</label>
+                      <input value={registerForm.school_code} readOnly placeholder="Generated from school name" required />
+                      <small className="subtle">{isGeneratingSchoolCode ? 'Generating unique school code...' : 'This code is generated automatically from the school name and checked for uniqueness.'}</small>
+                    </div>
                     <div className="field"><label>School Contact</label><input value={registerForm.school_contact} onChange={(e) => setRegisterForm({...registerForm, school_contact: e.target.value})} required /></div>
                     <div className="field"><label>Municipality</label><input value={registerForm.municipality} onChange={(e) => setRegisterForm({...registerForm, municipality: e.target.value})} required /></div>
                     <div className="field"><label>School Address</label><input value={registerForm.school_address} onChange={(e) => setRegisterForm({...registerForm, school_address: e.target.value})} required /></div>
@@ -811,9 +881,6 @@
       const isSuperAdmin = role === ROLE.SUPER_ADMIN;
       const canSchoolAdminManageUsers = role === ROLE.ADMIN;
       const showManagedWelcome = [ROLE.STUDENT, ROLE.TEACHER, ROLE.PARENT, ROLE.PRINCIPAL, ROLE.ACCOUNTS].includes(role);
-      const effectiveNotice = page === 'approvals' && notice.text === 'Only the school admin can permanently delete managed users.'
-        ? { type: '', text: '' }
-        : notice;
 
       const requireSuperAdminAction = () => {
         if (isSuperAdmin) return true;
@@ -1791,7 +1858,7 @@
               </div>
             </div>
 
-            {effectiveNotice.text && <div className={classNames("banner", effectiveNotice.type)}>{effectiveNotice.text}</div>}
+            {notice.text && <div className={classNames("banner", notice.type)}>{notice.text}</div>}
 
             {page === 'super-dashboard' && (
               <div className="grid">
