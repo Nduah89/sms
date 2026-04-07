@@ -808,8 +808,15 @@
       const bootingRef = useRef(false);
 
       const role = profile?.role_name;
+      const isSuperAdmin = role === ROLE.SUPER_ADMIN;
       const canSchoolAdminManageUsers = role === ROLE.ADMIN;
       const showManagedWelcome = [ROLE.STUDENT, ROLE.TEACHER, ROLE.PARENT, ROLE.PRINCIPAL, ROLE.ACCOUNTS].includes(role);
+
+      const requireSuperAdminAction = () => {
+        if (isSuperAdmin) return true;
+        setNotice({ type: 'danger', text: 'Only the Super Admin can approve, deny, or permanently delete school registrations.' });
+        return false;
+      };
       const licenseExpired = school?.license_state === "expired" || school?.system_locked_for_usage;
       const daysRemaining = school?.license_end_date ? Math.ceil((new Date(school.license_end_date) - new Date()) / 86400000) : null;
 
@@ -1133,6 +1140,7 @@
       const deleteEntity = async (table, id) => withNotice(async () => supabaseClient.from(table).delete().eq('id', id), `${table} deleted successfully`);
 
       const handleSchoolApproval = async (registrationId, action) => {
+        if (!requireSuperAdminAction()) return;
         setNotice({ type: '', text: '' });
 
         if (action === 'approved') {
@@ -1193,6 +1201,7 @@
       };
 
       const handlePermanentDeleteRegistration = async (registrationId, schoolName, status) => {
+        if (!requireSuperAdminAction()) return;
         const confirmed = window.confirm(
           `Permanently delete ${schoolName || 'this registration'}? This will remove the registration record and, if already approved, the linked school data, profiles, and related records. This action cannot be undone.`
         );
@@ -1835,8 +1844,9 @@
               <div className="card">
                 <h3>School Registration Approval Records</h3>
                 <p className="subtle">Super Admin can approve, deny, or permanently delete pending and approved registration records. Deleting an approved record also removes the linked school and related data.</p>
+                {!isSuperAdmin && <div className="banner danger">Only the Super Admin can use Approve, Deny, and Permanent Delete in School Approvals.</div>}
                 <div className="table-wrap"><table><thead><tr><th>School</th><th>Code</th><th>Years</th><th>Admin</th><th>Email</th><th>Status</th><th>Created School</th><th>Actions</th></tr></thead><tbody>
-                  {registrationsHook.rows.map(r => <tr key={r.id}><td>{r.school_name}</td><td>{r.school_code}</td><td>{r.years_requested}</td><td>{r.admin_full_name}</td><td>{r.admin_email}</td><td><span className={classNames('chip', r.status==='approved' ? 'success' : r.status==='pending' ? 'warning' : 'danger')}>{r.status}</span></td><td>{r.created_school_id ? 'Yes' : 'No'}</td><td><div style={{display:'flex', gap:8, flexWrap:'wrap'}}>{r.status !== 'approved' && <button className="btn success" onClick={()=>handleSchoolApproval(r.id, 'approved')}>Approve</button>}{r.status !== 'denied' && <button className="btn secondary" onClick={()=>handleSchoolApproval(r.id, 'denied')}>Deny</button>}<button className="btn danger" onClick={()=>handlePermanentDeleteRegistration(r.id, r.school_name, r.status)}>Permanent Delete</button></div></td></tr>)}
+                  {registrationsHook.rows.map(r => <tr key={r.id}><td>{r.school_name}</td><td>{r.school_code}</td><td>{r.years_requested}</td><td>{r.admin_full_name}</td><td>{r.admin_email}</td><td><span className={classNames('chip', r.status==='approved' ? 'success' : r.status==='pending' ? 'warning' : 'danger')}>{r.status}</span></td><td>{r.created_school_id ? 'Yes' : 'No'}</td><td><div style={{display:'flex', gap:8, flexWrap:'wrap'}}>{r.status !== 'approved' && <button className="btn success" disabled={!isSuperAdmin} onClick={()=>handleSchoolApproval(r.id, 'approved')}>Approve</button>}{r.status !== 'denied' && <button className="btn secondary" disabled={!isSuperAdmin} onClick={()=>handleSchoolApproval(r.id, 'denied')}>Deny</button>}<button className="btn danger" disabled={!isSuperAdmin} onClick={()=>handlePermanentDeleteRegistration(r.id, r.school_name, r.status)}>Permanent Delete</button></div></td></tr>)}
                 </tbody></table></div>
               </div>
             )}
