@@ -555,6 +555,7 @@
       const [selectedReport, setSelectedReport] = useState("grade");
       const [currentStudent, setCurrentStudent] = useState(null);
       const [passwordForm, setPasswordForm] = useState({ newPassword: "" });
+      const [welcomeContext, setWelcomeContext] = useState(null);
 
       const studentsHook = useSupabaseTable("v_students_admin", "*");
       const teachersHook = useSupabaseTable("v_teachers_admin", "*");
@@ -599,6 +600,7 @@
 
       const role = profile?.role_name;
       const canSchoolAdminManageUsers = role === ROLE.ADMIN;
+      const showManagedWelcome = [ROLE.STUDENT, ROLE.TEACHER, ROLE.PARENT, ROLE.PRINCIPAL, ROLE.ACCOUNTS].includes(role);
       const licenseExpired = school?.license_state === "expired" || school?.system_locked_for_usage;
       const daysRemaining = school?.license_end_date ? Math.ceil((new Date(school.license_end_date) - new Date()) / 86400000) : null;
 
@@ -626,6 +628,7 @@
 
           if (!p) {
             setSchool(null);
+            setWelcomeContext(null);
             const reason = data?.profileError?.message ? ` Details: ${data.profileError.message}` : '';
             setNotice({ type: 'danger', text: `Login succeeded, but no readable profile record was found for this user. Check public.profiles, the v_current_user_profile view, and RLS.${reason}` });
             return;
@@ -701,6 +704,93 @@
         ]);
       };
 
+
+      const loadWelcomeContext = async () => {
+        if (!profile || !showManagedWelcome) {
+          setWelcomeContext(null);
+          return;
+        }
+        const { data, error } = await supabaseClient.rpc('current_user_welcome_context');
+        if (error) {
+          console.warn('Failed to load welcome context', error);
+          return;
+        }
+        setWelcomeContext(data || null);
+      };
+
+      const renderWelcomeCard = () => {
+        if (!welcomeContext || !showManagedWelcome) return null;
+        const info = welcomeContext.info || {};
+        const listFromArray = (value) => Array.isArray(value) && value.length ? value.join(', ') : 'Not set';
+        const roleLabelMap = {
+          student: 'Student',
+          teacher: 'Teacher',
+          parent: 'Parent',
+          principal: 'Principal',
+          accounts_office: 'Accounts Office'
+        };
+
+        return (
+          <div className="card" style={{ marginBottom: 18 }}>
+            <h3>Welcome, {welcomeContext.full_name}</h3>
+            <div className="subtle" style={{ marginBottom: 12 }}>
+              Your {roleLabelMap[welcomeContext.role_name] || welcomeContext.role_name} record for {welcomeContext.school_name || 'your school'} was created or updated by the school admin.
+            </div>
+            <div className="grid two">
+              <div>
+                <p><strong>Role:</strong> {roleLabelMap[welcomeContext.role_name] || welcomeContext.role_name}</p>
+                <p><strong>School:</strong> {welcomeContext.school_name || '-'}</p>
+                <p><strong>Created by Admin:</strong> {welcomeContext.created_by_name || 'Not recorded'}</p>
+                <p><strong>Created on:</strong> {welcomeContext.created_at ? formatDate(welcomeContext.created_at) : '-'}</p>
+                <p><strong>Last edited by Admin:</strong> {welcomeContext.last_updated_by_name || welcomeContext.created_by_name || 'Not recorded'}</p>
+                <p><strong>Last updated on:</strong> {welcomeContext.last_updated_at ? formatDate(welcomeContext.last_updated_at) : (welcomeContext.created_at ? formatDate(welcomeContext.created_at) : '-')}</p>
+              </div>
+              <div>
+                {welcomeContext.role_name === 'student' && (
+                  <>
+                    <p><strong>Student No:</strong> {info.student_no || 'Pending'}</p>
+                    <p><strong>Class:</strong> {info.class_name || 'Not assigned'}</p>
+                    <p><strong>Gender:</strong> {info.gender || 'Not set'}</p>
+                    <p><strong>Date of Birth:</strong> {info.date_of_birth ? formatDate(info.date_of_birth) : 'Not set'}</p>
+                    <p><strong>Guardian Contact:</strong> {info.guardian_contact || 'Not set'}</p>
+                  </>
+                )}
+                {welcomeContext.role_name === 'teacher' && (
+                  <>
+                    <p><strong>Staff No:</strong> {info.staff_no || 'Pending'}</p>
+                    <p><strong>Class:</strong> {info.class_name || 'Not assigned'}</p>
+                    <p><strong>Subject Specialty:</strong> {info.subject_specialty || 'Not set'}</p>
+                    <p><strong>Qualification:</strong> {info.qualification || 'Not set'}</p>
+                    <p><strong>Assigned Classes:</strong> {listFromArray(info.assigned_class_names)}</p>
+                    <p><strong>Assigned Subjects:</strong> {listFromArray(info.assigned_subjects)}</p>
+                  </>
+                )}
+                {welcomeContext.role_name === 'parent' && (
+                  <>
+                    <p><strong>Relationship:</strong> {info.relationship_to_student || 'Not set'}</p>
+                    <p><strong>Phone:</strong> {info.phone || welcomeContext.profile_phone || 'Not set'}</p>
+                    <p><strong>Email:</strong> {info.email || welcomeContext.email || 'Not set'}</p>
+                    <p><strong>Linked Students:</strong> {listFromArray(info.linked_student_names)}</p>
+                  </>
+                )}
+                {welcomeContext.role_name === 'principal' && (
+                  <>
+                    <p><strong>Phone:</strong> {welcomeContext.profile_phone || 'Not set'}</p>
+                    <p><strong>Email:</strong> {welcomeContext.email || 'Not set'}</p>
+                  </>
+                )}
+                {welcomeContext.role_name === 'accounts_office' && (
+                  <>
+                    <p><strong>Phone:</strong> {welcomeContext.profile_phone || 'Not set'}</p>
+                    <p><strong>Email:</strong> {welcomeContext.email || 'Not set'}</p>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      };
+
       useEffect(() => {
         supabaseClient.auth.getSession().then(({ data }) => {
           if (data.session) {
@@ -714,6 +804,7 @@
           if (!session) {
             setProfile(null);
             setSchool(null);
+            setWelcomeContext(null);
             setSessionReady(true);
             return;
           }
@@ -729,8 +820,13 @@
       }, []);
 
       useEffect(() => {
-        if (profile) refreshAll();
-      }, [profile?.id]);
+        if (profile) {
+          refreshAll();
+          loadWelcomeContext();
+        } else {
+          setWelcomeContext(null);
+        }
+      }, [profile?.id, role]);
 
       useEffect(() => {
         const channels = [
@@ -1340,7 +1436,7 @@
 
       return (
         <div className="app-shell">
-          <Sidebar role={role} page={page} setPage={setPage} user={profile} school={school} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onLogout={async()=>{await signOut(); setProfile(null);}} />
+          <Sidebar role={role} page={page} setPage={setPage} user={profile} school={school} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onLogout={async()=>{await signOut(); setProfile(null); setWelcomeContext(null);}} />
           <main className="main">
             <div className="topbar">
               <div className="page-title">
@@ -1454,6 +1550,7 @@
 
             {page === 'principal-dashboard' && (
               <div className="grid">
+                {renderWelcomeCard()}
                 <MetricCards items={[
                   { label: 'Total Students', value: studentsHook.rows.length },
                   { label: 'Total Teachers', value: teachersHook.rows.length },
@@ -1465,39 +1562,51 @@
             )}
 
             {page === 'teacher-dashboard' && (
-              <MetricCards items={[
-                { label: 'Assigned Classes', value: [...new Set(subjectsHook.rows.map(x=>x.class_name).filter(Boolean))].length },
-                { label: 'Assigned Subjects', value: [...new Set(subjectsHook.rows.map(x=>x.subject_name).filter(Boolean))].length },
-                { label: 'Attendance Tasks', value: attendanceHook.rows.filter(x=>x.marked_by_profile_id===profile.id).length },
-                { label: 'Grading Tasks', value: gradesHook.rows.filter(x=>x.teacher_profile_id===profile.id).length }
-              ]} />
+              <>
+                {renderWelcomeCard()}
+                <MetricCards items={[
+                  { label: 'Assigned Classes', value: [...new Set(subjectsHook.rows.map(x=>x.class_name).filter(Boolean))].length },
+                  { label: 'Assigned Subjects', value: [...new Set(subjectsHook.rows.map(x=>x.subject_name).filter(Boolean))].length },
+                  { label: 'Attendance Tasks', value: attendanceHook.rows.filter(x=>x.marked_by_profile_id===profile.id).length },
+                  { label: 'Grading Tasks', value: gradesHook.rows.filter(x=>x.teacher_profile_id===profile.id).length }
+                ]} />
+              </>
             )}
 
             {page === 'student-dashboard' && (
-              <MetricCards items={[
-                { label: 'Timetable Entries', value: timetableHook.rows.length },
-                { label: 'Attendance Summary', value: attendanceHook.rows.length },
-                { label: 'Grades', value: gradesHook.rows.length },
-                { label: 'Outstanding Balance', value: formatCurrency(feesHook.rows.reduce((s,r)=>s+Number(r.balance||0),0)) }
-              ]} />
+              <>
+                {renderWelcomeCard()}
+                <MetricCards items={[
+                  { label: 'Timetable Entries', value: timetableHook.rows.length },
+                  { label: 'Attendance Summary', value: attendanceHook.rows.length },
+                  { label: 'Grades', value: gradesHook.rows.length },
+                  { label: 'Outstanding Balance', value: formatCurrency(feesHook.rows.reduce((s,r)=>s+Number(r.balance||0),0)) }
+                ]} />
+              </>
             )}
 
             {page === 'parent-dashboard' && (
-              <MetricCards items={[
-                { label: 'Linked Children', value: [...new Set(feesHook.rows.map(x=>x.student_id))].length },
-                { label: 'Attendance Records', value: attendanceHook.rows.length },
-                { label: 'Grades Available', value: gradesHook.rows.length },
-                { label: 'Outstanding Balance', value: formatCurrency(feesHook.rows.reduce((s,r)=>s+Number(r.balance||0),0)) }
-              ]} />
+              <>
+                {renderWelcomeCard()}
+                <MetricCards items={[
+                  { label: 'Linked Children', value: [...new Set(feesHook.rows.map(x=>x.student_id))].length },
+                  { label: 'Attendance Records', value: attendanceHook.rows.length },
+                  { label: 'Grades Available', value: gradesHook.rows.length },
+                  { label: 'Outstanding Balance', value: formatCurrency(feesHook.rows.reduce((s,r)=>s+Number(r.balance||0),0)) }
+                ]} />
+              </>
             )}
 
             {page === 'accounts-dashboard' && (
-              <MetricCards items={[
-                { label: 'Total Collections', value: formatCurrency(feesHook.rows.reduce((s,r)=>s+Number(r.amount_paid||0),0)) },
-                { label: 'Recent Payments', value: feesHook.rows.filter(r=>r.payment_date===todayISO()).length },
-                { label: 'Unpaid Balances', value: feesHook.rows.filter(r=>Number(r.balance)>0).length },
-                { label: 'Fee Updates', value: auditHook.rows.filter(r=>r.table_name==='fee_payments').length }
-              ]} />
+              <>
+                {renderWelcomeCard()}
+                <MetricCards items={[
+                  { label: 'Total Collections', value: formatCurrency(feesHook.rows.reduce((s,r)=>s+Number(r.amount_paid||0),0)) },
+                  { label: 'Recent Payments', value: feesHook.rows.filter(r=>r.payment_date===todayISO()).length },
+                  { label: 'Unpaid Balances', value: feesHook.rows.filter(r=>Number(r.balance)>0).length },
+                  { label: 'Fee Updates', value: auditHook.rows.filter(r=>r.table_name==='fee_payments').length }
+                ]} />
+              </>
             )}
 
             {page === 'school-logo' && role === ROLE.ADMIN && (
