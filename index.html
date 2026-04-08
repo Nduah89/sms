@@ -907,7 +907,7 @@
 
       const buildManagedForm = (roleName = 'student') => ({
         profile_id: "", role_name: roleName, full_name: "", email: "", username: "", phone: "", account_status: "active", force_password_change: 'true',
-        class_id: "", gender: "Male", date_of_birth: "", guardian_contact: "", address: "", student_no: "", staff_no: "",
+        class_id: "", student_main_class_name: "", student_class_section: "None", gender: "Male", date_of_birth: "", guardian_contact: "", address: "", student_no: "", staff_no: "",
         subject_specialty: "", qualification: "", assigned_subjects: [], assigned_class_ids: [], relationship_to_student: "",
         parent_full_name: "", parent_contact: "", emis_code: "", ghana_card: "", trained_status: "Trained"
       });
@@ -999,6 +999,38 @@
       const qualificationOptions = ['PhD','MSc Degree','Bachelor Degree','HND','Diploma','SHS'];
       const trainedStatusOptions = [{ value: 'Trained', label: 'Trained' }, { value: 'Non-Trained', label: 'Non-Trained' }];
       const relationshipOptions = ['Parent', 'Mother', 'Father', 'Guardian'];
+      const orderedMainClasses = ['Nursery 1', 'Nursery 2', 'KG 1', 'KG 2', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'JHS 1', 'JHS 2', 'JHS 3'];
+      const orderedTeacherMainClasses = ['Nursery 1', 'Nursery 2', 'KG 1', 'KG 2', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'JHS 1', 'JHS 2', 'JHS 3'];
+      const classCategoryOptions = [{ value: 'None', label: 'None' }, { value: 'A', label: 'A' }, { value: 'B', label: 'B' }, { value: 'C', label: 'C' }];
+      const classRankMap = Object.fromEntries(orderedMainClasses.map((label, index) => [label, index]));
+      const normalizeMainClassName = (raw) => {
+        const value = String(raw || '').trim().toLowerCase();
+        if (!value) return '';
+        const compact = value.replace(/\s+/g, ' ').replace(/kindergarten/g, 'kg').replace(/class\s+/g, 'class ').replace(/jhs\s*/g, 'jhs ').trim();
+        const matchers = [
+          [/^nursery\s*1$/, 'Nursery 1'],
+          [/^nursery\s*2$/, 'Nursery 2'],
+          [/^kg\s*1$/, 'KG 1'],
+          [/^kg\s*2$/, 'KG 2'],
+          [/^class\s*1$/, 'Class 1'],
+          [/^class\s*2$/, 'Class 2'],
+          [/^class\s*3$/, 'Class 3'],
+          [/^class\s*4$/, 'Class 4'],
+          [/^class\s*5$/, 'Class 5'],
+          [/^class\s*6$/, 'Class 6'],
+          [/^jhs\s*1$/, 'JHS 1'],
+          [/^jhs\s*2$/, 'JHS 2'],
+          [/^jhs\s*3$/, 'JHS 3']
+        ];
+        for (const [pattern, label] of matchers) {
+          if (pattern.test(compact)) return label;
+        }
+        return String(raw || '').trim();
+      };
+      const getClassSectionValue = (row) => {
+        const section = String(row?.section || row?.class_section || '').trim().toUpperCase();
+        return section || 'None';
+      };
       const managedRoleOptions = [
         { value: 'student', label: 'Student' },
         { value: 'teacher', label: 'Teacher' },
@@ -1798,15 +1830,125 @@
         }))
       ), [teachersHook.rows, teachersRawMap]);
 
+      const orderedClassRows = useMemo(() => (
+        [...(classesHook.rows || [])].sort((a, b) => {
+          const aName = normalizeMainClassName(a.name || a.class_name || '');
+          const bName = normalizeMainClassName(b.name || b.class_name || '');
+          const aRank = classRankMap[aName] ?? 999;
+          const bRank = classRankMap[bName] ?? 999;
+          if (aRank !== bRank) return aRank - bRank;
+          const sectionOrder = { None: 0, A: 1, B: 2, C: 3 };
+          const aSection = getClassSectionValue(a);
+          const bSection = getClassSectionValue(b);
+          return (sectionOrder[aSection] ?? 99) - (sectionOrder[bSection] ?? 99);
+        })
+      ), [classesHook.rows]);
+
       const buildClassDisplay = (row) => {
         if (!row) return '';
-        const name = row.name || row.class_name || '';
-        const section = row.section || row.class_section || '';
-        return section ? `${name} (${section})` : name;
+        const name = normalizeMainClassName(row.name || row.class_name || '') || row.name || row.class_name || '';
+        const section = getClassSectionValue(row);
+        return section !== 'None' ? `${name} (${section})` : name;
       };
 
-      const classOptions = useMemo(() => [{ value: '', label: 'Select Class' }, ...(classesHook.rows || []).map(c => ({ value: c.id, label: buildClassDisplay(c) || c.name }))], [classesHook.rows]);
-      const classNameMap = useMemo(() => Object.fromEntries((classesHook.rows || []).map(c => [c.id, buildClassDisplay(c) || c.name])), [classesHook.rows]);
+      const classOptions = useMemo(() => [{ value: '', label: 'Select Class' }, ...orderedClassRows.map(c => ({ value: c.id, label: buildClassDisplay(c) || c.name }))], [orderedClassRows]);
+      const teacherClassOptions = useMemo(() => [{ value: '', label: 'Select Main Class' }, ...orderedClassRows.filter(c => orderedTeacherMainClasses.includes(normalizeMainClassName(c.name || c.class_name || ''))).map(c => ({ value: c.id, label: buildClassDisplay(c) || c.name }))], [orderedClassRows]);
+      const studentMainClassOptions = useMemo(() => [{ value: '', label: 'Select Main Class' }, ...orderedMainClasses.map(v => ({ value: v, label: v }))], []);
+      const studentClassSectionOptions = useMemo(() => {
+        const activeMainClass = studentForm.student_main_class_name || '';
+        if (!activeMainClass) return classCategoryOptions;
+        const availableSections = new Set(['None']);
+        orderedClassRows
+          .filter(c => normalizeMainClassName(c.name || c.class_name || '') === activeMainClass)
+          .forEach(c => availableSections.add(getClassSectionValue(c)));
+        return classCategoryOptions.filter(opt => availableSections.has(opt.value));
+      }, [orderedClassRows, studentForm.student_main_class_name]);
+      const classNameMap = useMemo(() => Object.fromEntries(orderedClassRows.map(c => [c.id, buildClassDisplay(c) || c.name])), [orderedClassRows]);
+      const findClassRowByMainAndSection = (mainClassName, sectionChoice = 'None') => {
+        const normalizedMainClass = normalizeMainClassName(mainClassName);
+        if (!normalizedMainClass) return null;
+        const preferredSection = sectionChoice || 'None';
+        return orderedClassRows.find((row) =>
+          normalizeMainClassName(row.name || row.class_name || '') === normalizedMainClass
+          && getClassSectionValue(row) === preferredSection
+        ) || (
+          preferredSection === 'None'
+            ? orderedClassRows.find((row) => normalizeMainClassName(row.name || row.class_name || '') === normalizedMainClass)
+            : null
+        );
+      };
+
+      const resolveStudentClassId = (form) => {
+        if (form.class_id) return form.class_id;
+        const matchedRow = findClassRowByMainAndSection(form.student_main_class_name, form.student_class_section);
+        return matchedRow?.id || '';
+      };
+
+      const buildStudentFormFromRow = (row) => {
+        const classRow = orderedClassRows.find((entry) => entry.id === row.class_id) || null;
+        const normalizedMainClass = normalizeMainClassName(classRow?.name || row.class_name || '');
+        return {
+          ...buildManagedForm('student'),
+          profile_id: row.profile_id || '',
+          role_name: 'student',
+          full_name: row.full_name || '',
+          phone: row.profile_phone || row.phone || '',
+          account_status: row.account_status || row.status || 'active',
+          force_password_change: String(row.force_password_change ?? true),
+          class_id: row.class_id || '',
+          student_main_class_name: normalizedMainClass || '',
+          student_class_section: getClassSectionValue(classRow || row),
+          gender: row.gender || 'Male',
+          date_of_birth: row.date_of_birth || '',
+          student_no: row.student_no || '',
+          parent_full_name: row.parent_full_name || '',
+          parent_contact: row.parent_contact || '',
+          relationship_to_student: row.relationship_to_student || ''
+        };
+      };
+
+      const buildTeacherFormFromRow = (row) => ({
+        ...buildManagedForm('teacher'),
+        profile_id: row.profile_id || '',
+        role_name: 'teacher',
+        full_name: row.full_name || '',
+        account_status: row.account_status || row.status || 'active',
+        force_password_change: String(row.force_password_change ?? true),
+        staff_no: row.staff_no || '',
+        emis_code: row.emis_code || '',
+        ghana_card: row.ghana_card || '',
+        gender: row.gender || '',
+        date_of_birth: row.date_of_birth || '',
+        class_id: row.class_id || '',
+        subject_specialty: row.subject_specialty || '',
+        qualification: row.qualification || '',
+        trained_status: row.trained_status || 'Trained'
+      });
+
+      useEffect(() => {
+        if (!studentForm.student_main_class_name) {
+          if (studentForm.class_id) {
+            setStudentForm((prev) => ({ ...prev, class_id: '' }));
+          }
+          return;
+        }
+
+        const availableSectionValues = studentClassSectionOptions.map((option) => option.value);
+        if (!availableSectionValues.includes(studentForm.student_class_section || 'None')) {
+          setStudentForm((prev) => ({ ...prev, student_class_section: 'None' }));
+          return;
+        }
+
+        const nextClassId = findClassRowByMainAndSection(
+          studentForm.student_main_class_name,
+          studentForm.student_class_section
+        )?.id || '';
+
+        if ((studentForm.class_id || '') !== nextClassId) {
+          setStudentForm((prev) => ({ ...prev, class_id: nextClassId }));
+        }
+      }, [studentForm.student_main_class_name, studentForm.student_class_section, studentClassSectionOptions, orderedClassRows]);
+
       const parentLinksRows = parentLinksHook.rows || [];
       const managedUsersRows = managedUsersHook.rows || [];
       const studentLookup = useMemo(() => Object.fromEntries(mergedStudentsRows.map((row) => [row.id, row])), [mergedStudentsRows]);
@@ -2024,20 +2166,29 @@
           ? (await ensureTeacherStaffNo(form, setter)) || null
           : (form.staff_no || null);
 
+        const resolvedStudentClassId = roleName === 'student'
+          ? resolveStudentClassId(form)
+          : (form.class_id || null);
+
+        if (roleName === 'student' && form.student_main_class_name && !resolvedStudentClassId) {
+          setNotice({ type: 'danger', text: 'The selected student main class and category do not match an available class record. Add the class first, then try again.' });
+          return;
+        }
+
         const payload = {
           p_role: roleName,
           p_profile_id: form.profile_id || null,
           p_full_name: form.full_name || null,
-          p_email: form.email || null,
+          p_email: roleName === 'student' ? null : (form.email || null),
           p_phone: form.phone || null,
-          p_username: form.username || null,
+          p_username: roleName === 'student' ? null : (form.username || null),
           p_account_status: form.account_status || 'active',
           p_force_password_change: normalizeBoolean(form.force_password_change),
-          p_class_id: form.class_id || null,
+          p_class_id: resolvedStudentClassId,
           p_gender: form.gender || null,
           p_date_of_birth: form.date_of_birth || null,
-          p_guardian_contact: form.guardian_contact || null,
-          p_address: form.address || null,
+          p_guardian_contact: roleName === 'student' ? null : (form.guardian_contact || null),
+          p_address: roleName === 'student' ? null : (form.address || null),
           p_student_no: form.student_no || null,
           p_staff_no: resolvedStaffNo,
           p_subject_specialty: form.subject_specialty || null,
@@ -2225,7 +2376,6 @@
               full_name: form.parent_full_name || existingParent.full_name,
               phone: form.parent_contact || existingParent.phone,
               relationship_to_student: form.relationship_to_student || existingParent.relationship_to_student || 'Parent',
-              address: form.address || existingParent.address || null,
               status: existingParent.status || 'active'
             })
             .eq('id', existingParent.id);
@@ -2239,7 +2389,6 @@
               phone: form.parent_contact || null,
               email: null,
               relationship_to_student: form.relationship_to_student || 'Parent',
-              address: form.address || null,
               status: 'active'
             })
             .select('*')
@@ -2658,15 +2807,14 @@
                 </div>
               </div>
             )}
-
             {page === 'students' && (
               <GenericCrudPage
                 title="Student Management"
-                description="Add, edit, archive, and delete student records. Parent full name and contact captured here are synced into the Parents section together with linked student and class details."
+                description="Add, edit, archive, and delete student records. Parent full name and parent contact captured here are synced into the Parents section, and assigned class details refresh automatically in real time."
                 columns={[
                   { key: 'full_name', label: 'Full Name' },
                   { key: 'student_no', label: 'Student No' },
-                  { key: 'class_name', label: 'Assigned Class' },
+                  { key: 'assigned_class', label: 'Assigned Class', render: (_, row) => classNameMap[row.class_id] || row.class_name || '-' },
                   { key: 'gender', label: 'Gender' },
                   { key: 'date_of_birth', label: 'Date of Birth', render: v => formatDate(v) },
                   { key: 'parent_full_name', label: 'Parent Full Name' },
@@ -2679,49 +2827,26 @@
                 setFormState={setStudentForm}
                 fields={[
                   { key: 'full_name', label: 'Full Name' },
-                  { key: 'email', label: 'Email', type: 'email' },
-                  { key: 'username', label: 'Username' },
-                  { key: 'phone', label: 'Phone' },
                   { key: 'student_no', label: 'Student No' },
-                  { key: 'class_id', label: 'Assign Main Class', type: 'select', options: classOptions },
+                  { key: 'student_main_class_name', label: 'Assign Main Class', type: 'select', options: studentMainClassOptions },
+                  { key: 'student_class_section', label: 'Category', type: 'select', options: studentClassSectionOptions },
                   { key: 'gender', label: 'Gender', type: 'select', options: genderOptions },
                   { key: 'date_of_birth', label: 'Date of Birth', type: 'date' },
                   { key: 'parent_full_name', label: 'Parent Full Name' },
                   { key: 'parent_contact', label: 'Parent Contact' },
                   { key: 'relationship_to_student', label: 'Relationship', type: 'select', options: [{ value: '', label: 'Select Relationship' }, ...relationshipOptions.map(v => ({ value: v, label: v }))] },
-                  { key: 'guardian_contact', label: 'Guardian Contact' },
-                  { key: 'address', label: 'Address' },
                   { key: 'account_status', label: 'Account Status', type: 'select', options: statusOptions },
                   { key: 'force_password_change', label: 'Force First Login Password Change', type: 'select', options: yesNoOptions }
                 ]}
                 onSave={() => saveManagedUserRecord(studentForm, setStudentForm, 'student')}
                 onDelete={(id, row) => handleDeleteManagedUser(row)}
-                onEdit={(row) => setStudentForm({
-                  ...buildManagedForm('student'),
-                  profile_id: row.profile_id || '',
-                  role_name: 'student',
-                  full_name: row.full_name || '',
-                  email: row.email || '',
-                  username: row.username || '',
-                  phone: row.profile_phone || row.phone || '',
-                  account_status: row.account_status || row.status || 'active',
-                  force_password_change: String(row.force_password_change ?? true),
-                  class_id: row.class_id || '',
-                  gender: row.gender || 'Male',
-                  date_of_birth: row.date_of_birth || '',
-                  guardian_contact: row.guardian_contact || '',
-                  address: row.address || '',
-                  student_no: row.student_no || '',
-                  parent_full_name: row.parent_full_name || '',
-                  parent_contact: row.parent_contact || '',
-                  relationship_to_student: row.relationship_to_student || ''
-                })}
+                onEdit={(row) => setStudentForm(buildStudentFormFromRow(row))}
                 rowActions={(row) => canSchoolAdminManageUsers ? <>
                   <button className="btn secondary" onClick={() => setManagedUserStatus(row, 'archived')}>Archive</button>
                   <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
                   <button className="btn secondary" onClick={() => openManagedUserInCredentials(row)}>Open in User Accounts</button>
                 </> : null}
-                extraActions={<><button className="btn secondary" onClick={()=>generateStudentNoForCurrentSchool(setStudentForm)}>Generate Student No</button><button className="btn secondary" onClick={()=>exportCsv(mergedStudentsRows, 'students.csv')}>Export CSV</button><label className="btn secondary">Import CSV<input hidden type="file" accept=".csv" onChange={(e)=>handleBulkStudentImport(e.target.files?.[0])} /></label></>}
+                extraActions={<><button className="btn secondary" onClick={()=>generateStudentNoForCurrentSchool(setStudentForm)}>Generate Student No</button><button className="btn secondary" onClick={()=>exportCsv(mergedStudentsRows.map((row) => ({ ...row, assigned_class: classNameMap[row.class_id] || row.class_name || '' })), 'students.csv')}>Export CSV</button><label className="btn secondary">Import CSV<input hidden type="file" accept=".csv" onChange={(e)=>handleBulkStudentImport(e.target.files?.[0])} /></label></>}
               >
                 {importStatus && <div className="footer-note">{importStatus}</div>}
               </GenericCrudPage>
@@ -2730,13 +2855,15 @@
             {page === 'teachers' && (
               <GenericCrudPage
                 title="Teacher Management"
-                description="Add, edit, archive, and delete teacher records. Staff number is generated automatically from the school context. Each teacher uses one main class and one primary subject specialty."
+                description="Add, edit, archive, and delete teacher records. Staff number is generated automatically from the school name context, and each teacher keeps one assigned main class and one primary subject specialty with real time updates."
                 columns={[
                   { key: 'full_name', label: 'Full Name' },
                   { key: 'emis_code', label: 'Teacher EMIS Code' },
-                  { key: 'class_name', label: 'Assigned Class' },
+                  { key: 'assigned_class', label: 'Assigned Class', render: (_, row) => classNameMap[row.class_id] || row.class_name || '-' },
                   { key: 'subject_specialty', label: 'Primary Subject' },
                   { key: 'qualification', label: 'Qualification' },
+                  { key: 'gender', label: 'Gender' },
+                  { key: 'date_of_birth', label: 'Date of Birth', render: v => formatDate(v) },
                   { key: 'trained_status', label: 'Training Status' },
                   { key: 'account_status', label: 'Account', render: v => <span className={classNames('chip', v === 'active' ? 'success' : v === 'archived' ? 'warning' : 'danger')}>{v}</span> }
                 ]}
@@ -2746,15 +2873,12 @@
                 setFormState={setTeacherForm}
                 fields={[
                   { key: 'full_name', label: 'Full Name' },
-                  { key: 'email', label: 'Email', type: 'email' },
-                  { key: 'username', label: 'Username' },
-                  { key: 'phone', label: 'Phone' },
                   { key: 'staff_no', label: 'Staff Number', readOnly: true, placeholder: 'Auto generated from school name' },
                   { key: 'emis_code', label: 'Teacher EMIS Code' },
                   { key: 'ghana_card', label: 'Ghana Card' },
                   { key: 'gender', label: 'Gender', type: 'select', options: genderOptions },
                   { key: 'date_of_birth', label: 'Date of Birth', type: 'date' },
-                  { key: 'class_id', label: 'Assign Main Class', type: 'select', options: classOptions },
+                  { key: 'class_id', label: 'Assign Main Class', type: 'select', options: teacherClassOptions },
                   { key: 'subject_specialty', label: 'Primary Subject Specialty', type: 'select', options: [{ value: '', label: 'Select Specialty' }, ...subjectOptions.map(v => ({ value: v, label: v }))] },
                   { key: 'qualification', label: 'Qualification', type: 'select', options: [{ value: '', label: 'Select Qualification' }, ...qualificationOptions.map(v => ({ value: v, label: v }))] },
                   { key: 'trained_status', label: 'Training Status', type: 'select', options: trainedStatusOptions },
@@ -2763,34 +2887,13 @@
                 ]}
                 onSave={() => saveManagedUserRecord(teacherForm, setTeacherForm, 'teacher')}
                 onDelete={(id, row) => handleDeleteManagedUser(row)}
-                onEdit={(row) => setTeacherForm({
-                  ...buildManagedForm('teacher'),
-                  profile_id: row.profile_id || '',
-                  role_name: 'teacher',
-                  full_name: row.full_name || '',
-                  email: row.profile_email || row.email || '',
-                  username: row.username || '',
-                  phone: row.phone || '',
-                  account_status: row.account_status || row.status || 'active',
-                  force_password_change: String(row.force_password_change ?? true),
-                  staff_no: row.staff_no || '',
-                  emis_code: row.emis_code || '',
-                  ghana_card: row.ghana_card || '',
-                  gender: row.gender || '',
-                  date_of_birth: row.date_of_birth || '',
-                  class_id: row.class_id || '',
-                  subject_specialty: row.subject_specialty || '',
-                  qualification: row.qualification || '',
-                  assigned_subjects: row.assigned_subjects || [],
-                  assigned_class_ids: row.assigned_class_ids || [],
-                  trained_status: row.trained_status || 'Trained'
-                })}
+                onEdit={(row) => setTeacherForm(buildTeacherFormFromRow(row))}
                 rowActions={(row) => canSchoolAdminManageUsers ? <>
                   <button className="btn secondary" onClick={() => setManagedUserStatus(row, 'archived')}>Archive</button>
                   <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
                   <button className="btn secondary" onClick={() => openManagedUserInCredentials(row)}>Open in User Accounts</button>
                 </> : null}
-                extraActions={<><button className="btn secondary" onClick={()=>exportCsv(mergedTeachersRows, 'teachers.csv')}>Export CSV</button></>}
+                extraActions={<><button className="btn secondary" onClick={()=>exportCsv(mergedTeachersRows.map((row) => ({ ...row, assigned_class: classNameMap[row.class_id] || row.class_name || '' })), 'teachers.csv')}>Export CSV</button></>}
               />
             )}
 
