@@ -477,12 +477,35 @@
       return { authUser, profile: data, profileError: null };
     }
 
-    async function signIn(email, password) {
+    async function resolveLoginIdentifier(identifier) {
+      const raw = String(identifier || '').trim();
+      if (!raw) return '';
+      if (raw.includes('@')) return raw.toLowerCase();
+      try {
+        const { data, error } = await supabaseClient.rpc('resolve_login_identifier', { p_identifier: raw });
+        if (error) return raw;
+        return String(data || raw).trim().toLowerCase();
+      } catch {
+        return raw;
+      }
+    }
+
+    async function signIn(loginIdentifier, password) {
+      const email = await resolveLoginIdentifier(loginIdentifier);
       return supabaseClient.auth.signInWithPassword({ email, password });
+    }
+
+    async function setCurrentPresence(isOnline) {
+      try {
+        return await supabaseClient.rpc('set_current_user_presence', { p_is_online: !!isOnline });
+      } catch {
+        return { data: null, error: null };
+      }
     }
 
     async function signOut() {
       try { window.sessionStorage.removeItem("sms_login_surface"); } catch {}
+      try { await setCurrentPresence(false); } catch {}
       return supabaseClient.auth.signOut();
     }
 
@@ -646,7 +669,7 @@
               {status.text && <div className={classNames("banner", status.type)}>{status.text}</div>}
               {tab === "login" && (
                 <form onSubmit={(e) => handleLogin(e, false)} className="grid">
-                  <div className="field"><label>Email</label><input value={loginForm.email} onChange={(e) => setLoginForm({...loginForm, email: e.target.value})} required /></div>
+                  <div className="field"><label>Email or Username</label><input value={loginForm.email} onChange={(e) => setLoginForm({...loginForm, email: e.target.value})} required /></div>
                   <div className="field"><label>Password</label><input type="password" value={loginForm.password} onChange={(e) => setLoginForm({...loginForm, password: e.target.value})} required /></div>
                   <button className="btn">Login</button>
                 </form>
@@ -905,6 +928,7 @@
       const notificationsHook = useSupabaseTable("notifications", "*");
       const timetableHook = useSupabaseTable("v_timetables_full", "*");
       const chatHook = useSupabaseTable("v_chat_messages_full", "*");
+      const profilesPresenceHook = useSupabaseTable("profiles", "id, username, is_online, last_seen_at");
 
       const buildManagedForm = (roleName = 'student') => ({
         profile_id: "", role_name: roleName, full_name: "", email: "", username: "", phone: "", account_status: "active", force_password_change: 'true',
@@ -1043,8 +1067,30 @@
         { value: 'teacher', label: 'Teacher' },
         { value: 'parent', label: 'Parent' },
         { value: 'principal', label: 'Principal' },
-        { value: 'accounts_office', label: 'Accounts Office Staff' }
+        { value: 'accounts_office', label: 'Account Office' }
       ];
+
+      const generateManagedUsername = (row) => {
+        const schoolCode = String(school?.school_code || 'SCH').replace(/[^A-Za-z0-9]/g, '').toLowerCase().slice(0, 6) || 'sch';
+        const rolePrefixMap = {
+          student: 'stu',
+          teacher: 'tch',
+          parent: 'par',
+          principal: 'pri',
+          accounts_office: 'acc'
+        };
+        const rolePrefix = rolePrefixMap[row?.role_name] || 'usr';
+        const nameToken = String(row?.full_name || 'user').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 10) || 'user';
+        const tail = String(row?.profile_id || row?.id || '').replace(/[^A-Za-z0-9]/g, '').slice(-4).toLowerCase();
+        return [schoolCode, rolePrefix, nameToken, tail].filter(Boolean).join('.').slice(0, 28);
+      };
+
+      const isPresenceActive = (presenceRow) => {
+        if (!presenceRow?.is_online) return false;
+        const lastSeen = presenceRow?.last_seen_at ? new Date(presenceRow.last_seen_at).getTime() : 0;
+        if (!lastSeen) return false;
+        return (Date.now() - lastSeen) <= 120000;
+      };
 
       const loadCore = async (authUserOverride = null) => {
         if (bootingRef.current) return;
@@ -1111,6 +1157,8 @@
             setSchool(null);
             setPage("super-dashboard");
           }
+
+          await setCurrentPresence(true);
         } catch (err) {
           console.error('loadCore failed:', err);
           setProfile(null);
@@ -1129,7 +1177,8 @@
           classesHook.fetchRows(), subjectsHook.fetchRows(), attendanceHook.fetchRows(), gradesHook.fetchRows(), feesHook.fetchRows(),
           schoolsHook.fetchRows((q)=>q.order('created_at', { ascending:false })), schoolAdminRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), userLoginRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), managedUsersHook.fetchRows((q)=>q.order('full_name')), registrationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
           auditHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(100)), notificationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
-          timetableHook.fetchRows((q)=>q.order('day_of_week')), chatHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(200))
+          timetableHook.fetchRows((q)=>q.order('day_of_week')), chatHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(200)),
+          profilesPresenceHook.fetchRows()
         ]);
         if (profile?.school_id) {
           const { data: schoolData } = await supabaseClient
@@ -1299,6 +1348,17 @@
         ];
         return () => channels.forEach(ch => supabaseClient.removeChannel(ch));
       }, [profile?.id, role]);
+
+      useEffect(() => {
+        if (!profile?.id) return undefined;
+        const pingPresence = async () => {
+          await setCurrentPresence(true);
+          await profilesPresenceHook.fetchRows();
+        };
+        pingPresence();
+        const timer = window.setInterval(pingPresence, 60000);
+        return () => window.clearInterval(timer);
+      }, [profile?.id]);
 
       const withNotice = async (fn, successText) => {
         setNotice({ type: "", text: "" });
@@ -1517,6 +1577,22 @@
         }
 
         setNotice({ type: '', text: '' });
+
+        const usernameToSave = row.username || generateManagedUsername(row);
+        const { error: syncProfileError } = await supabaseClient
+          .from('profiles')
+          .update({
+            username: usernameToSave || null,
+            account_status: row.account_status || row.status || 'active',
+            force_password_change: normalizeBoolean(row.force_password_change ?? true)
+          })
+          .eq('id', profileId);
+
+        if (syncProfileError) {
+          setNotice({ type: 'danger', text: syncProfileError.message || 'Failed to prepare the selected user account.' });
+          return;
+        }
+
         const { data, error } = await supabaseClient.functions.invoke('provision-school-user', {
           body: {
             profileId,
@@ -2356,7 +2432,7 @@
           role_name: row.role_name || base.role_name,
           full_name: row.full_name || '',
           email: row.email || '',
-          username: row.username || '',
+          username: row.username || generateManagedUsername(row),
           phone: row.phone || row.profile_phone || '',
           account_status: row.account_status || row.status || 'active',
           force_password_change: String(row.force_password_change ?? true),
@@ -2402,6 +2478,9 @@
 
       const schoolAdminRefMap = useMemo(() => Object.fromEntries((schoolAdminRefsHook.rows || []).map(r => [r.school_id, r])), [schoolAdminRefsHook.rows]);
       const managedUserRefMap = useMemo(() => Object.fromEntries((userLoginRefsHook.rows || []).map(r => [r.profile_id, r])), [userLoginRefsHook.rows]);
+      const managedPresenceMap = useMemo(() => Object.fromEntries((profilesPresenceHook.rows || []).map(r => [r.id, r])), [profilesPresenceHook.rows]);
+      const getManagedPresence = (row) => managedPresenceMap[row?.profile_id || row?.id] || null;
+      const getManagedLiveStatus = (row) => isPresenceActive(getManagedPresence(row)) ? 'active' : 'inactive';
 
       const copyText = async (text, successText = 'Copied to clipboard') => {
         try {
@@ -2554,7 +2633,7 @@
           role_name: row.role_name || 'student',
           full_name: row.full_name || '',
           email: row.email || '',
-          username: row.username || '',
+          username: row.username || generateManagedUsername(row),
           phone: row.phone || row.profile_phone || '',
           account_status: row.account_status || row.status || 'active',
           force_password_change: String(row.force_password_change ?? true),
@@ -2601,7 +2680,7 @@
           role_name: selectedRow.role_name || userForm.role_name,
           full_name: selectedRow.full_name || '',
           email: selectedRow.email || '',
-          username: selectedRow.username || '',
+          username: selectedRow.username || generateManagedUsername(selectedRow),
           phone: selectedRow.phone || selectedRow.profile_phone || '',
           account_status: selectedRow.account_status || selectedRow.status || 'active',
           force_password_change: String(selectedRow.force_password_change ?? true)
@@ -3073,52 +3152,59 @@
               <div className="grid">
                 <div className="card">
                   <h3>User Accounts & Credentials</h3>
-                  <p className="subtle">Select an existing Student, Principal, Teacher, Parent, or Accounts Office Staff record, then create or reset the login, update username, choose whether to force password change, and activate, deactivate, or archive the account.</p>
+                  <p className="subtle">The school admin can choose a role, load names that already exist under Student Management, Principal Management, Teachers Management, Parents Management, and Account Office Staff Management, then generate username and password credentials, control force password change, and reset passwords in real time.</p>
                   <div className="form-grid-3">
-                    <div className="field"><label>Role</label><select value={userForm.role_name} onChange={(e)=>setUserForm(buildManagedForm(e.target.value))}>{managedRoleOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+                    <div className="field"><label>Select Role</label><select value={userForm.role_name} onChange={(e)=>setUserForm(buildManagedForm(e.target.value))}>{managedRoleOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
                     <div className="field"><label>Select Existing Name</label><select value={userForm.profile_id} onChange={(e)=>handleCredentialSelection(e.target.value)}><option value="">Select User</option>{roleScopedManagedUsers.map(row => <option key={row.profile_id} value={row.profile_id}>{row.full_name}{row.class_name ? `, ${row.class_name}` : ''}</option>)}</select></div>
-                    <div className="field"><label>Username</label><input value={userForm.username} onChange={(e)=>setUserForm({...userForm, username:e.target.value})} placeholder="Enter username" /></div>
-                    <div className="field"><label>Email</label><input type="email" value={userForm.email} onChange={(e)=>setUserForm({...userForm, email:e.target.value})} disabled /></div>
-                    <div className="field"><label>Account Status</label><select value={userForm.account_status} onChange={(e)=>setUserForm({...userForm, account_status:e.target.value})}>{statusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+                    <div className="field"><label>Generated Username</label><div style={{display:'flex', gap:8}}><input value={userForm.username} onChange={(e)=>setUserForm({...userForm, username:e.target.value})} placeholder="Username" /><button type="button" className="btn secondary" onClick={()=>selectedManagedUser && setUserForm({...userForm, username: generateManagedUsername(selectedManagedUser)})} disabled={!selectedManagedUser}>Generate</button></div></div>
+                    <div className="field"><label>Email</label><input value={userForm.email} disabled /></div>
                     <div className="field"><label>Force Password Change</label><select value={String(userForm.force_password_change)} onChange={(e)=>setUserForm({...userForm, force_password_change:e.target.value})}>{yesNoOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+                    <div className="field"><label>Account Access</label><select value={userForm.account_status} onChange={(e)=>setUserForm({...userForm, account_status:e.target.value})}>{statusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
                   </div>
                   <div style={{display:'flex', gap:10, marginTop:16, flexWrap:'wrap'}}>
-                    <button className="btn secondary" onClick={saveCredentialControls}>Save Controls</button>
-                    <button className="btn" onClick={handleCredentialProvisionFromForm}>{managedUserRefMap[userForm.profile_id] ? 'Reset Password / Login' : 'Create Username & Password'}</button>
-                    <button className="btn secondary" onClick={()=>selectedManagedUser && setManagedUserStatus(selectedManagedUser, 'active')} disabled={!selectedManagedUser}>Reactivate</button>
+                    <button className="btn secondary" onClick={saveCredentialControls} disabled={!selectedManagedUser}>Save Controls</button>
+                    <button className="btn" onClick={handleCredentialProvisionFromForm} disabled={!selectedManagedUser}>{managedUserRefMap[userForm.profile_id] ? 'Reset Password' : 'Generate Username & Password'}</button>
+                    <button className="btn success" onClick={()=>selectedManagedUser && setManagedUserStatus(selectedManagedUser, 'active')} disabled={!selectedManagedUser}>Reactivate</button>
                     <button className="btn warning" onClick={()=>selectedManagedUser && setManagedUserStatus(selectedManagedUser, 'deactivated')} disabled={!selectedManagedUser}>Deactivate</button>
                     <button className="btn secondary" onClick={()=>selectedManagedUser && setManagedUserStatus(selectedManagedUser, 'archived')} disabled={!selectedManagedUser}>Archive</button>
                     <button className="btn danger" onClick={()=>selectedManagedUser && handleDeleteManagedUser(selectedManagedUser)} disabled={!selectedManagedUser}>Delete</button>
                   </div>
                   {selectedManagedUser ? <div className="card" style={{marginTop:16, boxShadow:'none'}}>
                     <h3 style={{marginTop:0}}>Selected User Details</h3>
-                    <div className="grid cards-3">
+                    <div className="grid cards-4">
                       <div><strong>Name</strong><div className="subtle">{selectedManagedUser.full_name || '-'}</div></div>
                       <div><strong>Role</strong><div className="subtle">{selectedManagedUser.role_name || '-'}</div></div>
-                      <div><strong>Status</strong><div><span className={classNames('chip', (userForm.account_status || selectedManagedUser.account_status) === 'active' ? 'success' : 'danger')}>{userForm.account_status || selectedManagedUser.account_status || '-'}</span></div></div>
+                      <div><strong>Live Status</strong><div><span className={classNames('chip', getManagedLiveStatus(selectedManagedUser) === 'active' ? 'success' : 'danger')}>{getManagedLiveStatus(selectedManagedUser) === 'active' ? 'Active' : 'Inactive'}</span></div></div>
+                      <div><strong>Last Seen</strong><div className="subtle">{getManagedPresence(selectedManagedUser)?.last_seen_at ? formatDate(getManagedPresence(selectedManagedUser).last_seen_at) : '-'}</div></div>
+                      <div><strong>Username</strong><div className="subtle">{userForm.username || '-'}</div></div>
+                      <div><strong>Account Access</strong><div><span className={classNames('chip', (userForm.account_status || selectedManagedUser.account_status) === 'active' ? 'success' : (userForm.account_status || selectedManagedUser.account_status) === 'archived' ? 'warning' : 'danger')}>{userForm.account_status || selectedManagedUser.account_status || '-'}</span></div></div>
+                      <div><strong>Force Password Change</strong><div className="subtle">{String(userForm.force_password_change) === 'true' ? 'Yes' : 'No'}</div></div>
+                      <div><strong>Latest Temporary Password</strong><div className="subtle">{managedUserRefMap[selectedManagedUser.profile_id]?.temporary_password || '-'}</div></div>
                     </div>
-                  </div> : <div className="footer-note">Choose a role and an existing user record. New records should be added first under Teachers, Students, Parents, Principal, or Accounts Office Staff.</div>}
+                  </div> : <div className="footer-note">Choose a role first. The names shown come only from users already added under Student Management, Principal Management, Teachers Management, Parents Management, and Account Office Staff Management.</div>}
                 </div>
                 <div className="card">
                   <h3>Managed User Accounts</h3>
-                  <div className="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Username</th><th>Status</th><th>Force Password Change</th><th>Latest Temp Password</th><th>Issued At</th><th>Actions</th></tr></thead><tbody>
-                    {managedUsersRows.length === 0 && <tr><td colSpan="8"><div className="empty">No managed user records found</div></td></tr>}
+                  <div className="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Username</th><th>Live Status</th><th>Account Access</th><th>Force Password Change</th><th>Latest Temp Password</th><th>Issued At</th><th>Actions</th></tr></thead><tbody>
+                    {managedUsersRows.length === 0 && <tr><td colSpan="9"><div className="empty">No managed user records found</div></td></tr>}
                     {managedUsersRows.map(r => {
                       const ref = managedUserRefMap[r.profile_id];
-                      const statusValue = r.account_status || r.status || 'active';
+                      const accessStatus = r.account_status || r.status || 'active';
+                      const liveStatus = getManagedLiveStatus(r);
                       return <tr key={r.profile_id}>
                         <td>{r.full_name}</td>
                         <td>{r.role_name}</td>
-                        <td>{r.username || '-'}</td>
-                        <td><span className={classNames('chip', statusValue === 'active' ? 'success' : statusValue === 'archived' ? 'warning' : 'danger')}>{statusValue}</span></td>
+                        <td>{r.username || generateManagedUsername(r)}</td>
+                        <td><span className={classNames('chip', liveStatus === 'active' ? 'success' : 'danger')}>{liveStatus === 'active' ? 'Active' : 'Inactive'}</span></td>
+                        <td><span className={classNames('chip', accessStatus === 'active' ? 'success' : accessStatus === 'archived' ? 'warning' : 'danger')}>{accessStatus}</span></td>
                         <td>{String(r.force_password_change ?? true) === 'true' ? 'Yes' : 'No'}</td>
                         <td>{ref?.temporary_password || '-'}</td>
                         <td>{ref?.issued_at ? formatDate(ref.issued_at) : '-'}</td>
                         <td>{canSchoolAdminManageUsers ? <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
                           <button className="btn secondary" onClick={()=>openManagedUserInCredentials(r)}>Select</button>
-                          <button className="btn" onClick={()=>handleProvisionManagedUser(r)}>{ref ? 'Reset Password' : 'Create Login'}</button>
-                          <button className="btn secondary" onClick={()=>copyText(buildManagedUserReferenceText(r), 'User credential reference copied to clipboard')}>Copy</button>
-                          <button className="btn warning" onClick={()=>setManagedUserStatus(r, statusValue === 'active' ? 'deactivated' : 'active')}>{statusValue === 'active' ? 'Deactivate' : 'Reactivate'}</button>
+                          <button className="btn" onClick={()=>handleProvisionManagedUser({ ...r, username: r.username || generateManagedUsername(r) })}>{ref ? 'Reset Password' : 'Create Login'}</button>
+                          <button className="btn secondary" onClick={()=>copyText(buildManagedUserReferenceText({ ...r, username: r.username || generateManagedUsername(r) }), 'User credential reference copied to clipboard')}>Copy</button>
+                          <button className="btn warning" onClick={()=>setManagedUserStatus(r, accessStatus === 'active' ? 'deactivated' : 'active')}>{accessStatus === 'active' ? 'Deactivate' : 'Reactivate'}</button>
                         </div> : <span className="subtle">School admin only</span>}</td>
                       </tr>
                     })}
