@@ -1239,35 +1239,79 @@
       };
 
       const handleProvisionSchoolAdmin = async (schoolId) => {
-        setNotice({ type: "", text: "" });
-        const { data, error } = await supabaseClient.functions.invoke('provision-school-admin', {
-          body: {
-            schoolId,
-            loginUrl: window.location.origin + window.location.pathname
-          }
-        });
+        if (!requireSuperAdminAction()) return;
 
-        if (error) {
-          setNotice({ type: "danger", text: error.message || "Failed to create school admin login" });
+        setNotice({ type: '', text: '' });
+
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        const token = sessionData?.session?.access_token;
+
+        if (!token) {
+          setNotice({ type: 'danger', text: 'No active session token found. Please log in again.' });
           return;
         }
 
-        const credentialsText = [
-          `School: ${data?.schoolName || ''}`,
-          `Admin: ${data?.adminName || ''}`,
-          `Email: ${data?.email || ''}`,
-          `Temporary Password: ${data?.temporaryPassword || ''}`,
-          `Login URL: ${data?.loginUrl || window.location.origin + window.location.pathname}`,
-          '',
-          'The school admin must log in with the temporary password and will be forced to change it on first login.'
-        ].join('\n');
+        try {
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/provision-school-admin`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              schoolId,
+              loginUrl: window.location.origin + window.location.pathname
+            })
+          });
 
-        await copyText(credentialsText, data?.mode === 'reset'
-          ? 'School admin credentials reset. Latest credentials copied to clipboard and saved for reference.'
-          : 'School admin login created. Credentials copied to clipboard and saved for reference.');
+          const payload = await res.json().catch(() => ({}));
 
-        window.alert(credentialsText);
-        await refreshAll();
+          if (!res.ok) {
+            setNotice({
+              type: 'danger',
+              text: payload?.error || `Create Admin Login failed with status ${res.status}`
+            });
+            return;
+          }
+
+          const credentialsText = [
+            `School: ${payload?.schoolName || ''}`,
+            `Admin: ${payload?.adminName || ''}`,
+            `Email: ${payload?.email || ''}`,
+            `Temporary Password: ${payload?.temporaryPassword || ''}`,
+            `Login URL: ${payload?.loginUrl || window.location.origin + window.location.pathname}`,
+            payload?.issuedAt ? `Issued At: ${formatDate(payload.issuedAt)}` : '',
+            '',
+            'The school admin must log in with the temporary password and will be forced to change it on first login.'
+          ].filter(Boolean).join('\n');
+
+          await copyText(
+            credentialsText,
+            payload?.mode === 'reset'
+              ? 'School admin credentials reset. Latest credentials copied to clipboard and saved for reference.'
+              : 'School admin login created. Credentials copied to clipboard and saved for reference.'
+          );
+
+          if (payload?.referenceWarning) {
+            setNotice({ type: 'warning', text: payload.referenceWarning });
+          } else {
+            setNotice({
+              type: 'success',
+              text: payload?.mode === 'reset'
+                ? 'School admin credentials reset successfully.'
+                : 'School admin login created successfully.'
+            });
+          }
+
+          window.alert(credentialsText);
+          await refreshAll();
+        } catch (err) {
+          setNotice({
+            type: 'danger',
+            text: err?.message || 'Failed to send a request to the Edge Function'
+          });
+        }
       };
 
       const handlePermanentDeleteRegistration = async (registrationId, schoolName, status) => {
