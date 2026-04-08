@@ -1602,7 +1602,7 @@
         }
 
         try {
-          const res = await fetch(`${SUPABASE_URL}/functions/v1/provision-school-user`, {
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/provision-managed-user`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
