@@ -1854,15 +1854,7 @@
       const classOptions = useMemo(() => [{ value: '', label: 'Select Class' }, ...orderedClassRows.map(c => ({ value: c.id, label: buildClassDisplay(c) || c.name }))], [orderedClassRows]);
       const teacherClassOptions = useMemo(() => [{ value: '', label: 'Select Main Class' }, ...orderedClassRows.filter(c => orderedTeacherMainClasses.includes(normalizeMainClassName(c.name || c.class_name || ''))).map(c => ({ value: c.id, label: buildClassDisplay(c) || c.name }))], [orderedClassRows]);
       const studentMainClassOptions = useMemo(() => [{ value: '', label: 'Select Main Class' }, ...orderedMainClasses.map(v => ({ value: v, label: v }))], []);
-      const studentClassSectionOptions = useMemo(() => {
-        const activeMainClass = studentForm.student_main_class_name || '';
-        if (!activeMainClass) return classCategoryOptions;
-        const availableSections = new Set(['None']);
-        orderedClassRows
-          .filter(c => normalizeMainClassName(c.name || c.class_name || '') === activeMainClass)
-          .forEach(c => availableSections.add(getClassSectionValue(c)));
-        return classCategoryOptions.filter(opt => availableSections.has(opt.value));
-      }, [orderedClassRows, studentForm.student_main_class_name]);
+      const studentClassSectionOptions = useMemo(() => classCategoryOptions, []);
       const classNameMap = useMemo(() => Object.fromEntries(orderedClassRows.map(c => [c.id, buildClassDisplay(c) || c.name])), [orderedClassRows]);
       const findClassRowByMainAndSection = (mainClassName, sectionChoice = 'None') => {
         const normalizedMainClass = normalizeMainClassName(mainClassName);
@@ -1882,6 +1874,51 @@
         if (form.class_id) return form.class_id;
         const matchedRow = findClassRowByMainAndSection(form.student_main_class_name, form.student_class_section);
         return matchedRow?.id || '';
+      };
+
+      const deriveLevelGroupFromMainClass = (mainClassName) => {
+        const normalized = normalizeMainClassName(mainClassName);
+        if (!normalized) return '';
+        if (normalized.startsWith('Nursery')) return 'Nursery';
+        if (normalized.startsWith('KG')) return 'KG';
+        if (normalized.startsWith('Class')) return 'Primary';
+        if (normalized.startsWith('JHS')) return 'JHS';
+        return '';
+      };
+
+      const ensureStudentClassId = async (form) => {
+        const existingId = resolveStudentClassId(form);
+        if (existingId) return existingId;
+        const normalizedMainClass = normalizeMainClassName(form.student_main_class_name);
+        if (!school?.id || !normalizedMainClass) return '';
+
+        const sectionChoice = (form.student_class_section || 'None').trim() || 'None';
+        const insertPayload = {
+          school_id: school.id,
+          name: normalizedMainClass,
+          level_group: deriveLevelGroupFromMainClass(normalizedMainClass) || null,
+          section: sectionChoice === 'None' ? null : sectionChoice,
+          capacity: null
+        };
+
+        const { data: insertedClass, error: insertClassError } = await supabaseClient
+          .from('classes')
+          .insert(insertPayload)
+          .select('*')
+          .single();
+
+        if (insertClassError) {
+          const { data: fallbackClass } = await supabaseClient
+            .from('classes')
+            .select('*')
+            .eq('school_id', school.id)
+            .eq('name', normalizedMainClass)
+            .eq('section', sectionChoice === 'None' ? null : sectionChoice)
+            .maybeSingle();
+          return fallbackClass?.id || '';
+        }
+
+        return insertedClass?.id || '';
       };
 
       const buildStudentFormFromRow = (row) => {
@@ -2167,11 +2204,11 @@
           : (form.staff_no || null);
 
         const resolvedStudentClassId = roleName === 'student'
-          ? resolveStudentClassId(form)
+          ? await ensureStudentClassId(form)
           : (form.class_id || null);
 
         if (roleName === 'student' && form.student_main_class_name && !resolvedStudentClassId) {
-          setNotice({ type: 'danger', text: 'The selected student main class and category do not match an available class record. Add the class first, then try again.' });
+          setNotice({ type: 'danger', text: 'Failed to resolve or create the selected student main class.' });
           return;
         }
 
@@ -2810,7 +2847,7 @@
             {page === 'students' && (
               <GenericCrudPage
                 title="Student Management"
-                description="Add, edit, archive, and delete student records. Parent full name and parent contact captured here are synced into the Parents section, and assigned class details refresh automatically in real time."
+                description="Add, edit, archive, and delete student records. Parent full name and parent contact captured here are synced into the Parents section. Assign Main Class uses the fixed ordered list, and Category is a separate optional selector of None, A, B, or C."
                 columns={[
                   { key: 'full_name', label: 'Full Name' },
                   { key: 'student_no', label: 'Student No' },
