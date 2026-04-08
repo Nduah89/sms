@@ -1019,6 +1019,13 @@
 
       const genderOptions = [{ value: '', label: 'Select Gender' }, { value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }];
       const statusOptions = [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }, { value: 'archived', label: 'Archived' }];
+      const normalizeAccountStatus = (value) => {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (normalized === 'deactivated') return 'inactive';
+        if (normalized === 'inactive') return 'inactive';
+        if (normalized === 'archived') return 'archived';
+        return 'active';
+      };
       const yesNoOptions = [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }];
       const subjectOptions = ['Mathematics','English','Science','Social','RME','CAD','CAT','French','Computing','Twi'];
       const qualificationOptions = ['PhD','MSc Degree','Bachelor Degree','HND','Diploma','SHS'];
@@ -1578,13 +1585,27 @@
 
         setNotice({ type: '', text: '' });
 
-        const usernameToSave = row.username || generateManagedUsername(row);
+        const effectiveRow = userForm.profile_id === profileId
+          ? {
+              ...row,
+              username: userForm.username || row.username || '',
+              email: userForm.email || row.email || '',
+              account_status: normalizeAccountStatus(userForm.account_status || row.account_status || row.status || 'active'),
+              force_password_change: normalizeBoolean(userForm.force_password_change ?? row.force_password_change ?? true)
+            }
+          : {
+              ...row,
+              account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
+              force_password_change: normalizeBoolean(row.force_password_change ?? true)
+            };
+
+        const usernameToSave = effectiveRow.username || generateManagedUsername(effectiveRow);
         const { error: syncProfileError } = await supabaseClient
           .from('profiles')
           .update({
             username: usernameToSave || null,
-            account_status: row.account_status || row.status || 'active',
-            force_password_change: normalizeBoolean(row.force_password_change ?? true)
+            account_status: normalizeAccountStatus(effectiveRow.account_status || effectiveRow.status || 'active'),
+            force_password_change: normalizeBoolean(effectiveRow.force_password_change ?? true)
           })
           .eq('id', profileId);
 
@@ -1627,8 +1648,8 @@
 
           const credentialsText = [
             `School: ${payload?.schoolName || school?.name || ''}`,
-            `Role: ${payload?.roleName || row.role_name || ''}`,
-            `Name: ${payload?.fullName || row.full_name || ''}`,
+            `Role: ${payload?.roleName || effectiveRow.role_name || ''}`,
+            `Name: ${payload?.fullName || effectiveRow.full_name || ''}`,
             `Username: ${payload?.username || usernameToSave || ''}`,
             `Temporary Password: ${payload?.temporaryPassword || ''}`,
             `Login URL: ${payload?.loginUrl || window.location.origin + window.location.pathname}`,
@@ -2101,7 +2122,7 @@
           role_name: 'student',
           full_name: row.full_name || '',
           phone: row.profile_phone || row.phone || '',
-          account_status: row.account_status || row.status || 'active',
+          account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
           force_password_change: String(row.force_password_change ?? true),
           class_id: row.class_id || '',
           student_main_class_name: normalizedMainClass || '',
@@ -2120,7 +2141,7 @@
         profile_id: row.profile_id || '',
         role_name: 'teacher',
         full_name: row.full_name || '',
-        account_status: row.account_status || row.status || 'active',
+        account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
         force_password_change: String(row.force_password_change ?? true),
         staff_no: row.staff_no || '',
         emis_code: row.emis_code || '',
@@ -2338,7 +2359,7 @@
       }, [mergedStudentsRows, mergedTeachersRows, computedParentsRows, accountsHook.rows, principalsHook.rows, classesHook.rows, feesHook.rows, attendanceHook.rows, dashboardRecentAccounts]);
 
       const getManagedControlDraft = (row) => accountControlDrafts[row.profile_id] || {
-        account_status: row.account_status || row.status || 'active',
+        account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
         force_password_change: String(row.force_password_change ?? true)
       };
 
@@ -2414,7 +2435,7 @@
           p_email: roleName === 'student' ? null : (form.email || null),
           p_phone: form.phone || null,
           p_username: roleName === 'student' ? null : (form.username || null),
-          p_account_status: form.account_status || 'active',
+          p_account_status: normalizeAccountStatus(form.account_status || 'active'),
           p_force_password_change: normalizeBoolean(form.force_password_change),
           p_class_id: roleName === 'student' ? resolvedStudentClassId : (roleName === 'teacher' ? resolvedTeacherClassId : (form.class_id || null)),
           p_gender: form.gender || null,
@@ -2455,7 +2476,7 @@
         const draft = getManagedControlDraft(row);
         const { error } = await supabaseClient.rpc('set_managed_user_account_state', {
           p_profile_id: row.profile_id,
-          p_account_status: draft.account_status,
+          p_account_status: normalizeAccountStatus(draft.account_status),
           p_force_password_change: normalizeBoolean(draft.force_password_change)
         });
         if (error) {
@@ -2476,7 +2497,7 @@
           email: row.email || '',
           username: row.username || generateManagedUsername(row),
           phone: row.phone || row.profile_phone || '',
-          account_status: row.account_status || row.status || 'active',
+          account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
           force_password_change: String(row.force_password_change ?? true),
           class_id: row.class_id || '',
           gender: row.gender || 'Male',
@@ -2657,14 +2678,14 @@
         }
         const { error } = await supabaseClient.rpc('set_managed_user_account_state', {
           p_profile_id: profileId,
-          p_account_status: nextStatus,
+          p_account_status: normalizeAccountStatus(nextStatus),
           p_force_password_change: normalizeBoolean(row.force_password_change ?? true)
         });
         if (error) {
           setNotice({ type: 'danger', text: error.message || 'Failed to update user status.' });
           return;
         }
-        setNotice({ type: 'success', text: `User status changed to ${nextStatus}.` });
+        setNotice({ type: 'success', text: `User status changed to ${normalizeAccountStatus(nextStatus)}.` });
         await refreshAll();
       };
 
@@ -2678,7 +2699,7 @@
           email: row.email || '',
           username: row.username || generateManagedUsername(row),
           phone: row.phone || row.profile_phone || '',
-          account_status: row.account_status || row.status || 'active',
+          account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
           force_password_change: String(row.force_password_change ?? true),
           temporary_password: ref?.temporary_password || '',
           class_id: row.class_id || '',
@@ -2727,7 +2748,7 @@
           email: selectedRow.email || '',
           username: selectedRow.username || generateManagedUsername(selectedRow),
           phone: selectedRow.phone || selectedRow.profile_phone || '',
-          account_status: selectedRow.account_status || selectedRow.status || 'active',
+          account_status: normalizeAccountStatus(selectedRow.account_status || selectedRow.status || 'active'),
           force_password_change: String(selectedRow.force_password_change ?? true),
           temporary_password: ref?.temporary_password || ''
         });
@@ -2742,7 +2763,7 @@
           .from('profiles')
           .update({
             username: userForm.username || null,
-            account_status: userForm.account_status || 'active',
+            account_status: normalizeAccountStatus(userForm.account_status || 'active'),
             force_password_change: normalizeBoolean(userForm.force_password_change)
           })
           .eq('id', selectedManagedUser.profile_id);
@@ -2754,7 +2775,7 @@
 
         const { error: controlError } = await supabaseClient.rpc('set_managed_user_account_state', {
           p_profile_id: selectedManagedUser.profile_id,
-          p_account_status: userForm.account_status || 'active',
+          p_account_status: normalizeAccountStatus(userForm.account_status || 'active'),
           p_force_password_change: normalizeBoolean(userForm.force_password_change)
         });
 
@@ -2774,7 +2795,13 @@
         }
         const okay = await saveCredentialControls();
         if (!okay) return;
-        await handleProvisionManagedUser({ ...selectedManagedUser, username: userForm.username || selectedManagedUser.username });
+        await handleProvisionManagedUser({
+          ...selectedManagedUser,
+          username: userForm.username || selectedManagedUser.username,
+          email: userForm.email || selectedManagedUser.email,
+          account_status: normalizeAccountStatus(userForm.account_status || selectedManagedUser.account_status || selectedManagedUser.status || 'active'),
+          force_password_change: normalizeBoolean(userForm.force_password_change)
+        });
       };
 
       if (!sessionReady) return <div className="auth-shell"><div className="card">Loading...</div></div>;
@@ -3224,7 +3251,7 @@
                       <div><strong>Live Status</strong><div><span className={classNames('chip', getManagedLiveStatus(selectedManagedUser) === 'active' ? 'success' : 'danger')}>{getManagedLiveStatus(selectedManagedUser) === 'active' ? 'Active' : 'Inactive'}</span></div></div>
                       <div><strong>Last Seen</strong><div className="subtle">{getManagedPresence(selectedManagedUser)?.last_seen_at ? formatDate(getManagedPresence(selectedManagedUser).last_seen_at) : '-'}</div></div>
                       <div><strong>Username</strong><div className="subtle">{userForm.username || '-'}</div></div>
-                      <div><strong>Account Access</strong><div><span className={classNames('chip', (userForm.account_status || selectedManagedUser.account_status) === 'active' ? 'success' : (userForm.account_status || selectedManagedUser.account_status) === 'archived' ? 'warning' : 'danger')}>{userForm.account_status || selectedManagedUser.account_status || '-'}</span></div></div>
+                      <div><strong>Account Access</strong><div><span className={classNames('chip', normalizeAccountStatus(userForm.account_status || selectedManagedUser.account_status) === 'active' ? 'success' : normalizeAccountStatus(userForm.account_status || selectedManagedUser.account_status) === 'archived' ? 'warning' : 'danger')}>{normalizeAccountStatus(userForm.account_status || selectedManagedUser.account_status || '-')}</span></div></div>
                       <div><strong>Force Password Change</strong><div className="subtle">{String(userForm.force_password_change) === 'true' ? 'Yes' : 'No'}</div></div>
                       <div><strong>Latest Temporary Password</strong><div className="subtle">{managedUserRefMap[selectedManagedUser.profile_id]?.temporary_password || '-'}</div></div>
                     </div>
@@ -3236,7 +3263,7 @@
                     {managedUsersRows.length === 0 && <tr><td colSpan="9"><div className="empty">No managed user records found</div></td></tr>}
                     {managedUsersRows.map(r => {
                       const ref = managedUserRefMap[r.profile_id];
-                      const accessStatus = r.account_status || r.status || 'active';
+                      const accessStatus = normalizeAccountStatus(r.account_status || r.status || 'active');
                       const liveStatus = getManagedLiveStatus(r);
                       return <tr key={r.profile_id}>
                         <td>{r.full_name}</td>
