@@ -1018,7 +1018,7 @@
       };
 
       const genderOptions = [{ value: '', label: 'Select Gender' }, { value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }];
-      const statusOptions = [{ value: 'active', label: 'Active' }, { value: 'deactivated', label: 'Deactivated' }, { value: 'archived', label: 'Archived' }];
+      const statusOptions = [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }, { value: 'archived', label: 'Archived' }];
       const yesNoOptions = [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }];
       const subjectOptions = ['Mathematics','English','Science','Social','RME','CAD','CAT','French','Computing','Twi'];
       const qualificationOptions = ['PhD','MSc Degree','Bachelor Degree','HND','Diploma','SHS'];
@@ -1602,7 +1602,7 @@
         }
 
         try {
-          const res = await fetch(`${SUPABASE_URL}/functions/v1/provision-managed-user`, {
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/provision-school-user`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -3200,7 +3200,7 @@
                     <button className="btn secondary" onClick={saveCredentialControls} disabled={!selectedManagedUser}>Save Controls</button>
                     <button className="btn" onClick={handleCredentialProvisionFromForm} disabled={!selectedManagedUser}>{managedUserRefMap[userForm.profile_id] ? 'Reset Password' : 'Generate Username & Password'}</button>
                     <button className="btn success" onClick={()=>selectedManagedUser && setManagedUserStatus(selectedManagedUser, 'active')} disabled={!selectedManagedUser}>Reactivate</button>
-                    <button className="btn warning" onClick={()=>selectedManagedUser && setManagedUserStatus(selectedManagedUser, 'deactivated')} disabled={!selectedManagedUser}>Deactivate</button>
+                    <button className="btn warning" onClick={()=>selectedManagedUser && setManagedUserStatus(selectedManagedUser, 'inactive')} disabled={!selectedManagedUser}>Deactivate</button>
                     <button className="btn secondary" onClick={()=>selectedManagedUser && setManagedUserStatus(selectedManagedUser, 'archived')} disabled={!selectedManagedUser}>Archive</button>
                     <button className="btn danger" onClick={()=>selectedManagedUser && handleDeleteManagedUser(selectedManagedUser)} disabled={!selectedManagedUser}>Delete</button>
                   </div>
@@ -3239,7 +3239,7 @@
                           <button className="btn secondary" onClick={()=>openManagedUserInCredentials(r)}>Select</button>
                           <button className="btn" onClick={()=>handleProvisionManagedUser({ ...r, username: r.username || generateManagedUsername(r) })}>{ref ? 'Reset Password' : 'Create Login'}</button>
                           <button className="btn secondary" onClick={()=>copyText(buildManagedUserReferenceText({ ...r, username: r.username || generateManagedUsername(r) }), 'User credential reference copied to clipboard')}>Copy</button>
-                          <button className="btn warning" onClick={()=>setManagedUserStatus(r, accessStatus === 'active' ? 'deactivated' : 'active')}>{accessStatus === 'active' ? 'Deactivate' : 'Reactivate'}</button>
+                          <button className="btn warning" onClick={()=>setManagedUserStatus(r, accessStatus === 'active' ? 'inactive' : 'active')}>{accessStatus === 'active' ? 'Deactivate' : 'Reactivate'}</button>
                         </div> : <span className="subtle">School admin only</span>}</td>
                       </tr>
                     })}
