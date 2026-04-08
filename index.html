@@ -931,7 +931,7 @@
       const profilesPresenceHook = useSupabaseTable("profiles", "id, username, is_online, last_seen_at");
 
       const buildManagedForm = (roleName = 'student') => ({
-        profile_id: "", role_name: roleName, full_name: "", email: "", username: "", phone: "", account_status: "active", force_password_change: 'true',
+        profile_id: "", role_name: roleName, full_name: "", email: "", username: "", phone: "", account_status: "active", force_password_change: 'true', temporary_password: "",
         class_id: "", student_main_class_name: "", student_class_section: "None", teacher_main_class_name: "", gender: "Male", date_of_birth: "", guardian_contact: "", address: "", student_no: "", staff_no: "",
         subject_specialty: "", qualification: "", assigned_subjects: [], assigned_class_ids: [], relationship_to_student: "",
         parent_full_name: "", parent_contact: "", emis_code: "", ghana_card: "", trained_status: "Trained"
@@ -1649,6 +1649,13 @@
               ? 'User credentials reset successfully.'
               : 'User login created successfully.'
           });
+
+          setUserForm((current) => current.profile_id === profileId ? {
+            ...current,
+            username: payload?.username || usernameToSave || current.username,
+            email: payload?.email || current.email,
+            temporary_password: payload?.temporaryPassword || current.temporary_password || ''
+          } : current);
 
           window.alert(credentialsText);
           await refreshAll();
@@ -2662,6 +2669,7 @@
       };
 
       const openManagedUserInCredentials = (row) => {
+        const ref = managedUserRefMap[row.profile_id || row.id] || null;
         setUserForm({
           ...buildManagedForm(row.role_name || 'student'),
           profile_id: row.profile_id || '',
@@ -2672,6 +2680,7 @@
           phone: row.phone || row.profile_phone || '',
           account_status: row.account_status || row.status || 'active',
           force_password_change: String(row.force_password_change ?? true),
+          temporary_password: ref?.temporary_password || '',
           class_id: row.class_id || '',
           gender: row.gender || 'Male',
           date_of_birth: row.date_of_birth || '',
@@ -2709,6 +2718,7 @@
           setUserForm(buildManagedForm(userForm.role_name));
           return;
         }
+        const ref = managedUserRefMap[selectedRow.profile_id || selectedRow.id] || null;
         setUserForm({
           ...buildManagedForm(selectedRow.role_name || userForm.role_name),
           profile_id: selectedRow.profile_id || '',
@@ -2718,7 +2728,8 @@
           username: selectedRow.username || generateManagedUsername(selectedRow),
           phone: selectedRow.phone || selectedRow.profile_phone || '',
           account_status: selectedRow.account_status || selectedRow.status || 'active',
-          force_password_change: String(selectedRow.force_password_change ?? true)
+          force_password_change: String(selectedRow.force_password_change ?? true),
+          temporary_password: ref?.temporary_password || ''
         });
       };
 
@@ -3192,6 +3203,7 @@
                     <div className="field"><label>Select Role</label><select value={userForm.role_name} onChange={(e)=>setUserForm(buildManagedForm(e.target.value))}>{managedRoleOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
                     <div className="field"><label>Select Existing Name</label><select value={userForm.profile_id} onChange={(e)=>handleCredentialSelection(e.target.value)}><option value="">Select User</option>{roleScopedManagedUsers.map(row => <option key={row.profile_id} value={row.profile_id}>{row.full_name}{row.class_name ? `, ${row.class_name}` : ''}</option>)}</select></div>
                     <div className="field"><label>Generated Username</label><div style={{display:'flex', gap:8}}><input value={userForm.username} onChange={(e)=>setUserForm({...userForm, username:e.target.value})} placeholder="Username" /><button type="button" className="btn secondary" onClick={()=>selectedManagedUser && setUserForm({...userForm, username: generateManagedUsername(selectedManagedUser)})} disabled={!selectedManagedUser}>Generate</button></div></div>
+                    <div className="field"><label>Temporary Password</label><div style={{display:'flex', gap:8}}><input value={managedUserRefMap[userForm.profile_id]?.temporary_password || userForm.temporary_password || ''} placeholder="Generated password will appear here" readOnly /><button type="button" className="btn secondary" onClick={()=>copyText(managedUserRefMap[userForm.profile_id]?.temporary_password || userForm.temporary_password || '', 'Temporary password copied to clipboard')} disabled={!(managedUserRefMap[userForm.profile_id]?.temporary_password || userForm.temporary_password)}>Copy</button></div></div>
                     <div className="field"><label>Email</label><input value={userForm.email} disabled /></div>
                     <div className="field"><label>Force Password Change</label><select value={String(userForm.force_password_change)} onChange={(e)=>setUserForm({...userForm, force_password_change:e.target.value})}>{yesNoOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
                     <div className="field"><label>Account Access</label><select value={userForm.account_status} onChange={(e)=>setUserForm({...userForm, account_status:e.target.value})}>{statusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
