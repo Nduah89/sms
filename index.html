@@ -1593,36 +1593,71 @@
           return;
         }
 
-        const { data, error } = await supabaseClient.functions.invoke('provision-school-user', {
-          body: {
-            profileId,
-            loginUrl: window.location.origin + window.location.pathname
-          }
-        });
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        const token = sessionData?.session?.access_token;
 
-        if (error) {
-          setNotice({ type: 'danger', text: error.message || 'Failed to provision user credentials' });
+        if (!token) {
+          setNotice({ type: 'danger', text: 'No active session token found. Please log in again.' });
           return;
         }
 
-        const credentialsText = [
-          `School: ${data?.schoolName || school?.name || ''}`,
-          `Role: ${data?.roleName || row.role_name || ''}`,
-          `Name: ${data?.fullName || row.full_name || ''}`,
-          `Email: ${data?.email || row.email || ''}`,
-          `Username: ${data?.username || row.username || ''}`,
-          `Temporary Password: ${data?.temporaryPassword || ''}`,
-          `Login URL: ${data?.loginUrl || window.location.origin + window.location.pathname}`,
-          '',
-          'The user must log in with the temporary password and will be forced to change it on first login.'
-        ].join('\n');
+        try {
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/provision-school-user`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              profileId,
+              loginUrl: window.location.origin + window.location.pathname
+            })
+          });
 
-        await copyText(credentialsText, data?.mode === 'reset'
-          ? 'User credentials reset. Latest credentials copied to clipboard and saved for reference.'
-          : 'User login created. Credentials copied to clipboard and saved for reference.');
+          const payload = await res.json().catch(() => ({}));
 
-        window.alert(credentialsText);
-        await refreshAll();
+          if (!res.ok) {
+            setNotice({
+              type: 'danger',
+              text: payload?.error || `Create Username & Password failed with status ${res.status}`
+            });
+            return;
+          }
+
+          const credentialsText = [
+            `School: ${payload?.schoolName || school?.name || ''}`,
+            `Role: ${payload?.roleName || row.role_name || ''}`,
+            `Name: ${payload?.fullName || row.full_name || ''}`,
+            `Username: ${payload?.username || usernameToSave || ''}`,
+            `Temporary Password: ${payload?.temporaryPassword || ''}`,
+            `Login URL: ${payload?.loginUrl || window.location.origin + window.location.pathname}`,
+            '',
+            'The user must log in with the temporary password and will be forced to change it on first login.'
+          ].join('\n');
+
+          await copyText(
+            credentialsText,
+            payload?.mode === 'reset'
+              ? 'User credentials reset. Latest credentials copied to clipboard.'
+              : 'User login created. Credentials copied to clipboard.'
+          );
+
+          setNotice({
+            type: 'success',
+            text: payload?.mode === 'reset'
+              ? 'User credentials reset successfully.'
+              : 'User login created successfully.'
+          });
+
+          window.alert(credentialsText);
+          await refreshAll();
+        } catch (err) {
+          setNotice({
+            type: 'danger',
+            text: err?.message || 'Failed to send a request to the Edge Function'
+          });
+        }
       };
 
       const handleDeleteManagedUser = async (row) => {
