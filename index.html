@@ -907,7 +907,7 @@
 
       const buildManagedForm = (roleName = 'student') => ({
         profile_id: "", role_name: roleName, full_name: "", email: "", username: "", phone: "", account_status: "active", force_password_change: 'true',
-        class_id: "", student_main_class_name: "", student_class_section: "None", gender: "Male", date_of_birth: "", guardian_contact: "", address: "", student_no: "", staff_no: "",
+        class_id: "", student_main_class_name: "", student_class_section: "None", teacher_main_class_name: "", gender: "Male", date_of_birth: "", guardian_contact: "", address: "", student_no: "", staff_no: "",
         subject_specialty: "", qualification: "", assigned_subjects: [], assigned_class_ids: [], relationship_to_student: "",
         parent_full_name: "", parent_contact: "", emis_code: "", ghana_card: "", trained_status: "Trained"
       });
@@ -1000,7 +1000,7 @@
       const trainedStatusOptions = [{ value: 'Trained', label: 'Trained' }, { value: 'Non-Trained', label: 'Non-Trained' }];
       const relationshipOptions = ['Parent', 'Mother', 'Father', 'Guardian'];
       const orderedMainClasses = ['Nursery 1', 'Nursery 2', 'KG 1', 'KG 2', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'JHS 1', 'JHS 2', 'JHS 3'];
-      const orderedTeacherMainClasses = ['Nursery 1', 'Nursery 2', 'KG 1', 'KG 2', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'JHS 1', 'JHS 2', 'JHS 3'];
+      const orderedTeacherMainClasses = ['Nursery 1', 'Nursery 2', 'KG 1', 'KG 2', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'JHS'];
       const classCategoryOptions = [{ value: 'None', label: 'None' }, { value: 'A', label: 'A' }, { value: 'B', label: 'B' }, { value: 'C', label: 'C' }];
       const classRankMap = Object.fromEntries(orderedMainClasses.map((label, index) => [label, index]));
       const normalizeMainClassName = (raw) => {
@@ -1026,6 +1026,12 @@
           if (pattern.test(compact)) return label;
         }
         return String(raw || '').trim();
+      };
+      const normalizeTeacherMainClassName = (raw) => {
+        const normalized = normalizeMainClassName(raw);
+        if (!normalized) return '';
+        if (normalized.startsWith('JHS')) return 'JHS';
+        return normalized;
       };
       const getClassSectionValue = (row) => {
         const section = String(row?.section || row?.class_section || '').trim().toUpperCase();
@@ -1852,10 +1858,14 @@
       };
 
       const classOptions = useMemo(() => [{ value: '', label: 'Select Class' }, ...orderedClassRows.map(c => ({ value: c.id, label: buildClassDisplay(c) || c.name }))], [orderedClassRows]);
-      const teacherClassOptions = useMemo(() => [{ value: '', label: 'Select Main Class' }, ...orderedClassRows.filter(c => orderedTeacherMainClasses.includes(normalizeMainClassName(c.name || c.class_name || ''))).map(c => ({ value: c.id, label: buildClassDisplay(c) || c.name }))], [orderedClassRows]);
+      const teacherMainClassOptions = useMemo(() => [{ value: '', label: 'Select Main Class' }, ...orderedTeacherMainClasses.map(v => ({ value: v, label: v }))], []);
       const studentMainClassOptions = useMemo(() => [{ value: '', label: 'Select Main Class' }, ...orderedMainClasses.map(v => ({ value: v, label: v }))], []);
       const studentClassSectionOptions = useMemo(() => classCategoryOptions, []);
       const classNameMap = useMemo(() => Object.fromEntries(orderedClassRows.map(c => [c.id, buildClassDisplay(c) || c.name])), [orderedClassRows]);
+      const teacherAssignedClassDisplay = (row) => {
+        const source = classNameMap[row.class_id] || row.class_name || '';
+        return normalizeTeacherMainClassName(source) || source || '-';
+      };
       const findClassRowByMainAndSection = (mainClassName, sectionChoice = 'None') => {
         const normalizedMainClass = normalizeMainClassName(mainClassName);
         if (!normalizedMainClass) return null;
@@ -1921,6 +1931,48 @@
         return insertedClass?.id || '';
       };
 
+      const resolveTeacherClassId = (form) => {
+        if (!form.teacher_main_class_name) return form.class_id || '';
+        const normalizedTeacherMainClass = normalizeTeacherMainClassName(form.teacher_main_class_name);
+        if (!normalizedTeacherMainClass) return form.class_id || '';
+        const matchedRow = orderedClassRows.find((row) => normalizeTeacherMainClassName(row.name || row.class_name || '') === normalizedTeacherMainClass);
+        return matchedRow?.id || '';
+      };
+
+      const ensureTeacherClassId = async (form) => {
+        const existingId = resolveTeacherClassId(form);
+        if (existingId) return existingId;
+        const normalizedTeacherMainClass = normalizeTeacherMainClassName(form.teacher_main_class_name);
+        if (!school?.id || !normalizedTeacherMainClass) return '';
+
+        const insertPayload = {
+          school_id: school.id,
+          name: normalizedTeacherMainClass,
+          level_group: deriveLevelGroupFromMainClass(normalizedTeacherMainClass) || null,
+          section: null,
+          capacity: null
+        };
+
+        const { data: insertedClass, error: insertClassError } = await supabaseClient
+          .from('classes')
+          .insert(insertPayload)
+          .select('*')
+          .single();
+
+        if (insertClassError) {
+          const { data: fallbackClass } = await supabaseClient
+            .from('classes')
+            .select('*')
+            .eq('school_id', school.id)
+            .eq('name', normalizedTeacherMainClass)
+            .is('section', null)
+            .maybeSingle();
+          return fallbackClass?.id || '';
+        }
+
+        return insertedClass?.id || '';
+      };
+
       const buildStudentFormFromRow = (row) => {
         const classRow = orderedClassRows.find((entry) => entry.id === row.class_id) || null;
         const normalizedMainClass = normalizeMainClassName(classRow?.name || row.class_name || '');
@@ -1957,6 +2009,7 @@
         gender: row.gender || '',
         date_of_birth: row.date_of_birth || '',
         class_id: row.class_id || '',
+        teacher_main_class_name: normalizeTeacherMainClassName(row.class_name || classNameMap[row.class_id] || ''),
         subject_specialty: row.subject_specialty || '',
         qualification: row.qualification || '',
         trained_status: row.trained_status || 'Trained'
@@ -1985,6 +2038,20 @@
           setStudentForm((prev) => ({ ...prev, class_id: nextClassId }));
         }
       }, [studentForm.student_main_class_name, studentForm.student_class_section, studentClassSectionOptions, orderedClassRows]);
+
+      useEffect(() => {
+        if (!teacherForm.teacher_main_class_name) {
+          if (teacherForm.class_id) {
+            setTeacherForm((prev) => ({ ...prev, class_id: '' }));
+          }
+          return;
+        }
+
+        const nextClassId = resolveTeacherClassId(teacherForm) || '';
+        if ((teacherForm.class_id || '') !== nextClassId) {
+          setTeacherForm((prev) => ({ ...prev, class_id: nextClassId }));
+        }
+      }, [teacherForm.teacher_main_class_name, orderedClassRows]);
 
       const parentLinksRows = parentLinksHook.rows || [];
       const managedUsersRows = managedUsersHook.rows || [];
@@ -2205,10 +2272,19 @@
 
         const resolvedStudentClassId = roleName === 'student'
           ? await ensureStudentClassId(form)
-          : (form.class_id || null);
+          : null;
+
+        const resolvedTeacherClassId = roleName === 'teacher'
+          ? await ensureTeacherClassId(form)
+          : null;
 
         if (roleName === 'student' && form.student_main_class_name && !resolvedStudentClassId) {
           setNotice({ type: 'danger', text: 'Failed to resolve or create the selected student main class.' });
+          return;
+        }
+
+        if (roleName === 'teacher' && form.teacher_main_class_name && !resolvedTeacherClassId) {
+          setNotice({ type: 'danger', text: 'Failed to resolve or create the selected teacher main class.' });
           return;
         }
 
@@ -2221,7 +2297,7 @@
           p_username: roleName === 'student' ? null : (form.username || null),
           p_account_status: form.account_status || 'active',
           p_force_password_change: normalizeBoolean(form.force_password_change),
-          p_class_id: resolvedStudentClassId,
+          p_class_id: roleName === 'student' ? resolvedStudentClassId : (roleName === 'teacher' ? resolvedTeacherClassId : (form.class_id || null)),
           p_gender: form.gender || null,
           p_date_of_birth: form.date_of_birth || null,
           p_guardian_contact: roleName === 'student' ? null : (form.guardian_contact || null),
@@ -2851,7 +2927,7 @@
                 columns={[
                   { key: 'full_name', label: 'Full Name' },
                   { key: 'student_no', label: 'Student No' },
-                  { key: 'assigned_class', label: 'Assigned Class', render: (_, row) => classNameMap[row.class_id] || row.class_name || '-' },
+                  { key: 'assigned_class', label: 'Assigned Class', render: (_, row) => teacherAssignedClassDisplay(row) },
                   { key: 'gender', label: 'Gender' },
                   { key: 'date_of_birth', label: 'Date of Birth', render: v => formatDate(v) },
                   { key: 'parent_full_name', label: 'Parent Full Name' },
@@ -2896,7 +2972,7 @@
                 columns={[
                   { key: 'full_name', label: 'Full Name' },
                   { key: 'emis_code', label: 'Teacher EMIS Code' },
-                  { key: 'assigned_class', label: 'Assigned Class', render: (_, row) => classNameMap[row.class_id] || row.class_name || '-' },
+                  { key: 'assigned_class', label: 'Assigned Class', render: (_, row) => teacherAssignedClassDisplay(row) },
                   { key: 'subject_specialty', label: 'Primary Subject' },
                   { key: 'qualification', label: 'Qualification' },
                   { key: 'gender', label: 'Gender' },
@@ -2915,7 +2991,7 @@
                   { key: 'ghana_card', label: 'Ghana Card' },
                   { key: 'gender', label: 'Gender', type: 'select', options: genderOptions },
                   { key: 'date_of_birth', label: 'Date of Birth', type: 'date' },
-                  { key: 'class_id', label: 'Assign Main Class', type: 'select', options: teacherClassOptions },
+                  { key: 'teacher_main_class_name', label: 'Assign Main Class', type: 'select', options: teacherMainClassOptions },
                   { key: 'subject_specialty', label: 'Primary Subject Specialty', type: 'select', options: [{ value: '', label: 'Select Specialty' }, ...subjectOptions.map(v => ({ value: v, label: v }))] },
                   { key: 'qualification', label: 'Qualification', type: 'select', options: [{ value: '', label: 'Select Qualification' }, ...qualificationOptions.map(v => ({ value: v, label: v }))] },
                   { key: 'trained_status', label: 'Training Status', type: 'select', options: trainedStatusOptions },
@@ -2930,7 +3006,7 @@
                   <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
                   <button className="btn secondary" onClick={() => openManagedUserInCredentials(row)}>Open in User Accounts</button>
                 </> : null}
-                extraActions={<><button className="btn secondary" onClick={()=>exportCsv(mergedTeachersRows.map((row) => ({ ...row, assigned_class: classNameMap[row.class_id] || row.class_name || '' })), 'teachers.csv')}>Export CSV</button></>}
+                extraActions={<><button className="btn secondary" onClick={()=>exportCsv(mergedTeachersRows.map((row) => ({ ...row, assigned_class: teacherAssignedClassDisplay(row) })), 'teachers.csv')}>Export CSV</button></>}
               />
             )}
 
