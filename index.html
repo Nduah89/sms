@@ -1604,7 +1604,6 @@
           .from('profiles')
           .update({
             username: usernameToSave || null,
-            account_status: normalizeAccountStatus(effectiveRow.account_status || effectiveRow.status || 'active'),
             force_password_change: normalizeBoolean(effectiveRow.force_password_change ?? true)
           })
           .eq('id', profileId);
@@ -2793,8 +2792,6 @@
           setNotice({ type: 'danger', text: 'Select an existing user first.' });
           return;
         }
-        const okay = await saveCredentialControls();
-        if (!okay) return;
         await handleProvisionManagedUser({
           ...selectedManagedUser,
           username: userForm.username || selectedManagedUser.username,
