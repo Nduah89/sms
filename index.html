@@ -1021,11 +1021,16 @@
       const statusOptions = [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }, { value: 'archived', label: 'Archived' }];
       const normalizeAccountStatus = (value) => {
         const normalized = String(value || '').trim().toLowerCase();
-        if (normalized === 'deactivated') return 'inactive';
-        if (normalized === 'inactive') return 'inactive';
-        if (normalized === 'archived') return 'archived';
+        if (!normalized) return 'active';
+        if (['deactivated', 'inactive', 'disabled', 'locked', 'blocked', 'suspended'].includes(normalized)) return 'inactive';
+        if (['archived', 'archive'].includes(normalized)) return 'archived';
         return 'active';
       };
+      const sanitizeManagedUserAccountPayload = (row = {}) => ({
+        ...row,
+        account_status: normalizeAccountStatus(row.account_status || row.status || row.account_access || 'active'),
+        force_password_change: normalizeBoolean(row.force_password_change ?? true)
+      });
       const yesNoOptions = [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }];
       const subjectOptions = ['Mathematics','English','Science','Social','RME','CAD','CAT','French','Computing','Twi'];
       const qualificationOptions = ['PhD','MSc Degree','Bachelor Degree','HND','Diploma','SHS'];
@@ -1575,7 +1580,8 @@
           return;
         }
 
-        const profileId = row.profile_id || row.id;
+        const sanitizedRow = sanitizeManagedUserAccountPayload(row);
+        const profileId = sanitizedRow.profile_id || sanitizedRow.id;
         if (!profileId) {
           setNotice({ type: 'danger', text: 'No linked profile was found for this record.' });
           return;
@@ -1584,18 +1590,14 @@
         setNotice({ type: '', text: '' });
 
         const effectiveRow = userForm.profile_id === profileId
-          ? {
-              ...row,
-              username: userForm.username || row.username || '',
-              email: userForm.email || row.email || '',
-              account_status: normalizeAccountStatus(userForm.account_status || row.account_status || row.status || 'active'),
-              force_password_change: normalizeBoolean(userForm.force_password_change ?? row.force_password_change ?? true)
-            }
-          : {
-              ...row,
-              account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
-              force_password_change: normalizeBoolean(row.force_password_change ?? true)
-            };
+          ? sanitizeManagedUserAccountPayload({
+              ...sanitizedRow,
+              username: userForm.username || sanitizedRow.username || '',
+              email: userForm.email || sanitizedRow.email || '',
+              account_status: userForm.account_status || sanitizedRow.account_status || 'active',
+              force_password_change: userForm.force_password_change ?? sanitizedRow.force_password_change ?? true
+            })
+          : sanitizeManagedUserAccountPayload(sanitizedRow);
 
         const usernameToSave = effectiveRow.username || generateManagedUsername(effectiveRow);
         const { error: syncProfileError } = await supabaseClient
@@ -2792,13 +2794,14 @@
           setNotice({ type: 'danger', text: 'Select an existing user first.' });
           return;
         }
-        await handleProvisionManagedUser({
-          ...selectedManagedUser,
-          username: userForm.username || selectedManagedUser.username,
-          email: userForm.email || selectedManagedUser.email,
-          account_status: normalizeAccountStatus(userForm.account_status || selectedManagedUser.account_status || selectedManagedUser.status || 'active'),
-          force_password_change: normalizeBoolean(userForm.force_password_change)
-        });
+        const sanitizedSelectedUser = sanitizeManagedUserAccountPayload(selectedManagedUser);
+        await handleProvisionManagedUser(sanitizeManagedUserAccountPayload({
+          ...sanitizedSelectedUser,
+          username: userForm.username || sanitizedSelectedUser.username,
+          email: userForm.email || sanitizedSelectedUser.email,
+          account_status: userForm.account_status || sanitizedSelectedUser.account_status || 'active',
+          force_password_change: userForm.force_password_change
+        }));
       };
 
       if (!sessionReady) return <div className="auth-shell"><div className="card">Loading...</div></div>;
