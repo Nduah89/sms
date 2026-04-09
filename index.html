@@ -3848,22 +3848,68 @@
                     setNotice({ type: 'danger', text: 'School context was not found. Please log in again.' });
                     return;
                   }
-                  const payload = {
-                    id: classForm.id || '',
-                    name: trimmedClassName,
-                    capacity: classForm.capacity === '' || classForm.capacity == null ? null : Number(classForm.capacity),
-                    school_id: school.id
-                  };
-                  return withNotice(async () => {
-                    const query = payload.id
-                      ? supabaseClient.from('classes').update({ name: payload.name, capacity: payload.capacity }).eq('id', payload.id).eq('school_id', school.id)
-                      : supabaseClient.from('classes').insert({ name: payload.name, capacity: payload.capacity, school_id: school.id });
-                    const res = await query;
-                    if (res?.error) throw res.error;
-                    setClassForm({ id: '', class_name: '', capacity: '' });
-                    await refreshAll();
-                    return res;
-                  }, 'classes saved successfully');
+
+                  const normalizedClassName = normalizeMainClassName(trimmedClassName) || trimmedClassName;
+                  const inferredLevelGroup = normalizedClassName.startsWith('Nursery')
+                    ? 'Nursery'
+                    : normalizedClassName.startsWith('KG')
+                    ? 'Kindergarten'
+                    : normalizedClassName.startsWith('Class')
+                    ? 'Primary'
+                    : normalizedClassName.startsWith('JHS')
+                    ? 'JHS'
+                    : null;
+
+                  const parsedCapacity = classForm.capacity === '' || classForm.capacity == null || Number.isNaN(Number(classForm.capacity))
+                    ? null
+                    : Number(classForm.capacity);
+
+                  const candidatePayloads = [
+                    { name: trimmedClassName, class_name: trimmedClassName, capacity: parsedCapacity, school_id: school.id },
+                    { name: trimmedClassName, capacity: parsedCapacity, school_id: school.id },
+                    { name: trimmedClassName, class_name: trimmedClassName, level_group: inferredLevelGroup, section: 'None', capacity: parsedCapacity, school_id: school.id },
+                    { name: trimmedClassName, level_group: inferredLevelGroup, section: 'None', capacity: parsedCapacity, school_id: school.id }
+                  ];
+
+                  setNotice({ type: '', text: '' });
+
+                  let lastError = null;
+
+                  for (const candidate of candidatePayloads) {
+                    const payload = { ...candidate };
+                    if (payload.level_group == null) delete payload.level_group;
+
+                    try {
+                      const res = classForm.id
+                        ? await supabaseClient
+                            .from('classes')
+                            .update(payload)
+                            .eq('id', classForm.id)
+                            .eq('school_id', school.id)
+                            .select()
+                        : await supabaseClient
+                            .from('classes')
+                            .insert(payload)
+                            .select();
+
+                      if (!res?.error) {
+                        setClassForm({ id: '', class_name: '', capacity: '' });
+                        await classesHook.fetchRows();
+                        await refreshAll();
+                        setNotice({ type: 'success', text: 'Class saved successfully.' });
+                        return;
+                      }
+
+                      lastError = res.error;
+                    } catch (error) {
+                      lastError = error;
+                    }
+                  }
+
+                  setNotice({
+                    type: 'danger',
+                    text: lastError?.message || 'Failed to save class. Please check the classes table columns and policies.'
+                  });
                 }}
                 onDelete={(id) => deleteEntity('classes', id)}
                 onEdit={(row) => setClassForm({ id: row.id || '', class_name: row.name || row.class_name || '', capacity: row.capacity || '' })}
