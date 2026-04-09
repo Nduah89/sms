@@ -901,6 +901,7 @@
       const [notice, setNotice] = useState({ type: "", text: "" });
       const [selectedReport, setSelectedReport] = useState("grade");
       const [currentStudent, setCurrentStudent] = useState(null);
+      const [principalPerformanceFilter, setPrincipalPerformanceFilter] = useState({ class_name: '', student_id: '', term_name: 'All Terms', academic_year: 'All Years' });
       const [passwordForm, setPasswordForm] = useState({ newPassword: "" });
       const [welcomeContext, setWelcomeContext] = useState(null);
       const [themeConfig, setThemeConfig] = useState(normalizeThemeConfig({ theme_name: DEFAULT_THEME_KEY }));
@@ -1903,9 +1904,49 @@
       };
 
       const handleFirstLoginPasswordChange = async () => {
-        const { error } = await changePassword(passwordForm.newPassword);
-        if (error) return setNotice({ type: 'danger', text: error.message });
-        await withNotice(async () => supabaseClient.from('profiles').update({ force_password_change: false }).eq('id', profile.id), 'Password changed successfully');
+        const nextPassword = String(passwordForm.newPassword || '').trim();
+        if (!nextPassword) {
+          setNotice({ type: 'danger', text: 'Enter a new password before continuing.' });
+          return;
+        }
+
+        const { error } = await changePassword(nextPassword);
+        if (error) {
+          setNotice({ type: 'danger', text: error.message });
+          return;
+        }
+
+        setNotice({ type: '', text: '' });
+
+        let completeError = null;
+        try {
+          const { error: rpcError } = await supabaseClient.rpc('complete_first_login_password_change', {
+            p_profile_id: profile.id
+          });
+          completeError = rpcError || null;
+        } catch (rpcErr) {
+          completeError = rpcErr || null;
+        }
+
+        if (completeError) {
+          const { error: fallbackError } = await supabaseClient
+            .from('profiles')
+            .update({ force_password_change: false })
+            .eq('id', profile.id);
+          if (fallbackError) {
+            setNotice({
+              type: 'danger',
+              text: completeError?.message || fallbackError.message || 'Password was changed, but the first login flag could not be cleared.'
+            });
+            return;
+          }
+        }
+
+        setProfile((prev) => prev ? ({ ...prev, force_password_change: false }) : prev);
+        setPasswordForm({ newPassword: '' });
+        setNotice({ type: 'success', text: 'Password changed successfully' });
+        await refreshAll();
+        await loadCore();
       };
 
       const handleBulkStudentImport = (file) => {
@@ -2195,19 +2236,70 @@
       const parentLinksRows = parentLinksHook.rows || [];
       const managedUsersRows = managedUsersHook.rows || [];
       const studentLookup = useMemo(() => Object.fromEntries(mergedStudentsRows.map((row) => [row.id, row])), [mergedStudentsRows]);
-      const computedParentsRows = useMemo(() => (
-        (parentsHook.rows || []).map((parent) => {
-          const links = parentLinksRows.filter((link) => link.parent_id === parent.id);
-          const linkedStudents = links.map((link) => studentLookup[link.student_id]).filter(Boolean);
+      const computedParentsRows = useMemo(() => {
+        const normalized = (value) => String(value || '').trim().toLowerCase();
+        const rowsFromParents = (parentsHook.rows || []).map((parent) => {
+          const directLinks = parentLinksRows.filter((link) => link.parent_id === parent.id);
+          const linkedFromJoinTable = directLinks.map((link) => studentLookup[link.student_id]).filter(Boolean);
+          const linkedFromStudentFields = mergedStudentsRows.filter((student) => {
+            const sameParentName = normalized(student.parent_full_name) && normalized(student.parent_full_name) === normalized(parent.full_name);
+            const sameParentPhone = normalized(parent.phone) && normalized(student.parent_contact) === normalized(parent.phone);
+            const sameParentEmail = normalized(parent.email) && normalized(student.parent_contact) === normalized(parent.email);
+            return sameParentName || sameParentPhone || sameParentEmail;
+          });
+          const linkedStudents = [...new Map(
+            [...linkedFromJoinTable, ...linkedFromStudentFields]
+              .filter(Boolean)
+              .map((student) => [student.id, student])
+          ).values()];
           const linkedStudentNames = linkedStudents.map((student) => student.full_name).filter(Boolean);
-          const linkedClassNames = [...new Set(linkedStudents.map((student) => classNameMap[student.class_id] || student.class_name).filter(Boolean))];
+          const linkedClassNames = [...new Set(
+            linkedStudents
+              .map((student) => student.student_main_class_name || classNameMap[student.class_id] || student.class_name)
+              .filter(Boolean)
+          )];
           return {
             ...parent,
             linked_student_names: linkedStudentNames.join(', '),
             linked_class_names: linkedClassNames.join(', ')
           };
-        })
-      ), [parentsHook.rows, parentLinksRows, studentLookup, classNameMap]);
+        });
+
+        const existingParentKeys = new Set(rowsFromParents.map((parent) => `${normalized(parent.full_name)}::${normalized(parent.phone || parent.email)}`));
+        const fallbackRows = mergedStudentsRows.reduce((acc, student) => {
+          const parentName = String(student.parent_full_name || '').trim();
+          const parentContact = String(student.parent_contact || '').trim();
+          if (!parentName && !parentContact) return acc;
+          const key = `${normalized(parentName)}::${normalized(parentContact)}`;
+          const classValue = student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '';
+          const found = acc.get(key) || {
+            id: `fallback-${key || student.id}`,
+            full_name: parentName || 'Parent',
+            phone: parentContact,
+            email: '',
+            linked_student_names: [],
+            linked_class_names: []
+          };
+          if (student.full_name && !found.linked_student_names.includes(student.full_name)) {
+            found.linked_student_names.push(student.full_name);
+          }
+          if (classValue && !found.linked_class_names.includes(classValue)) {
+            found.linked_class_names.push(classValue);
+          }
+          acc.set(key, found);
+          return acc;
+        }, new Map());
+
+        const fallbackParents = [...fallbackRows.entries()]
+          .filter(([key]) => !existingParentKeys.has(key))
+          .map(([, parent]) => ({
+            ...parent,
+            linked_student_names: parent.linked_student_names.join(', '),
+            linked_class_names: parent.linked_class_names.join(', ')
+          }));
+
+        return [...rowsFromParents, ...fallbackParents].sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
+      }, [parentsHook.rows, parentLinksRows, studentLookup, classNameMap, mergedStudentsRows]);
 
       const teacherEntityRow = useMemo(() => {
         if (role !== ROLE.TEACHER || !profile?.id) return null;
@@ -2218,136 +2310,247 @@
         );
       }, [role, profile?.id, mergedTeachersRows, teachersRawHook.rows]);
 
-      const normalizeStudentMainClassForRow = (student) => {
-        const raw = student?.student_main_class_name || classNameMap[student?.class_id] || student?.class_name || '';
-        return normalizeTeacherMainClassName(raw) || raw || '';
-      };
+      const teacherAssignments = useMemo(() => {
+        if (role !== ROLE.TEACHER || !profile?.id) return [];
+        const teacherRowId = teacherEntityRow?.id;
+        return (subjectsHook.rows || []).filter((row) => (
+          row.teacher_id === teacherRowId
+          || row.teacher_profile_id === profile.id
+          || row.profile_id === profile.id
+        ));
+      }, [role, profile?.id, teacherEntityRow?.id, subjectsHook.rows]);
 
-      const currentAcademicYearLabel = useMemo(() => {
-        const now = new Date();
-        const startYear = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
-        return `${startYear}/${startYear + 1}`;
-      }, []);
+      const teacherAssignmentOptions = useMemo(() => (
+        [{ value: '', label: 'Select Teaching Assignment' }].concat(
+          teacherAssignments.map((assignment) => ({
+            value: assignment.id,
+            label: `${assignment.subject_name || 'Subject'} - ${assignment.class_name || classNameMap[assignment.class_id] || 'Class'}`
+          }))
+        )
+      ), [teacherAssignments, classNameMap]);
 
-      const academicYearOptions = useMemo(() => {
-        const now = new Date();
-        const anchor = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
-        return Array.from({ length: 5 }, (_, index) => {
-          const startYear = anchor - 1 + index;
-          const label = `${startYear}/${startYear + 1}`;
-          return { value: label, label };
-        });
-      }, []);
-
-      const teacherAssignedMainClass = useMemo(() => {
-        const raw = teacherEntityRow?.teacher_main_class_name || teacherAssignedClassDisplay(teacherEntityRow || {});
-        return normalizeTeacherMainClassName(raw) || raw || '';
-      }, [teacherEntityRow, classNameMap]);
-
-      const teacherAssignedSubjects = useMemo(() => {
-        const values = new Set();
-        if (teacherEntityRow?.subject_specialty) values.add(String(teacherEntityRow.subject_specialty).trim());
-        (subjectsHook.rows || []).forEach((row) => {
-          const matchesTeacher = row.teacher_profile_id === profile?.id || row.profile_id === profile?.id || row.teacher_id === teacherEntityRow?.id;
-          if (matchesTeacher && row.subject_name) values.add(String(row.subject_name).trim());
-        });
-        return Array.from(values).filter(Boolean).sort((a, b) => a.localeCompare(b));
-      }, [teacherEntityRow, subjectsHook.rows, profile?.id]);
-
-      const teacherClassOptions = useMemo(() => {
-        const values = new Set();
-        if (teacherAssignedMainClass) values.add(teacherAssignedMainClass);
-        mergedStudentsRows.forEach((student) => {
-          const value = normalizeStudentMainClassForRow(student);
-          if (value && (!teacherAssignedMainClass || value === teacherAssignedMainClass)) values.add(value);
-        });
-        return [{ value: '', label: 'Select Main Class' }].concat(Array.from(values).map((value) => ({ value, label: value })));
-      }, [teacherAssignedMainClass, mergedStudentsRows, classNameMap]);
-
-      const teacherSubjectOptions = useMemo(() => (
-        [{ value: '', label: 'Select Subject' }].concat(teacherAssignedSubjects.map((value) => ({ value, label: value })))
-      ), [teacherAssignedSubjects]);
-
-      const teacherAttendanceClassValue = attendanceForm.teacher_main_class_name || teacherAssignedMainClass || '';
-      const teacherGradesClassValue = gradeForm.teacher_main_class_name || teacherAssignedMainClass || '';
+      const selectedTeacherAssignment = useMemo(() => (
+        teacherAssignments.find((assignment) => assignment.id === attendanceForm.teacher_assignment_id) || null
+      ), [teacherAssignments, attendanceForm.teacher_assignment_id]);
 
       const teacherAssignableStudents = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
-        const targetClassName = teacherAttendanceClassValue || teacherGradesClassValue || teacherAssignedMainClass || '';
-        return mergedStudentsRows
-          .filter((student) => {
-            const studentClassName = normalizeStudentMainClassForRow(student);
-            return targetClassName ? studentClassName === targetClassName : Boolean(studentClassName);
-          })
-          .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
-      }, [role, mergedStudentsRows, teacherAttendanceClassValue, teacherGradesClassValue, teacherAssignedMainClass, classNameMap]);
-
-      const teacherStudentRecordRows = useMemo(() => {
-        if (role !== ROLE.TEACHER) return mergedStudentsRows;
-        const targetClassName = teacherAssignedMainClass || teacherGradesClassValue || teacherAttendanceClassValue || '';
-        return mergedStudentsRows.filter((student) => {
-          const studentClassName = normalizeStudentMainClassForRow(student);
-          return targetClassName ? studentClassName === targetClassName : true;
+        const targetClassId = selectedTeacherAssignment?.class_id || '';
+        const rows = mergedStudentsRows.filter((student) => {
+          if (!student?.class_id) return false;
+          if (targetClassId) return student.class_id === targetClassId;
+          return teacherAssignments.some((assignment) => assignment.class_id === student.class_id);
         });
-      }, [role, mergedStudentsRows, teacherAssignedMainClass, teacherGradesClassValue, teacherAttendanceClassValue, classNameMap]);
+        return rows.sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
+      }, [role, selectedTeacherAssignment?.class_id, mergedStudentsRows, teacherAssignments]);
 
       const attendanceRowsToday = useMemo(() => (
         (attendanceHook.rows || []).filter((row) => row.attendance_date === todayISO())
       ), [attendanceHook.rows]);
 
-      const teacherAttendanceRows = useMemo(() => (
-        (attendanceHook.rows || []).filter((row) => row.marked_by_profile_id === profile?.id)
-      ), [attendanceHook.rows, profile?.id]);
-
-      const teacherGradesRows = useMemo(() => (
-        (gradesHook.rows || []).filter((row) => row.teacher_profile_id === profile?.id)
-      ), [gradesHook.rows, profile?.id]);
-
       const principalTeacherPresenceRows = useMemo(() => {
-        return mergedTeachersRows.map((teacherRow) => {
-          const assignedClass = normalizeTeacherMainClassName(teacherRow.teacher_main_class_name || teacherAssignedClassDisplay(teacherRow)) || teacherAssignedClassDisplay(teacherRow);
+        const teacherRowMap = Object.fromEntries(mergedTeachersRows.map((row) => [row.id, row]));
+        const uniqueAssignments = [];
+        const seen = new Set();
+
+        (subjectsHook.rows || []).forEach((assignment) => {
+          const teacherRow = teacherRowMap[assignment.teacher_id] || null;
+          const teacherProfileId = assignment.teacher_profile_id || teacherRow?.profile_id || null;
+          const key = [
+            teacherProfileId || assignment.teacher_id || assignment.teacher_name || 'teacher',
+            assignment.class_id || assignment.class_name || 'class',
+            assignment.subject_name || 'subject'
+          ].join('::');
+          if (seen.has(key)) return;
+          seen.add(key);
+
           const matchingAttendance = attendanceRowsToday.find((row) => {
-            const sameTeacher = teacherRow.profile_id ? row.marked_by_profile_id === teacherRow.profile_id : (row.marked_by_name || '') === (teacherRow.full_name || '');
-            const rowClass = normalizeTeacherMainClassName(row.class_name || classNameMap[row.class_id] || '');
-            return sameTeacher && (!assignedClass || rowClass === assignedClass);
+            const sameTeacher = teacherProfileId
+              ? row.marked_by_profile_id === teacherProfileId
+              : (row.marked_by_name || '') === (assignment.teacher_name || '');
+            const sameClass = assignment.class_id ? row.class_id === assignment.class_id : (row.class_name || '') === (assignment.class_name || '');
+            const sameSubject = assignment.subject_name
+              ? ((row.subject_name || '') === assignment.subject_name || !(row.subject_name || '').trim())
+              : true;
+            return sameTeacher && sameClass && sameSubject;
           });
 
-          return {
-            id: teacherRow.id,
-            teacher_name: teacherRow.full_name || 'Teacher',
-            class_name: assignedClass || '-',
+          uniqueAssignments.push({
+            id: assignment.id || key,
+            teacher_name: assignment.teacher_name || teacherRow?.full_name || 'Teacher',
+            class_name: assignment.class_name || classNameMap[assignment.class_id] || 'Class',
+            subject_name: assignment.subject_name || 'Subject',
             status: matchingAttendance ? 'Present' : 'Absent',
             marked_at: matchingAttendance?.updated_at || matchingAttendance?.created_at || null,
-            recorded_by_name: matchingAttendance?.marked_by_name || teacherRow.full_name || 'Teacher'
-          };
-        }).sort((a, b) => {
+            recorded_by_name: matchingAttendance?.marked_by_name || assignment.teacher_name || teacherRow?.full_name || 'Teacher'
+          });
+        });
+
+        return uniqueAssignments.sort((a, b) => {
           if (a.status !== b.status) return a.status === 'Absent' ? -1 : 1;
           return String(a.teacher_name).localeCompare(String(b.teacher_name));
         });
-      }, [mergedTeachersRows, attendanceRowsToday, classNameMap]);
+      }, [subjectsHook.rows, attendanceRowsToday, mergedTeachersRows, classNameMap]);
 
       const principalTeacherPresenceSummary = useMemo(() => ({
         present: principalTeacherPresenceRows.filter((row) => row.status === 'Present').length,
         absent: principalTeacherPresenceRows.filter((row) => row.status === 'Absent').length
       }), [principalTeacherPresenceRows]);
 
+      const principalSubjectNames = useMemo(() => {
+        const values = new Set();
+        (mergedTeachersRows || []).forEach((row) => {
+          const value = String(row.subject_specialty || '').trim();
+          if (value) values.add(value);
+        });
+        (subjectsHook.rows || []).forEach((row) => {
+          const value = String(row.subject_name || '').trim();
+          if (value) values.add(value);
+        });
+        return Array.from(values).sort((a, b) => a.localeCompare(b));
+      }, [mergedTeachersRows, subjectsHook.rows]);
+
+      const principalAttendanceOverview = useMemo(() => {
+        const rows = attendanceHook.rows || [];
+        return {
+          total: rows.length,
+          present: rows.filter((row) => String(row.status || '').toLowerCase() === 'present').length,
+          absent: rows.filter((row) => String(row.status || '').toLowerCase() === 'absent').length,
+          late: rows.filter((row) => String(row.status || '').toLowerCase() === 'late').length
+        };
+      }, [attendanceHook.rows]);
+
+      const principalPerformanceOverview = useMemo(() => {
+        const rows = gradesHook.rows || [];
+        const averages = rows
+          .map((row) => Number(row.average_score || row.total_score || 0))
+          .filter((value) => Number.isFinite(value));
+        const overallAverage = averages.length ? (averages.reduce((sum, value) => sum + value, 0) / averages.length) : 0;
+        return {
+          gradeEntries: rows.length,
+          overallAverage: overallAverage.toFixed(1),
+          uniqueStudents: new Set(rows.map((row) => row.student_id || row.student_name).filter(Boolean)).size
+        };
+      }, [gradesHook.rows]);
+
+      const principalClassPerformanceRows = useMemo(() => {
+        const grouped = new Map();
+        (gradesHook.rows || []).forEach((row) => {
+          const key = String(row.class_name || row.class_id || 'Unassigned');
+          const current = grouped.get(key) || { class_name: key, count: 0, total: 0 };
+          current.count += 1;
+          current.total += Number(row.average_score || row.total_score || 0);
+          grouped.set(key, current);
+        });
+        return Array.from(grouped.values())
+          .map((row) => ({
+            ...row,
+            average_score: row.count ? (row.total / row.count).toFixed(1) : '0.0'
+          }))
+          .sort((a, b) => String(a.class_name).localeCompare(String(b.class_name)));
+      }, [gradesHook.rows]);
+
+      const principalTeacherAssignmentSummaryRows = useMemo(() => (
+        (mergedTeachersRows || []).map((row) => ({
+          id: row.id || row.profile_id || row.full_name,
+          full_name: row.full_name || '-',
+          assigned_class: teacherAssignedClassDisplay(row),
+          primary_subject: row.subject_specialty || '-',
+          qualification: row.qualification || '-',
+          training_status: row.trained_status || '-'
+        }))
+      ), [mergedTeachersRows, teacherAssignedClassDisplay]);
+
+      const recentAcademicUpdates = useMemo(() => {
+        const gradeUpdates = (gradesHook.rows || []).map((row) => ({
+          id: `grade-${row.id}`,
+          update_type: 'Grade Update',
+          subject_name: row.subject_name || '-',
+          student_name: row.student_name || '-',
+          teacher_name: row.teacher_name || row.marked_by_name || '-',
+          class_name: row.class_name || '-',
+          term_name: row.term_name || '-',
+          academic_year: row.academic_year || '-',
+          updated_at: row.updated_at || row.created_at || null
+        }));
+        const attendanceUpdates = (attendanceHook.rows || []).map((row) => ({
+          id: `attendance-${row.id}`,
+          update_type: 'Attendance Update',
+          subject_name: row.subject_name || '-',
+          student_name: row.student_name || '-',
+          teacher_name: row.marked_by_name || '-',
+          class_name: row.class_name || '-',
+          term_name: '-',
+          academic_year: '-',
+          updated_at: row.updated_at || row.created_at || null
+        }));
+        return gradeUpdates.concat(attendanceUpdates)
+          .sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0))
+          .slice(0, 12);
+      }, [gradesHook.rows, attendanceHook.rows]);
+
+      const principalClassFilterOptions = useMemo(() => (
+        [{ value: '', label: 'All Classes' }].concat(
+          Array.from(new Set((gradesHook.rows || []).map((row) => String(row.class_name || '').trim()).filter(Boolean)))
+            .sort((a, b) => a.localeCompare(b))
+            .map((value) => ({ value, label: value }))
+        )
+      ), [gradesHook.rows]);
+
+      const principalStudentFilterOptions = useMemo(() => {
+        const filteredStudents = (gradesHook.rows || []).filter((row) => !principalPerformanceFilter.class_name || String(row.class_name || '') === principalPerformanceFilter.class_name);
+        const seen = new Map();
+        filteredStudents.forEach((row) => {
+          const key = String(row.student_id || row.student_name || '').trim();
+          if (!key || seen.has(key)) return;
+          seen.set(key, { value: row.student_id || '', label: row.student_name || key });
+        });
+        return [{ value: '', label: 'All Students' }].concat(Array.from(seen.values()).sort((a, b) => a.label.localeCompare(b.label)));
+      }, [gradesHook.rows, principalPerformanceFilter.class_name]);
+
+      const principalAcademicYearOptions = useMemo(() => (
+        ['All Years'].concat(Array.from(new Set((gradesHook.rows || []).map((row) => String(row.academic_year || '').trim()).filter(Boolean))).sort())
+      ), [gradesHook.rows]);
+
+      const principalPerformanceRows = useMemo(() => (
+        (gradesHook.rows || []).filter((row) => {
+          if (principalPerformanceFilter.class_name && String(row.class_name || '') !== principalPerformanceFilter.class_name) return false;
+          if (principalPerformanceFilter.student_id && String(row.student_id || '') !== principalPerformanceFilter.student_id) return false;
+          if (principalPerformanceFilter.term_name && principalPerformanceFilter.term_name !== 'All Terms' && String(row.term_name || '') !== principalPerformanceFilter.term_name) return false;
+          if (principalPerformanceFilter.academic_year && principalPerformanceFilter.academic_year !== 'All Years' && String(row.academic_year || '') !== principalPerformanceFilter.academic_year) return false;
+          return true;
+        })
+      ), [gradesHook.rows, principalPerformanceFilter]);
+
+      const principalSelectedStudent = useMemo(() => {
+        if (!principalPerformanceFilter.student_id) return null;
+        const gradeRow = principalPerformanceRows.find((row) => String(row.student_id || '') === principalPerformanceFilter.student_id);
+        if (!gradeRow) return null;
+        const matchedStudent = mergedStudentsRows.find((row) => String(row.student_id || row.id || '') === String(gradeRow.student_id || ''))
+          || mergedStudentsRows.find((row) => String(row.full_name || '') === String(gradeRow.student_name || ''));
+        return matchedStudent || {
+          student_id: gradeRow.student_id,
+          full_name: gradeRow.student_name
+        };
+      }, [principalPerformanceFilter.student_id, principalPerformanceRows, mergedStudentsRows]);
+
+      useEffect(() => {
+        if (!principalPerformanceFilter.student_id) return;
+        const stillExists = principalStudentFilterOptions.some((option) => option.value === principalPerformanceFilter.student_id);
+        if (!stillExists) {
+          setPrincipalPerformanceFilter((prev) => ({ ...prev, student_id: '' }));
+        }
+      }, [principalStudentFilterOptions, principalPerformanceFilter.student_id]);
+
       useEffect(() => {
         if (role !== ROLE.TEACHER) return;
-        if (!teacherAssignedMainClass && !currentAcademicYearLabel) return;
+        if (!selectedTeacherAssignment) return;
         setAttendanceForm((prev) => ({
           ...prev,
-          teacher_main_class_name: prev.teacher_main_class_name || teacherAssignedMainClass || '',
-          class_id: prev.class_id || resolveTeacherClassId({ teacher_main_class_name: prev.teacher_main_class_name || teacherAssignedMainClass || '', class_id: prev.class_id || '' }) || '',
-          subject_name: ''
+          class_id: selectedTeacherAssignment.class_id || '',
+          subject_name: selectedTeacherAssignment.subject_name || ''
         }));
-        setGradeForm((prev) => ({
-          ...prev,
-          teacher_main_class_name: prev.teacher_main_class_name || teacherAssignedMainClass || '',
-          class_id: prev.class_id || resolveTeacherClassId({ teacher_main_class_name: prev.teacher_main_class_name || teacherAssignedMainClass || '', class_id: prev.class_id || '' }) || '',
-          academic_year: prev.academic_year || currentAcademicYearLabel,
-          assignment_score: prev.assignment_score ?? 0
-        }));
-      }, [role, teacherAssignedMainClass, currentAcademicYearLabel]);
+      }, [role, selectedTeacherAssignment?.id]);
 
 
       const dashboardRecentAccounts = useMemo(() => {
@@ -2979,94 +3182,110 @@
               <div className="grid">
                 {renderWelcomeCard()}
                 <MetricCards items={[
-                  { label: 'Total Students', value: studentsHook.rows.length },
-                  { label: 'Total Teachers', value: teachersHook.rows.length },
-                  { label: 'Teachers Present Today', value: principalTeacherPresenceSummary.present },
-                  { label: 'Teachers Absent Today', value: principalTeacherPresenceSummary.absent }
+                  { label: 'Total Students', value: mergedStudentsRows.length },
+                  { label: 'Total Teachers', value: mergedTeachersRows.length },
+                  { label: 'Total Subjects', value: principalSubjectNames.length },
+                  { label: 'Attendance Records', value: principalAttendanceOverview.total }
                 ]} />
+
                 <div className="grid cards-2">
                   <div className="card">
-                    <h3>Attendance Oversight</h3>
+                    <h3>Student Attendance Overview</h3>
                     <div style={{display:'grid', gap:10}}>
-                      <div><strong>Total Attendance Records Today:</strong> {attendanceRowsToday.length}</div>
-                      <div><strong>Student Present:</strong> {attendanceRowsToday.filter(r => String(r.status || '').toLowerCase() === 'present').length}</div>
-                      <div><strong>Student Absent:</strong> {attendanceRowsToday.filter(r => String(r.status || '').toLowerCase() === 'absent').length}</div>
-                      <div><strong>Student Late:</strong> {attendanceRowsToday.filter(r => String(r.status || '').toLowerCase() === 'late').length}</div>
-                      <div className="subtle">When a teacher records attendance for an assigned class, this dashboard updates automatically in real time.</div>
+                      <div><strong>Total Records:</strong> {principalAttendanceOverview.total}</div>
+                      <div><strong>Present:</strong> {principalAttendanceOverview.present}</div>
+                      <div><strong>Absent:</strong> {principalAttendanceOverview.absent}</div>
+                      <div><strong>Late:</strong> {principalAttendanceOverview.late}</div>
                     </div>
                   </div>
                   <div className="card">
-                    <h3>Academic Oversight</h3>
-                    <p className="subtle">Principal access is limited to students, teachers, classes, attendance summaries, academic performance, teacher assignment monitoring, and academic reporting only.</p>
+                    <h3>Student Performance Overview</h3>
+                    <div style={{display:'grid', gap:10}}>
+                      <div><strong>Grade Entries:</strong> {principalPerformanceOverview.gradeEntries}</div>
+                      <div><strong>Students Covered:</strong> {principalPerformanceOverview.uniqueStudents}</div>
+                      <div><strong>Overall Average:</strong> {principalPerformanceOverview.overallAverage}</div>
+                    </div>
                   </div>
                 </div>
-                <div className="card">
-                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:12}}>
-                    <h3 style={{margin:0}}>Teacher Presence by Assigned Class and Subject Today</h3>
-                    <div className="subtle">A teacher is marked present when attendance has been recorded for the assigned class and subject today.</div>
+
+                <div className="grid cards-2">
+                  <div className="card">
+                    <h3>Total Subjects</h3>
+                    {principalSubjectNames.length === 0 ? <div className="empty">No subjects found yet</div> : <div style={{display:'flex', flexWrap:'wrap', gap:8}}>{principalSubjectNames.map((name) => <span key={name} className="chip info">{name}</span>)}</div>}
                   </div>
-                  <div className="table-wrap" style={{marginTop:16}}>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Teacher</th>
-                          <th>Class</th>
-                          <th>Subject</th>
-                          <th>Status</th>
-                          <th>Last Update</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {principalTeacherPresenceRows.length === 0 && (
-                          <tr><td colSpan="5"><div className="empty">No teacher subject assignments found yet</div></td></tr>
-                        )}
-                        {principalTeacherPresenceRows.map((row) => (
-                          <tr key={row.id}>
-                            <td>{row.teacher_name}</td>
-                            <td>{row.class_name}</td>
-                            <td>{row.subject_name}</td>
-                            <td><span className={`chip ${row.status === 'Present' ? 'success' : 'danger'}`}>{row.status}</span></td>
-                            <td>{row.marked_at ? formatDate(row.marked_at) : 'Not yet recorded today'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="card">
+                    <h3>Teacher Assign Main Class and Primary Subject Specialty Summary</h3>
+                    <div className="table-wrap" style={{marginTop:12}}>
+                      <table>
+                        <thead><tr><th>Teacher</th><th>Main Class</th><th>Primary Subject</th></tr></thead>
+                        <tbody>
+                          {principalTeacherAssignmentSummaryRows.length === 0 && <tr><td colSpan="3"><div className="empty">No teacher records found</div></td></tr>}
+                          {principalTeacherAssignmentSummaryRows.slice(0, 10).map((row) => (
+                            <tr key={row.id}>
+                              <td>{row.full_name}</td>
+                              <td>{row.assigned_class}</td>
+                              <td>{row.primary_subject}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid cards-2">
+                  <div className="card">
+                    <h3>Class Academic Performance Summary</h3>
+                    <div className="table-wrap">
+                      <table>
+                        <thead><tr><th>Class</th><th>Grade Entries</th><th>Average</th></tr></thead>
+                        <tbody>
+                          {principalClassPerformanceRows.length === 0 && <tr><td colSpan="3"><div className="empty">No class performance records found</div></td></tr>}
+                          {principalClassPerformanceRows.map((row) => (
+                            <tr key={row.class_name}>
+                              <td>{row.class_name}</td>
+                              <td>{row.count}</td>
+                              <td>{row.average_score}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div className="card">
+                    <h3>Recent Academic Updates</h3>
+                    <div className="table-wrap">
+                      <table>
+                        <thead><tr><th>Type</th><th>Student</th><th>Class</th><th>Teacher</th><th>Updated</th></tr></thead>
+                        <tbody>
+                          {recentAcademicUpdates.length === 0 && <tr><td colSpan="5"><div className="empty">No recent academic updates found</div></td></tr>}
+                          {recentAcademicUpdates.map((row) => (
+                            <tr key={row.id}>
+                              <td>{row.update_type}</td>
+                              <td>{row.student_name}</td>
+                              <td>{row.class_name}</td>
+                              <td>{row.teacher_name}</td>
+                              <td>{row.updated_at ? formatDate(row.updated_at) : '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               </div>
             )}
 
             {page === 'teacher-dashboard' && (
-              <div className="grid">
+              <>
                 {renderWelcomeCard()}
                 <MetricCards items={[
-                  { label: 'Assigned Main Class', value: teacherAssignedMainClass || '-' },
-                  { label: 'Assigned Subjects', value: teacherAssignedSubjects.length ? teacherAssignedSubjects.join(', ') : '-' },
-                  { label: 'Attendance Tasks', value: `${teacherAttendanceRows.filter(x => String(x.status || '').toLowerCase() === 'present').length} Present, ${teacherAttendanceRows.filter(x => String(x.status || '').toLowerCase() === 'absent').length} Absent` },
-                  { label: 'Grading Tasks', value: teacherGradesRows.length }
+                  { label: 'Assigned Classes', value: [...new Set(subjectsHook.rows.map(x=>x.class_name).filter(Boolean))].length },
+                  { label: 'Assigned Subjects', value: [...new Set(subjectsHook.rows.map(x=>x.subject_name).filter(Boolean))].length },
+                  { label: 'Attendance Tasks', value: attendanceHook.rows.filter(x=>x.marked_by_profile_id===profile.id).length },
+                  { label: 'Grading Tasks', value: gradesHook.rows.filter(x=>x.teacher_profile_id===profile.id).length }
                 ]} />
-                <div className="card">
-                  <h3>Teacher Dashboard Summary</h3>
-                  <div className="grid cards-2">
-                    <div>
-                      <strong>Assigned Main Class</strong>
-                      <div className="subtle">{teacherAssignedMainClass || '-'}</div>
-                    </div>
-                    <div>
-                      <strong>Assigned Subjects</strong>
-                      <div className="subtle">{teacherAssignedSubjects.length ? teacherAssignedSubjects.join(', ') : '-'}</div>
-                    </div>
-                    <div>
-                      <strong>Attendance Tasks</strong>
-                      <div className="subtle">Present: {teacherAttendanceRows.filter(x => String(x.status || '').toLowerCase() === 'present').length}, Absent: {teacherAttendanceRows.filter(x => String(x.status || '').toLowerCase() === 'absent').length}, Late: {teacherAttendanceRows.filter(x => String(x.status || '').toLowerCase() === 'late').length}</div>
-                    </div>
-                    <div>
-                      <strong>Grading Tasks</strong>
-                      <div className="subtle">{teacherGradesRows.length} saved grade record(s)</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              </>
             )}
 
             {page === 'student-dashboard' && (
@@ -3126,14 +3345,34 @@
               </div>
             )}
             {page === 'students' && (
-              role === ROLE.TEACHER ? (
+              role === ROLE.PRINCIPAL ? (
                 <div className="card">
                   <h3>Student Records</h3>
-                  <p className="subtle">View only student records. Changes from Student Management reflect automatically here with parent details.</p>
-                  <div className="table-wrap"><table><thead><tr><th>Full Name</th><th>Student No</th><th>Assigned Class</th><th>Gender</th><th>Date of Birth</th><th>Parent Full Name</th><th>Parent Contact</th><th>Account</th></tr></thead><tbody>
-                    {teacherStudentRecordRows.length === 0 && <tr><td colSpan="8"><div className="empty">No student records found for the assigned main class</div></td></tr>}
-                    {teacherStudentRecordRows.map((row) => <tr key={row.id}><td>{row.full_name}</td><td>{row.student_no || '-'}</td><td>{normalizeStudentMainClassForRow(row) || '-'}</td><td>{row.gender || '-'}</td><td>{formatDate(row.date_of_birth)}</td><td>{row.parent_full_name || '-'}</td><td>{row.parent_contact || '-'}</td><td><span className={classNames('chip', row.account_status === 'active' ? 'success' : row.account_status === 'archived' ? 'warning' : 'danger')}>{row.account_status || '-'}</span></td></tr>)}
-                  </tbody></table></div>
+                  <p className="subtle">View only student records. All saved student changes, including linked parent details, reflect automatically here.</p>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Full Name</th><th>Student No</th><th>Assigned Class</th><th>Gender</th><th>Date of Birth</th><th>Parent Full Name</th><th>Parent Contact</th><th>Account</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {mergedStudentsRows.length === 0 && <tr><td colSpan="8"><div className="empty">No student records found</div></td></tr>}
+                        {mergedStudentsRows.map((row) => (
+                          <tr key={row.id}>
+                            <td>{row.full_name}</td>
+                            <td>{row.student_no || '-'}</td>
+                            <td>{teacherAssignedClassDisplay(row)}</td>
+                            <td>{row.gender || '-'}</td>
+                            <td>{formatDate(row.date_of_birth)}</td>
+                            <td>{row.parent_full_name || '-'}</td>
+                            <td>{row.parent_contact || '-'}</td>
+                            <td><span className={classNames('chip', row.account_status === 'active' ? 'success' : row.account_status === 'archived' ? 'warning' : 'danger')}>{row.account_status || '-'}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               ) : (
               <GenericCrudPage
@@ -3171,17 +3410,45 @@
                 onEdit={(row) => setStudentForm(buildStudentFormFromRow(row))}
                 rowActions={(row) => canSchoolAdminManageUsers ? <>
                   <button className="btn secondary" onClick={() => setManagedUserStatus(row, 'archived')}>Archive</button>
-                  <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
-                  <button className="btn secondary" onClick={() => openManagedUserInCredentials(row)}>Open in User Accounts</button>
+                  <button className="btn secondary" onClick={() => openManagedUserCredentials(row)}>User Accounts</button>
+                  <button className="btn warning" onClick={() => handleProvisionManagedUser(row)}>{String(row.auth_user_id || '').trim() ? 'Reset PW' : 'Generate PW'}</button>
                 </> : null}
-                extraActions={<><button className="btn secondary" onClick={()=>generateStudentNoForCurrentSchool(setStudentForm)}>Generate Student No</button><button className="btn secondary" onClick={()=>exportCsv(mergedStudentsRows.map((row) => ({ ...row, assigned_class: classNameMap[row.class_id] || row.class_name || '' })), 'students.csv')}>Export CSV</button><label className="btn secondary">Import CSV<input hidden type="file" accept=".csv" onChange={(e)=>handleBulkStudentImport(e.target.files?.[0])} /></label></>}
-              >
-                {importStatus && <div className="footer-note">{importStatus}</div>}
-              </GenericCrudPage>
+              />
               )
             )}
 
             {page === 'teachers' && (
+              role === ROLE.PRINCIPAL ? (
+                <div className="card">
+                  <h3>Teacher Records</h3>
+                  <p className="subtle">View only teacher records. All saved teacher changes reflect automatically here.</p>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Full Name</th><th>Teacher EMIS Code</th><th>Assigned Class</th><th>Primary Subject</th><th>Qualification</th><th>Gender</th><th>Date of Birth</th><th>Training Status</th><th>Account</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {mergedTeachersRows.length === 0 && <tr><td colSpan="9"><div className="empty">No teacher records found</div></td></tr>}
+                        {mergedTeachersRows.map((row) => (
+                          <tr key={row.id}>
+                            <td>{row.full_name}</td>
+                            <td>{row.emis_code || '-'}</td>
+                            <td>{teacherAssignedClassDisplay(row)}</td>
+                            <td>{row.subject_specialty || '-'}</td>
+                            <td>{row.qualification || '-'}</td>
+                            <td>{row.gender || '-'}</td>
+                            <td>{formatDate(row.date_of_birth)}</td>
+                            <td>{row.trained_status || '-'}</td>
+                            <td><span className={classNames('chip', row.account_status === 'active' ? 'success' : row.account_status === 'archived' ? 'warning' : 'danger')}>{row.account_status || '-'}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
               <GenericCrudPage
                 title="Teacher Management"
                 description="Add, edit, archive, and delete teacher records. Staff number is generated automatically from the school name context, and each teacher keeps one assigned main class and one primary subject specialty with real time updates."
@@ -3219,11 +3486,11 @@
                 onEdit={(row) => setTeacherForm(buildTeacherFormFromRow(row))}
                 rowActions={(row) => canSchoolAdminManageUsers ? <>
                   <button className="btn secondary" onClick={() => setManagedUserStatus(row, 'archived')}>Archive</button>
-                  <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
-                  <button className="btn secondary" onClick={() => openManagedUserInCredentials(row)}>Open in User Accounts</button>
+                  <button className="btn secondary" onClick={() => openManagedUserCredentials(row)}>User Accounts</button>
+                  <button className="btn warning" onClick={() => handleProvisionManagedUser(row)}>{String(row.auth_user_id || '').trim() ? 'Reset PW' : 'Generate PW'}</button>
                 </> : null}
-                extraActions={<><button className="btn secondary" onClick={()=>exportCsv(mergedTeachersRows.map((row) => ({ ...row, assigned_class: teacherAssignedClassDisplay(row) })), 'teachers.csv')}>Export CSV</button></>}
               />
+              )
             )}
 
             {page === 'parents' && (
@@ -3388,21 +3655,23 @@
                   <h3>Daily Attendance</h3>
                   {role === ROLE.TEACHER ? (
                     <>
-                      <p className="subtle">Teachers record attendance from the assigned main class. The student dropdown shows only students in that class, and each saved attendance record updates the principal attendance view in real time.</p>
+                      <p className="subtle">Teachers can record attendance only for the classes and subjects assigned to them. Once saved, the principal dashboard updates automatically in real time.</p>
                       <div className="form-grid-3">
                         <div className="field">
-                          <label>Assign Main Class</label>
-                          <select value={attendanceForm.teacher_main_class_name || teacherAssignedMainClass || ''} onChange={(e)=>setAttendanceForm({...attendanceForm, teacher_main_class_name:e.target.value, class_id: resolveTeacherClassId({ teacher_main_class_name: e.target.value, class_id: '' }) || '', student_id:''})}>
-                            {teacherClassOptions.map(option => <option key={option.value || 'empty'} value={option.value}>{option.label}</option>)}
+                          <label>Teaching Assignment</label>
+                          <select value={attendanceForm.teacher_assignment_id} onChange={(e)=>setAttendanceForm({...attendanceForm, teacher_assignment_id:e.target.value, student_id:''})}>
+                            {teacherAssignmentOptions.map(option => <option key={option.value || 'empty'} value={option.value}>{option.label}</option>)}
                           </select>
                         </div>
                         <div className="field">
                           <label>Student</label>
                           <select value={attendanceForm.student_id} onChange={(e)=>setAttendanceForm({...attendanceForm, student_id:e.target.value})}>
                             <option value="">Select Student</option>
-                            {teacherAssignableStudents.map(student => <option key={student.id} value={student.id}>{student.full_name}{normalizeStudentMainClassForRow(student) ? `, ${normalizeStudentMainClassForRow(student)}` : ''}</option>)}
+                            {teacherAssignableStudents.map(student => <option key={student.id} value={student.id}>{student.full_name}{(classNameMap[student.class_id] || student.class_name) ? `, ${classNameMap[student.class_id] || student.class_name}` : ''}</option>)}
                           </select>
                         </div>
+                        <div className="field"><label>Assigned Class</label><input value={selectedTeacherAssignment?.class_name || classNameMap[selectedTeacherAssignment?.class_id] || ''} readOnly /></div>
+                        <div className="field"><label>Subject</label><input value={selectedTeacherAssignment?.subject_name || attendanceForm.subject_name || ''} readOnly /></div>
                         <div className="field"><label>Date</label><input type="date" value={attendanceForm.attendance_date} onChange={(e)=>setAttendanceForm({...attendanceForm, attendance_date:e.target.value})} /></div>
                         <div className="field"><label>Status</label><select value={attendanceForm.status} onChange={(e)=>setAttendanceForm({...attendanceForm, status:e.target.value})}>{attendanceOptions.map(x => <option key={x}>{x}</option>)}</select></div>
                         <div className="field" style={{gridColumn:'1 / -1'}}><label>Remarks</label><input value={attendanceForm.remarks} onChange={(e)=>setAttendanceForm({...attendanceForm, remarks:e.target.value})} /></div>
@@ -3410,71 +3679,139 @@
                       <div style={{marginTop:16}}>
                         <button
                           className="btn"
-                          disabled={loginLogoutOnly || !(attendanceForm.teacher_main_class_name || teacherAssignedMainClass) || !attendanceForm.student_id}
+                          disabled={loginLogoutOnly || !attendanceForm.teacher_assignment_id || !attendanceForm.student_id}
                           onClick={()=>saveEntity(
                             'attendance',
-                            { ...attendanceForm, teacher_assignment_id: null, subject_name: null },
-                            ()=>setAttendanceForm({ id:'', student_id:'', class_id:'', teacher_assignment_id:'', teacher_main_class_name: teacherAssignedMainClass || '', subject_name:'', attendance_date: todayISO(), status: 'Present', remarks: '' }),
+                            attendanceForm,
+                            ()=>setAttendanceForm({ id:'', student_id:'', class_id:'', teacher_assignment_id:'', subject_name:'', attendance_date: todayISO(), status: 'Present', remarks: '' }),
                             {
                               marked_by_profile_id: profile.id,
-                              marked_by_name: profile.full_name,
-                              class_id: resolveTeacherClassId({ teacher_main_class_name: attendanceForm.teacher_main_class_name || teacherAssignedMainClass || '', class_id: attendanceForm.class_id || '' }) || null,
-                              teacher_assignment_id: null,
-                              subject_name: null
+                              class_id: selectedTeacherAssignment?.class_id || attendanceForm.class_id || null,
+                              subject_name: selectedTeacherAssignment?.subject_name || attendanceForm.subject_name || null,
+                              teacher_assignment_id: attendanceForm.teacher_assignment_id || null
                             }
                           )}
                         >
                           Save Attendance
                         </button>
                       </div>
+                      {teacherAssignments.length === 0 && <div className="footer-note">No class and subject assignment has been linked to this teacher yet.</div>}
                     </>
                   ) : (
                     <div className="footer-note">Attendance recording is reserved for assigned teachers. This page is view only for other roles.</div>
                   )}
                 </div>
                 <div className="card">
-                  <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead><tbody>{(role === ROLE.TEACHER ? teacherAttendanceRows : attendanceHook.rows).map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{normalizeTeacherMainClassName(r.class_name || classNameMap[r.class_id] || '') || r.class_name || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks || '-'}</td></tr>)}</tbody></table></div>
+                  <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Subject</th><th>Status</th><th>Teacher</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name || '-'}</td><td>{r.status}</td><td>{r.marked_by_name}</td></tr>)}</tbody></table></div>
                 </div>
               </div>
             )}
 
             {(page === 'attendance-summary' || page === 'my-attendance') && (
+              page === 'attendance-summary' && role === ROLE.PRINCIPAL ? (
+                <div className="grid">
+                  <div className="card">
+                    <h3>Attendance Summary</h3>
+                    <div className="grid cards-4">
+                      <div className="card"><strong>Total Records</strong><div className="metric">{principalAttendanceOverview.total}</div></div>
+                      <div className="card"><strong>Present</strong><div className="metric">{principalAttendanceOverview.present}</div></div>
+                      <div className="card"><strong>Absent</strong><div className="metric">{principalAttendanceOverview.absent}</div></div>
+                      <div className="card"><strong>Late</strong><div className="metric">{principalAttendanceOverview.late}</div></div>
+                    </div>
+                  </div>
+                  <div className="card">
+                    <h3>Teacher Presence Summary</h3>
+                    <div className="table-wrap">
+                      <table>
+                        <thead><tr><th>Teacher</th><th>Assigned Class</th><th>Primary Subject</th><th>Status</th><th>Last Update</th></tr></thead>
+                        <tbody>
+                          {principalTeacherPresenceRows.length === 0 && <tr><td colSpan="5"><div className="empty">No teacher attendance activity found</div></td></tr>}
+                          {principalTeacherPresenceRows.map((row) => (
+                            <tr key={row.id}>
+                              <td>{row.teacher_name}</td>
+                              <td>{row.class_name}</td>
+                              <td>{row.subject_name}</td>
+                              <td><span className={classNames('chip', row.status === 'Present' ? 'success' : 'danger')}>{row.status}</span></td>
+                              <td>{row.marked_at ? formatDate(row.marked_at) : 'Not yet recorded'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div className="card">
+                    <h3>Student Attendance Records</h3>
+                    <div className="table-wrap">
+                      <table>
+                        <thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Subject</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead>
+                        <tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}</tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              ) : (
               <div className="card">
                 <h3>Attendance Summary</h3>
-                <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{normalizeTeacherMainClassName(r.class_name || classNameMap[r.class_id] || '') || r.class_name || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}</tbody></table></div>
+                <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Subject</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}</tbody></table></div>
               </div>
+              )
             )}
 
             {page === 'grades' && (
               <div className="grid">
                 <div className="card">
-                  <h3>Grades</h3>
-                  <p className="subtle">Add, edit, and delete grades. Saved grade changes reflect immediately in the principal Academic Performance section and for the school admin.</p>
+                  <h3>Grades & Results</h3>
                   <div className="form-grid-3">
-                    <div className="field"><label>Assign Main Class</label><select value={gradeForm.teacher_main_class_name || teacherAssignedMainClass || ''} onChange={(e)=>setGradeForm({...gradeForm, teacher_main_class_name:e.target.value, class_id: resolveTeacherClassId({ teacher_main_class_name: e.target.value, class_id: '' }) || '', student_id:''})}>{teacherClassOptions.map(option => <option key={option.value || 'empty'} value={option.value}>{option.label}</option>)}</select></div>
-                    <div className="field"><label>Student</label><select value={gradeForm.student_id} onChange={(e)=>setGradeForm({...gradeForm, student_id:e.target.value})}><option value="">Select Student</option>{teacherAssignableStudents.map(student => <option key={student.id} value={student.id}>{student.full_name}</option>)}</select></div>
+                    <div className="field"><label>Student ID</label><input value={gradeForm.student_id} onChange={(e)=>setGradeForm({...gradeForm, student_id:e.target.value})} /></div>
+                    <div className="field"><label>Class ID</label><input value={gradeForm.class_id} onChange={(e)=>setGradeForm({...gradeForm, class_id:e.target.value})} /></div>
+                    <div className="field"><label>Subject ID</label><input value={gradeForm.subject_id} onChange={(e)=>setGradeForm({...gradeForm, subject_id:e.target.value})} /></div>
                     <div className="field"><label>Term</label><select value={gradeForm.term_name} onChange={(e)=>setGradeForm({...gradeForm, term_name:e.target.value})}>{termOptions.map(x => <option key={x}>{x}</option>)}</select></div>
-                    <div className="field"><label>Academic Year</label><select value={gradeForm.academic_year} onChange={(e)=>setGradeForm({...gradeForm, academic_year:e.target.value})}>{academicYearOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
-                    <div className="field"><label>Subject</label><select value={gradeForm.subject_id} onChange={(e)=>setGradeForm({...gradeForm, subject_id:e.target.value})}>{teacherSubjectOptions.map(option => <option key={option.value || 'empty'} value={option.value}>{option.label}</option>)}</select></div>
-                    <div className="field"><label>Mid Term Exams A (50)</label><input type="number" min="0" max="50" value={gradeForm.test_score} onChange={(e)=>setGradeForm({...gradeForm, test_score:e.target.value})} /></div>
-                    <div className="field"><label>End of Term Exams B (Raw Score / 100)</label><input type="number" min="0" max="100" value={gradeForm.exam_score} onChange={(e)=>setGradeForm({...gradeForm, exam_score:e.target.value})} /></div>
+                    <div className="field"><label>Academic Year</label><input value={gradeForm.academic_year} onChange={(e)=>setGradeForm({...gradeForm, academic_year:e.target.value})} /></div>
+                    <div className="field"><label>Assignment</label><input type="number" value={gradeForm.assignment_score} onChange={(e)=>setGradeForm({...gradeForm, assignment_score:e.target.value})} /></div>
+                    <div className="field"><label>Test</label><input type="number" value={gradeForm.test_score} onChange={(e)=>setGradeForm({...gradeForm, test_score:e.target.value})} /></div>
+                    <div className="field"><label>Exam</label><input type="number" value={gradeForm.exam_score} onChange={(e)=>setGradeForm({...gradeForm, exam_score:e.target.value})} /></div>
                   </div>
-                  <div style={{marginTop:16, display:'flex', gap:10, flexWrap:'wrap'}}>
-                    <button className="btn" disabled={loginLogoutOnly || !gradeForm.student_id || !(gradeForm.subject_id || '').trim()} onClick={()=>saveEntity('grades', { ...gradeForm, assignment_score: 0 }, ()=>setGradeForm({ id:'', student_id:'', class_id:'', teacher_main_class_name: teacherAssignedMainClass || '', subject_id:'', term_name:'Term 1', academic_year:currentAcademicYearLabel, assignment_score:0, test_score:0, exam_score:0 }), { teacher_profile_id: profile.id })}>{gradeForm.id ? 'Update Grade' : 'Save Grade'}</button>
-                    <button className="btn secondary" onClick={()=>setGradeForm({ id:'', student_id:'', class_id:'', teacher_main_class_name: teacherAssignedMainClass || '', subject_id:'', term_name:'Term 1', academic_year:currentAcademicYearLabel, assignment_score:0, test_score:0, exam_score:0 })}>Clear</button>
-                  </div>
+                  <div style={{marginTop:16}}><button className="btn" disabled={loginLogoutOnly} onClick={()=>saveEntity('grades', gradeForm, ()=>setGradeForm({ id:'', student_id:'', class_id:'', subject_id:'', term_name:'Term 1', academic_year:new Date().getFullYear().toString(), assignment_score:0, test_score:0, exam_score:0 }), { teacher_profile_id: profile.id })}>Save Grade</button></div>
                 </div>
                 <div className="card">
-                  <div className="table-wrap"><table><thead><tr><th>Student</th><th>Assign Main Class</th><th>Subject</th><th>Mid Term A</th><th>End Term B</th><th>Total</th><th>Average</th><th>Term</th><th>Academic Year</th><th>Actions</th></tr></thead><tbody>{teacherGradesRows.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{normalizeTeacherMainClassName(r.class_name || classNameMap[r.class_id] || '') || r.class_name || '-'}</td><td>{r.subject_name}</td><td>{r.test_score ?? 0}</td><td>{r.exam_score ?? 0}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td><td><div style={{display:'flex', gap:8, flexWrap:'wrap'}}><button className="btn secondary" onClick={()=>setGradeForm({ id:r.id, student_id:r.student_id || '', class_id:r.class_id || '', teacher_main_class_name: normalizeTeacherMainClassName(r.class_name || classNameMap[r.class_id] || '') || teacherAssignedMainClass || '', subject_id:r.subject_id || r.subject_name || '', term_name:r.term_name || 'Term 1', academic_year:r.academic_year || currentAcademicYearLabel, assignment_score:r.assignment_score ?? 0, test_score:r.test_score ?? 0, exam_score:r.exam_score ?? 0 })}>Edit</button><button className="btn danger" onClick={()=>deleteEntity('grades', r.id)}>Delete</button></div></td></tr>)}</tbody></table></div>
+                  <div className="table-wrap"><table><thead><tr><th>Student</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Year</th></tr></thead><tbody>{gradesHook.rows.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{r.subject_name}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td></tr>)}</tbody></table></div>
                 </div>
               </div>
             )}
 
             {(page === 'performance-summary' || page === 'my-grades') && (
+              page === 'performance-summary' && role === ROLE.PRINCIPAL ? (
+                <div className="grid">
+                  <div className="card">
+                    <h3>Academic Performance</h3>
+                    <div className="form-grid-3">
+                      <div className="field"><label>Class</label><select value={principalPerformanceFilter.class_name} onChange={(e)=>setPrincipalPerformanceFilter(prev => ({ ...prev, class_name: e.target.value, student_id: '' }))}>{principalClassFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+                      <div className="field"><label>Student</label><select value={principalPerformanceFilter.student_id} onChange={(e)=>setPrincipalPerformanceFilter(prev => ({ ...prev, student_id: e.target.value }))}>{principalStudentFilterOptions.map((option) => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}</select></div>
+                      <div className="field"><label>Term</label><select value={principalPerformanceFilter.term_name} onChange={(e)=>setPrincipalPerformanceFilter(prev => ({ ...prev, term_name: e.target.value }))}>{['All Terms', ...termOptions].map((option) => <option key={option} value={option}>{option}</option>)}</select></div>
+                      <div className="field"><label>Academic Year</label><select value={principalPerformanceFilter.academic_year} onChange={(e)=>setPrincipalPerformanceFilter(prev => ({ ...prev, academic_year: e.target.value }))}>{principalAcademicYearOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></div>
+                    </div>
+                    <div style={{display:'flex', gap:12, flexWrap:'wrap', marginTop:16}}>
+                      <button className="btn secondary" onClick={() => { setCurrentStudent(principalSelectedStudent); setSelectedReport('grade'); setPage('reports'); }} disabled={!principalSelectedStudent}>Printable Student Academic Reports</button>
+                    </div>
+                  </div>
+                  <div className="card">
+                    <div className="table-wrap">
+                      <table>
+                        <thead><tr><th>Student</th><th>Class</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Academic Year</th></tr></thead>
+                        <tbody>
+                          {principalPerformanceRows.length === 0 && <tr><td colSpan="7"><div className="empty">No grade records found for the selected filters</div></td></tr>}
+                          {principalPerformanceRows.map((row) => <tr key={row.id}><td>{row.student_name}</td><td>{row.class_name || '-'}</td><td>{row.subject_name}</td><td>{row.total_score}</td><td>{row.average_score}</td><td>{row.term_name}</td><td>{row.academic_year}</td></tr>)}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              ) : (
               <div className="card">
                 <h3>Academic Performance Summary</h3>
                 <div className="table-wrap"><table><thead><tr><th>Student</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Year</th></tr></thead><tbody>{gradesHook.rows.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{r.subject_name}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td></tr>)}</tbody></table></div>
               </div>
+              )
             )}
 
             {page === 'timetable' && (
