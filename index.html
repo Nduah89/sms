@@ -3829,7 +3829,7 @@
               <GenericCrudPage
                 title="Classes"
                 description="Add, edit, and delete school classes here. These saved classes replace the old Assign Main Class fields under Students and Teachers, and the same classes drive the class dropdown in Teacher Grades."
-                columns={[{ key:'class_name', label:'Class Name', render: (_, row) => buildClassDisplay(row) || row.class_name || row.name }, { key:'capacity', label:'Capacity' }]}
+                columns={[{ key:'name', label:'Class Name', render: (_, row) => buildClassDisplay(row) || row.name || row.class_name }, { key:'capacity', label:'Capacity' }]}
                 rows={classesHook.rows}
                 loading={classesHook.loading}
                 formState={classForm}
@@ -3838,21 +3838,35 @@
                   { key:'class_name', label:'Class Name' },
                   { key:'capacity', label:'Capacity', type:'number' }
                 ]}
-                onSave={() => {
+                onSave={async () => {
                   const trimmedClassName = String(classForm.class_name || '').trim();
                   if (!trimmedClassName) {
                     setNotice({ type: 'danger', text: 'Class Name is required.' });
                     return;
                   }
+                  if (!school?.id) {
+                    setNotice({ type: 'danger', text: 'School context was not found. Please log in again.' });
+                    return;
+                  }
                   const payload = {
-                    id: classForm.id || null,
+                    id: classForm.id || '',
                     name: trimmedClassName,
-                    capacity: classForm.capacity === '' || classForm.capacity == null ? null : Number(classForm.capacity)
+                    capacity: classForm.capacity === '' || classForm.capacity == null ? null : Number(classForm.capacity),
+                    school_id: school.id
                   };
-                  return saveEntity('classes', payload, ()=>setClassForm({ id: '', class_name: '', capacity: '' }), school?.id ? { school_id: school.id } : {});
+                  return withNotice(async () => {
+                    const query = payload.id
+                      ? supabaseClient.from('classes').update({ name: payload.name, capacity: payload.capacity }).eq('id', payload.id).eq('school_id', school.id)
+                      : supabaseClient.from('classes').insert({ name: payload.name, capacity: payload.capacity, school_id: school.id });
+                    const res = await query;
+                    if (res?.error) throw res.error;
+                    setClassForm({ id: '', class_name: '', capacity: '' });
+                    await refreshAll();
+                    return res;
+                  }, 'classes saved successfully');
                 }}
                 onDelete={(id) => deleteEntity('classes', id)}
-                onEdit={(row) => setClassForm({ id: row.id || '', class_name: row.class_name || row.name || '', capacity: row.capacity || '' })}
+                onEdit={(row) => setClassForm({ id: row.id || '', class_name: row.name || row.class_name || '', capacity: row.capacity || '' })}
               />
             )}
 
