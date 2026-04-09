@@ -2178,6 +2178,18 @@
         force_password_change: String(row.force_password_change ?? true)
       });
 
+      const buildParentFormFromRow = (row) => ({
+        ...buildManagedForm('parent'),
+        profile_id: row.profile_id || '',
+        role_name: 'parent',
+        full_name: row.full_name || '',
+        email: row.email || '',
+        phone: row.phone || row.profile_phone || '',
+        relationship_to_student: row.relationship_to_student || 'Parent',
+        account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
+        force_password_change: String(row.force_password_change ?? true)
+      });
+
       useEffect(() => {
         if (!studentForm.student_main_class_name) {
           if (studentForm.class_id) {
@@ -3185,14 +3197,48 @@
             )}
 
             {page === 'parents' && (
-              <div className="card">
-                <h3>Parents</h3>
-                <p className="subtle">This section is view only. Parent full name and contact are populated from linked student records, and student name and class links refresh automatically when the student record or link changes.</p>
-                <div className="table-wrap"><table><thead><tr><th>Parent Full Name</th><th>Contact</th><th>Linked Student Full Name</th><th>Class Assigned</th></tr></thead><tbody>
-                  {computedParentsRows.length === 0 && <tr><td colSpan="4"><div className="empty">No linked parent records found</div></td></tr>}
-                  {computedParentsRows.map(parent => <tr key={parent.id}><td>{parent.full_name || '-'}</td><td>{parent.phone || parent.email || '-'}</td><td>{parent.linked_student_names || '-'}</td><td>{parent.linked_class_names || '-'}</td></tr>)}
-                </tbody></table></div>
-              </div>
+              <GenericCrudPage
+                title="Parents Management"
+                description="School admin can add, edit, and delete parent records here. Linked student names and class assignments are reflected automatically from Student Management and parent student links, so changes remain realtime consistent across both sections."
+                columns={[
+                  { key: 'full_name', label: 'Full Name' },
+                  { key: 'phone', label: 'Phone' },
+                  { key: 'email', label: 'Email' },
+                  { key: 'relationship_to_student', label: 'Relationship' },
+                  { key: 'linked_student_names', label: 'Linked Students', render: v => v || '-' },
+                  { key: 'linked_class_names', label: 'Assigned Classes', render: v => v || '-' },
+                  { key: 'account_status', label: 'Account', render: v => <span className={classNames('chip', v === 'active' ? 'success' : v === 'archived' ? 'warning' : 'danger')}>{normalizeAccountStatus(v || 'active')}</span> },
+                  { key: 'credentials', label: 'Credentials', render: (_, row) => {
+                    const ref = managedUserRefMap[row.profile_id];
+                    return ref ? <div className="subtle"><div>{ref.email || '-'}</div><div>Temp: {ref.temporary_password}</div><div>Issued: {formatDate(ref.issued_at)}</div></div> : <span className="subtle">No credentials saved yet</span>;
+                  }}
+                ]}
+                rows={computedParentsRows}
+                loading={parentsHook.loading || parentLinksHook.loading || studentsHook.loading || studentsRawHook.loading}
+                formState={parentForm}
+                setFormState={setParentForm}
+                fields={[
+                  { key: 'full_name', label: 'Full Name' },
+                  { key: 'phone', label: 'Phone' },
+                  { key: 'email', label: 'Email' },
+                  { key: 'relationship_to_student', label: 'Relationship', type: 'select', options: [{ value: '', label: 'Select Relationship' }, ...relationshipOptions.map(v => ({ value: v, label: v }))] },
+                  { key: 'account_status', label: 'Account Status', type: 'select', options: statusOptions },
+                  { key: 'force_password_change', label: 'Force First Login Password Change', type: 'select', options: yesNoOptions }
+                ]}
+                onSave={() => saveManagedUserRecord(parentForm, setParentForm, 'parent')}
+                onDelete={(id, row) => handleDeleteManagedUser(row)}
+                onEdit={(row) => setParentForm(buildParentFormFromRow(row))}
+                extraActions={
+                  <div className="subtle" style={{alignSelf:'center'}}>
+                    Linked student names and classes refresh automatically from Student Management.
+                  </div>
+                }
+                rowActions={(row) => canSchoolAdminManageUsers ? <>
+                  <button className="btn secondary" onClick={() => setManagedUserStatus(row, 'archived')}>Archive</button>
+                  <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
+                  <button className="btn secondary" onClick={() => openManagedUserInCredentials(row)}>Open in User Accounts</button>
+                </> : null}
+              />
             )}
 
             {page === 'accounts-staff' && (
