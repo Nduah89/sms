@@ -2199,11 +2199,20 @@
       };
 
       const resolveTeacherClassId = (form) => {
-        if (!form.teacher_main_class_name) return form.class_id || '';
-        const normalizedTeacherMainClass = normalizeTeacherMainClassName(form.teacher_main_class_name);
-        if (!normalizedTeacherMainClass) return form.class_id || '';
-        const matchedRow = orderedClassRows.find((row) => normalizeTeacherMainClassName(row.class_name || row.name || '') === normalizedTeacherMainClass);
-        return matchedRow?.id || '';
+        const selectedValue = String(form.teacher_main_class_name || '').trim();
+        if (!selectedValue) return String(form.class_id || '').trim();
+
+        const directIdMatch = orderedClassRows.find((row) => String(row.id || '').trim() === selectedValue);
+        if (directIdMatch?.id) return String(directIdMatch.id);
+
+        const normalizedTeacherMainClass = normalizeTeacherMainClassName(selectedValue);
+        if (!normalizedTeacherMainClass) return String(form.class_id || '').trim();
+
+        const matchedRow = orderedClassRows.find((row) =>
+          normalizeTeacherMainClassName(row.class_name || row.name || '') === normalizedTeacherMainClass
+        );
+
+        return String(matchedRow?.id || form.class_id || '').trim();
       };
 
       const ensureTeacherClassId = async (form) => {
