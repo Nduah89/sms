@@ -901,7 +901,6 @@
       const [notice, setNotice] = useState({ type: "", text: "" });
       const [selectedReport, setSelectedReport] = useState("grade");
       const [currentStudent, setCurrentStudent] = useState(null);
-      const [principalPerformanceFilters, setPrincipalPerformanceFilters] = useState({ class_name:'', student_id:'', term_name:'', academic_year:'' });
       const [passwordForm, setPasswordForm] = useState({ newPassword: "" });
       const [welcomeContext, setWelcomeContext] = useState(null);
       const [themeConfig, setThemeConfig] = useState(normalizeThemeConfig({ theme_name: DEFAULT_THEME_KEY }));
@@ -1904,9 +1903,49 @@
       };
 
       const handleFirstLoginPasswordChange = async () => {
-        const { error } = await changePassword(passwordForm.newPassword);
-        if (error) return setNotice({ type: 'danger', text: error.message });
-        await withNotice(async () => supabaseClient.from('profiles').update({ force_password_change: false }).eq('id', profile.id), 'Password changed successfully');
+        const nextPassword = String(passwordForm.newPassword || '').trim();
+        if (!nextPassword) {
+          setNotice({ type: 'danger', text: 'Enter a new password before continuing.' });
+          return;
+        }
+
+        const { error } = await changePassword(nextPassword);
+        if (error) {
+          setNotice({ type: 'danger', text: error.message });
+          return;
+        }
+
+        setNotice({ type: '', text: '' });
+
+        let completeError = null;
+        try {
+          const { error: rpcError } = await supabaseClient.rpc('complete_first_login_password_change', {
+            p_profile_id: profile.id
+          });
+          completeError = rpcError || null;
+        } catch (rpcErr) {
+          completeError = rpcErr || null;
+        }
+
+        if (completeError) {
+          const { error: fallbackError } = await supabaseClient
+            .from('profiles')
+            .update({ force_password_change: false })
+            .eq('id', profile.id);
+          if (fallbackError) {
+            setNotice({
+              type: 'danger',
+              text: completeError?.message || fallbackError.message || 'Password was changed, but the first login flag could not be cleared.'
+            });
+            return;
+          }
+        }
+
+        setProfile((prev) => prev ? ({ ...prev, force_password_change: false }) : prev);
+        setPasswordForm({ newPassword: '' });
+        setNotice({ type: 'success', text: 'Password changed successfully' });
+        await refreshAll();
+        await loadCore();
       };
 
       const handleBulkStudentImport = (file) => {
@@ -2305,55 +2344,6 @@
         present: principalTeacherPresenceRows.filter((row) => row.status === 'Present').length,
         absent: principalTeacherPresenceRows.filter((row) => row.status === 'Absent').length
       }), [principalTeacherPresenceRows]);
-
-      const principalSubjectNames = useMemo(() => ([...new Set((subjectsHook.rows || []).map((row) => String(row.subject_name || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b))), [subjectsHook.rows]);
-
-      const principalClassPerformanceRows = useMemo(() => {
-        const map = new Map();
-        (gradesHook.rows || []).forEach((row) => {
-          const key = String(row.class_name || row.class_id || 'Unassigned');
-          const current = map.get(key) || { class_name: key, entries: 0, total_score_sum: 0, average_score_sum: 0, student_names: new Set() };
-          current.entries += 1;
-          current.total_score_sum += Number(row.total_score || 0);
-          current.average_score_sum += Number(row.average_score || 0);
-          if (row.student_name) current.student_names.add(String(row.student_name));
-          map.set(key, current);
-        });
-        return Array.from(map.values()).map((row) => ({
-          class_name: row.class_name,
-          entries: row.entries,
-          student_count: row.student_names.size,
-          average_total_score: row.entries ? (row.total_score_sum / row.entries) : 0,
-          average_score: row.entries ? (row.average_score_sum / row.entries) : 0
-        })).sort((a, b) => String(a.class_name).localeCompare(String(b.class_name)));
-      }, [gradesHook.rows]);
-
-      const principalRecentAcademicUpdates = useMemo(() => {
-        return [...(auditHook.rows || [])]
-          .filter((row) => ['students', 'teachers', 'grades', 'student_attendance', 'attendance', 'profiles'].includes(String(row.table_name || '').toLowerCase()))
-          .sort((a, b) => new Date(b.created_at || b.updated_at || 0) - new Date(a.created_at || a.updated_at || 0))
-          .slice(0, 10);
-      }, [auditHook.rows]);
-
-      const principalStudentClassOptions = useMemo(() => ([...new Set(mergedStudentsRows.map((row) => teacherAssignedClassDisplay(row) || String(row.class_name || '')).filter(Boolean))].sort((a, b) => a.localeCompare(b))), [mergedStudentsRows]);
-
-      const principalStudentOptions = useMemo(() => (mergedStudentsRows.map((row) => ({ value: row.student_id || row.id, label: row.full_name || row.student_name || 'Student', class_name: teacherAssignedClassDisplay(row) || row.class_name || '', student_id: row.student_id || row.id })).sort((a, b) => String(a.label).localeCompare(String(b.label)))), [mergedStudentsRows]);
-
-      const principalAcademicYearOptions = useMemo(() => ([...new Set((gradesHook.rows || []).map((row) => String(row.academic_year || '').trim()).filter(Boolean))].sort()), [gradesHook.rows]);
-
-      const principalFilteredGrades = useMemo(() => {
-        return (gradesHook.rows || []).filter((row) => {
-          const className = String(row.class_name || row.class_id || '');
-          const studentId = String(row.student_id || '');
-          const termName = String(row.term_name || '');
-          const academicYear = String(row.academic_year || '');
-          if (principalPerformanceFilters.class_name && className !== principalPerformanceFilters.class_name) return false;
-          if (principalPerformanceFilters.student_id && studentId !== principalPerformanceFilters.student_id) return false;
-          if (principalPerformanceFilters.term_name && termName !== principalPerformanceFilters.term_name) return false;
-          if (principalPerformanceFilters.academic_year && academicYear !== principalPerformanceFilters.academic_year) return false;
-          return true;
-        });
-      }, [gradesHook.rows, principalPerformanceFilters]);
 
       useEffect(() => {
         if (role !== ROLE.TEACHER) return;
@@ -2995,21 +2985,14 @@
               <div className="grid">
                 {renderWelcomeCard()}
                 <MetricCards items={[
-                  { label: 'Total Students', value: mergedStudentsRows.length },
-                  { label: 'Total Teachers', value: mergedTeachersRows.length },
-                  { label: 'Total Subjects Taught', value: principalSubjectNames.length },
+                  { label: 'Total Students', value: studentsHook.rows.length },
+                  { label: 'Total Teachers', value: teachersHook.rows.length },
                   { label: 'Teachers Present Today', value: principalTeacherPresenceSummary.present },
-                  { label: 'Teachers Absent Today', value: principalTeacherPresenceSummary.absent },
-                  { label: 'Attendance Records Today', value: attendanceRowsToday.length }
+                  { label: 'Teachers Absent Today', value: principalTeacherPresenceSummary.absent }
                 ]} />
                 <div className="grid cards-2">
                   <div className="card">
-                    <h3>Subjects Taught in the School</h3>
-                    {principalSubjectNames.length === 0 ? <div className="empty">No taught subjects found yet</div> : <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>{principalSubjectNames.map((name) => <span key={name} className="chip info">{name}</span>)}</div>}
-                    <div className="subtle" style={{marginTop:12}}>This list updates automatically from subject and teacher assignment records.</div>
-                  </div>
-                  <div className="card">
-                    <h3>Student Attendance Overview</h3>
+                    <h3>Attendance Oversight</h3>
                     <div style={{display:'grid', gap:10}}>
                       <div><strong>Total Attendance Records Today:</strong> {attendanceRowsToday.length}</div>
                       <div><strong>Student Present:</strong> {attendanceRowsToday.filter(r => String(r.status || '').toLowerCase() === 'present').length}</div>
@@ -3018,76 +3001,9 @@
                       <div className="subtle">When a teacher records attendance for an assigned class, this dashboard updates automatically in real time.</div>
                     </div>
                   </div>
-                </div>
-                <div className="grid cards-2">
                   <div className="card">
-                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap'}}>
-                      <h3 style={{margin:0}}>Student Performance Overview</h3>
-                      <div className="subtle">Based on current saved grade records</div>
-                    </div>
-                    <div style={{display:'grid', gap:10, marginTop:12}}>
-                      <div><strong>Total Grade Entries:</strong> {gradesHook.rows.length}</div>
-                      <div><strong>Students with Grades:</strong> {[...new Set((gradesHook.rows || []).map((row) => row.student_id).filter(Boolean))].length}</div>
-                      <div><strong>Average Score:</strong> {gradesHook.rows.length ? (gradesHook.rows.reduce((sum, row) => sum + Number(row.average_score || 0), 0) / gradesHook.rows.length).toFixed(2) : '0.00'}</div>
-                    </div>
-                  </div>
-                  <div className="card">
-                    <h3>Teacher Main Class and Primary Subject Summary</h3>
-                    <div className="table-wrap" style={{marginTop:12}}>
-                      <table>
-                        <thead><tr><th>Teacher</th><th>Main Class</th><th>Primary Subject Specialty</th></tr></thead>
-                        <tbody>
-                          {mergedTeachersRows.length === 0 && <tr><td colSpan="3"><div className="empty">No teacher records found</div></td></tr>}
-                          {mergedTeachersRows.slice(0, 10).map((row) => <tr key={row.id}><td>{row.full_name}</td><td>{teacherAssignedClassDisplay(row) || '-'}</td><td>{row.subject_specialty || '-'}</td></tr>)}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-                <div className="card">
-                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:12}}>
-                    <h3 style={{margin:0}}>Class Academic Performance Summary</h3>
-                    <button className="btn secondary" onClick={() => setPage('performance-summary')}>Open Academic Performance Section</button>
-                  </div>
-                  <div className="table-wrap" style={{marginTop:16}}>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Class</th>
-                          <th>Students with Grades</th>
-                          <th>Grade Entries</th>
-                          <th>Average Total Score</th>
-                          <th>Average Score</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {principalClassPerformanceRows.length === 0 && <tr><td colSpan="5"><div className="empty">No class performance data found yet</div></td></tr>}
-                        {principalClassPerformanceRows.map((row) => (
-                          <tr key={row.class_name}>
-                            <td>{row.class_name}</td>
-                            <td>{row.student_count}</td>
-                            <td>{row.entries}</td>
-                            <td>{Number(row.average_total_score || 0).toFixed(2)}</td>
-                            <td>{Number(row.average_score || 0).toFixed(2)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-                <div className="card">
-                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:12}}>
-                    <h3 style={{margin:0}}>Recent Academic Updates Related to Students and Teachers</h3>
-                    <div className="subtle">Latest audit events only</div>
-                  </div>
-                  <div className="table-wrap" style={{marginTop:16}}>
-                    <table>
-                      <thead><tr><th>Date</th><th>Action</th><th>Table</th><th>Summary</th><th>Actor</th></tr></thead>
-                      <tbody>
-                        {principalRecentAcademicUpdates.length === 0 && <tr><td colSpan="5"><div className="empty">No recent academic updates found</div></td></tr>}
-                        {principalRecentAcademicUpdates.map((row) => <tr key={row.id}><td>{formatDate(row.created_at || row.updated_at)}</td><td>{row.action_type || '-'}</td><td>{row.table_name || '-'}</td><td>{row.summary || '-'}</td><td>{row.actor_name || '-'}</td></tr>)}
-                      </tbody>
-                    </table>
+                    <h3>Academic Oversight</h3>
+                    <p className="subtle">Principal access is limited to students, teachers, classes, attendance summaries, academic performance, teacher assignment monitoring, and academic reporting only.</p>
                   </div>
                 </div>
                 <div className="card">
@@ -3195,18 +3111,6 @@
               </div>
             )}
             {page === 'students' && (
-              role === ROLE.PRINCIPAL ? (
-                <div className="card">
-                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:12}}>
-                    <div>
-                      <h3 style={{margin:'0 0 6px'}}>Student Records</h3>
-                      <div className="subtle">View only. New, edited, and deleted student records, including linked parent details, reflect here automatically in real time.</div>
-                    </div>
-                    <button className="btn secondary" onClick={() => exportCsv(mergedStudentsRows.map((row) => ({ full_name: row.full_name || '', student_no: row.student_no || '', assigned_class: teacherAssignedClassDisplay(row) || '', gender: row.gender || '', date_of_birth: row.date_of_birth || '', parent_full_name: row.parent_full_name || '', parent_contact: row.parent_contact || row.guardian_contact || '', account_status: row.account_status || row.status || '' })), 'principal-student-records.csv')}>Export CSV</button>
-                  </div>
-                  <div className="table-wrap" style={{marginTop:16}}><table><thead><tr><th>Full Name</th><th>Student No</th><th>Assigned Class</th><th>Gender</th><th>Date of Birth</th><th>Parent Full Name</th><th>Parent Contact</th><th>Account</th></tr></thead><tbody>{mergedStudentsRows.length === 0 ? <tr><td colSpan="8"><div className="empty">No student records found</div></td></tr> : mergedStudentsRows.map((row) => <tr key={row.id}><td>{row.full_name || '-'}</td><td>{row.student_no || '-'}</td><td>{teacherAssignedClassDisplay(row) || '-'}</td><td>{row.gender || '-'}</td><td>{formatDate(row.date_of_birth)}</td><td>{row.parent_full_name || '-'}</td><td>{row.parent_contact || row.guardian_contact || '-'}</td><td><span className={classNames('chip', (row.account_status || row.status) === 'active' ? 'success' : (row.account_status || row.status) === 'archived' ? 'warning' : 'danger')}>{row.account_status || row.status || '-'}</span></td></tr>)}</tbody></table></div>
-                </div>
-              ) : (
               <GenericCrudPage
                 title="Student Management"
                 description="Add, edit, archive, and delete student records. Parent full name and parent contact captured here are synced into the Parents section. Assign Main Class uses the fixed ordered list, and Category is a separate optional selector of None, A, B, or C."
@@ -3249,22 +3153,9 @@
               >
                 {importStatus && <div className="footer-note">{importStatus}</div>}
               </GenericCrudPage>
-              )
             )}
 
             {page === 'teachers' && (
-              role === ROLE.PRINCIPAL ? (
-                <div className="card">
-                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:12}}>
-                    <div>
-                      <h3 style={{margin:'0 0 6px'}}>Teacher Records</h3>
-                      <div className="subtle">View only. Teacher additions, edits, and deletions reflect here automatically in real time.</div>
-                    </div>
-                    <button className="btn secondary" onClick={() => exportCsv(mergedTeachersRows.map((row) => ({ full_name: row.full_name || '', emis_code: row.emis_code || '', assigned_class: teacherAssignedClassDisplay(row) || '', subject_specialty: row.subject_specialty || '', qualification: row.qualification || '', gender: row.gender || '', date_of_birth: row.date_of_birth || '', trained_status: row.trained_status || '', account_status: row.account_status || row.status || '' })), 'principal-teacher-records.csv')}>Export CSV</button>
-                  </div>
-                  <div className="table-wrap" style={{marginTop:16}}><table><thead><tr><th>Full Name</th><th>Teacher EMIS Code</th><th>Assigned Class</th><th>Primary Subject</th><th>Qualification</th><th>Gender</th><th>Date of Birth</th><th>Training Status</th><th>Account</th></tr></thead><tbody>{mergedTeachersRows.length === 0 ? <tr><td colSpan="9"><div className="empty">No teacher records found</div></td></tr> : mergedTeachersRows.map((row) => <tr key={row.id}><td>{row.full_name || '-'}</td><td>{row.emis_code || '-'}</td><td>{teacherAssignedClassDisplay(row) || '-'}</td><td>{row.subject_specialty || '-'}</td><td>{row.qualification || '-'}</td><td>{row.gender || '-'}</td><td>{formatDate(row.date_of_birth)}</td><td>{row.trained_status || '-'}</td><td><span className={classNames('chip', (row.account_status || row.status) === 'active' ? 'success' : (row.account_status || row.status) === 'archived' ? 'warning' : 'danger')}>{row.account_status || row.status || '-'}</span></td></tr>)}</tbody></table></div>
-                </div>
-              ) : (
               <GenericCrudPage
                 title="Teacher Management"
                 description="Add, edit, archive, and delete teacher records. Staff number is generated automatically from the school name context, and each teacher keeps one assigned main class and one primary subject specialty with real time updates."
@@ -3307,7 +3198,6 @@
                 </> : null}
                 extraActions={<><button className="btn secondary" onClick={()=>exportCsv(mergedTeachersRows.map((row) => ({ ...row, assigned_class: teacherAssignedClassDisplay(row) })), 'teachers.csv')}>Export CSV</button></>}
               />
-              )
             )}
 
             {page === 'parents' && (
@@ -3525,30 +3415,10 @@
             )}
 
             {(page === 'attendance-summary' || page === 'my-attendance') && (
-              role === ROLE.PRINCIPAL ? (
-                <div className="grid">
-                  <MetricCards items={[
-                    { label: 'Attendance Records Today', value: attendanceRowsToday.length },
-                    { label: 'Students Present Today', value: attendanceRowsToday.filter(r => String(r.status || '').toLowerCase() === 'present').length },
-                    { label: 'Students Absent Today', value: attendanceRowsToday.filter(r => String(r.status || '').toLowerCase() === 'absent').length },
-                    { label: 'Teachers Present Today', value: principalTeacherPresenceSummary.present },
-                    { label: 'Teachers Absent Today', value: principalTeacherPresenceSummary.absent }
-                  ]} />
-                  <div className="card">
-                    <h3>Attendance Summary</h3>
-                    <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Subject</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead><tbody>{attendanceHook.rows.length === 0 ? <tr><td colSpan="7"><div className="empty">No attendance records found</div></td></tr> : attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}</tbody></table></div>
-                  </div>
-                  <div className="card">
-                    <h3>Teacher Attendance Presence Summary</h3>
-                    <div className="table-wrap"><table><thead><tr><th>Teacher</th><th>Class</th><th>Subject</th><th>Status</th><th>Last Update</th></tr></thead><tbody>{principalTeacherPresenceRows.length === 0 ? <tr><td colSpan="5"><div className="empty">No teacher attendance presence records found</div></td></tr> : principalTeacherPresenceRows.map((row) => <tr key={row.id}><td>{row.teacher_name}</td><td>{row.class_name}</td><td>{row.subject_name}</td><td><span className={`chip ${row.status === 'Present' ? 'success' : 'danger'}`}>{row.status}</span></td><td>{row.marked_at ? formatDate(row.marked_at) : 'Not yet recorded today'}</td></tr>)}</tbody></table></div>
-                  </div>
-                </div>
-              ) : (
-                <div className="card">
-                  <h3>Attendance Summary</h3>
-                  <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Subject</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}</tbody></table></div>
-                </div>
-              )
+              <div className="card">
+                <h3>Attendance Summary</h3>
+                <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Subject</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}</tbody></table></div>
+              </div>
             )}
 
             {page === 'grades' && (
@@ -3574,32 +3444,10 @@
             )}
 
             {(page === 'performance-summary' || page === 'my-grades') && (
-              role === ROLE.PRINCIPAL ? (
-                <div className="grid">
-                  <div className="card">
-                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:12}}>
-                      <h3 style={{margin:0}}>Academic Performance</h3>
-                      <button className="btn secondary" disabled={!currentStudent} onClick={() => { setSelectedReport('grade'); setPage('reports'); }}>Printable Student Academic Report</button>
-                    </div>
-                    <div className="form-grid-3" style={{marginTop:16}}>
-                      <div className="field"><label>Class</label><select value={principalPerformanceFilters.class_name} onChange={(e)=>setPrincipalPerformanceFilters((prev)=>({ ...prev, class_name:e.target.value }))}><option value="">All Classes</option>{principalStudentClassOptions.map((value) => <option key={value} value={value}>{value}</option>)}</select></div>
-                      <div className="field"><label>Student</label><select value={principalPerformanceFilters.student_id} onChange={(e)=>{ const value = e.target.value; const selected = principalStudentOptions.find((option) => option.value === value); setPrincipalPerformanceFilters((prev)=>({ ...prev, student_id:value, class_name: selected?.class_name || prev.class_name })); setCurrentStudent(selected ? { full_name: selected.label, class_name: selected.class_name, student_id: selected.student_id } : null); }}><option value="">All Students</option>{principalStudentOptions.filter((option) => !principalPerformanceFilters.class_name || option.class_name === principalPerformanceFilters.class_name).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
-                      <div className="field"><label>Term</label><select value={principalPerformanceFilters.term_name} onChange={(e)=>setPrincipalPerformanceFilters((prev)=>({ ...prev, term_name:e.target.value }))}><option value="">All Terms</option>{termOptions.map((value) => <option key={value} value={value}>{value}</option>)}</select></div>
-                      <div className="field"><label>Academic Year</label><select value={principalPerformanceFilters.academic_year} onChange={(e)=>setPrincipalPerformanceFilters((prev)=>({ ...prev, academic_year:e.target.value }))}><option value="">All Years</option>{principalAcademicYearOptions.map((value) => <option key={value} value={value}>{value}</option>)}</select></div>
-                      <div className="field"><label>Summary</label><div className="subtle" style={{padding:'12px 14px', border:'1px solid var(--line)', borderRadius:14, background:'var(--card)'}}>{principalFilteredGrades.length} grade record(s)</div></div>
-                    </div>
-                  </div>
-                  <div className="card">
-                    <h3>Filtered Grades</h3>
-                    <div className="table-wrap"><table><thead><tr><th>Student</th><th>Class</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Year</th></tr></thead><tbody>{principalFilteredGrades.length === 0 ? <tr><td colSpan="7"><div className="empty">No grade records found for the selected filters</div></td></tr> : principalFilteredGrades.map(r => <tr key={r.id} onClick={() => setCurrentStudent({ full_name: r.student_name, class_name: r.class_name, student_id: r.student_id })}><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td></tr>)}</tbody></table></div>
-                  </div>
-                </div>
-              ) : (
-                <div className="card">
-                  <h3>Academic Performance Summary</h3>
-                  <div className="table-wrap"><table><thead><tr><th>Student</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Year</th></tr></thead><tbody>{gradesHook.rows.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{r.subject_name}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td></tr>)}</tbody></table></div>
-                </div>
-              )
+              <div className="card">
+                <h3>Academic Performance Summary</h3>
+                <div className="table-wrap"><table><thead><tr><th>Student</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Year</th></tr></thead><tbody>{gradesHook.rows.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{r.subject_name}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td></tr>)}</tbody></table></div>
+              </div>
             )}
 
             {page === 'timetable' && (
