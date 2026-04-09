@@ -2161,8 +2161,8 @@
       };
 
       const classOptions = useMemo(() => [{ value: '', label: 'Select Class' }, ...orderedClassRows.map(c => ({ value: c.id, label: buildClassDisplay(c) || c.name }))], [orderedClassRows]);
+      const schoolManagedClassOptions = useMemo(() => [{ value: '', label: 'Select Class' }, ...orderedClassRows.map(c => ({ value: c.id, label: buildClassDisplay(c) || c.name }))], [orderedClassRows]);
       const teacherMainClassOptions = useMemo(() => [{ value: '', label: 'Select Main Class' }, ...orderedTeacherMainClasses.map(v => ({ value: v, label: v }))], []);
-      const studentMainClassOptions = useMemo(() => [{ value: '', label: 'Select Main Class' }, ...orderedMainClasses.map(v => ({ value: v, label: v }))], []);
       const studentClassSectionOptions = useMemo(() => classCategoryOptions, []);
       const classNameMap = useMemo(() => Object.fromEntries(orderedClassRows.map(c => [c.id, buildClassDisplay(c) || c.name])), [orderedClassRows]);
       const teacherAssignedClassDisplay = (row) => {
@@ -2183,11 +2183,7 @@
         );
       };
 
-      const resolveStudentClassId = (form) => {
-        if (form.class_id) return form.class_id;
-        const matchedRow = findClassRowByMainAndSection(form.student_main_class_name, form.student_class_section);
-        return matchedRow?.id || '';
-      };
+      const resolveStudentClassId = (form) => String(form.class_id || '').trim();
 
       const deriveLevelGroupFromMainClass = (mainClassName) => {
         const normalized = normalizeMainClassName(mainClassName);
@@ -2200,38 +2196,7 @@
       };
 
       const ensureStudentClassId = async (form) => {
-        const existingId = resolveStudentClassId(form);
-        if (existingId) return existingId;
-        const normalizedMainClass = normalizeMainClassName(form.student_main_class_name);
-        if (!school?.id || !normalizedMainClass) return '';
-
-        const sectionChoice = (form.student_class_section || 'None').trim() || 'None';
-        const insertPayload = {
-          school_id: school.id,
-          name: normalizedMainClass,
-          level_group: deriveLevelGroupFromMainClass(normalizedMainClass) || null,
-          section: sectionChoice === 'None' ? null : sectionChoice,
-          capacity: null
-        };
-
-        const { data: insertedClass, error: insertClassError } = await supabaseClient
-          .from('classes')
-          .insert(insertPayload)
-          .select('*')
-          .single();
-
-        if (insertClassError) {
-          const { data: fallbackClass } = await supabaseClient
-            .from('classes')
-            .select('*')
-            .eq('school_id', school.id)
-            .eq('name', normalizedMainClass)
-            .eq('section', sectionChoice === 'None' ? null : sectionChoice)
-            .maybeSingle();
-          return fallbackClass?.id || '';
-        }
-
-        return insertedClass?.id || '';
+        return resolveStudentClassId(form);
       };
 
       const resolveTeacherClassId = (form) => {
@@ -2278,7 +2243,7 @@
 
       const buildStudentFormFromRow = (row) => {
         const classRow = orderedClassRows.find((entry) => entry.id === row.class_id) || null;
-        const normalizedMainClass = normalizeMainClassName(classRow?.name || row.class_name || '');
+        const resolvedClassId = row.class_id || classRow?.id || '';
         return {
           ...buildManagedForm('student'),
           profile_id: row.profile_id || '',
@@ -2287,8 +2252,8 @@
           phone: row.profile_phone || row.phone || '',
           account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
           force_password_change: String(row.force_password_change ?? true),
-          class_id: row.class_id || '',
-          student_main_class_name: normalizedMainClass || '',
+          class_id: resolvedClassId,
+          student_main_class_name: normalizeMainClassName(classRow?.name || row.class_name || '') || '',
           student_class_section: getClassSectionValue(classRow || row),
           gender: row.gender || 'Male',
           date_of_birth: row.date_of_birth || '',
@@ -2337,28 +2302,20 @@
       });
 
       useEffect(() => {
-        if (!studentForm.student_main_class_name) {
-          if (studentForm.class_id) {
-            setStudentForm((prev) => ({ ...prev, class_id: '' }));
-          }
-          return;
+        const selectedClassRow = orderedClassRows.find((entry) => entry.id === studentForm.class_id) || null;
+        const nextMainClassName = normalizeMainClassName(selectedClassRow?.name || selectedClassRow?.class_name || '');
+        const nextSection = getClassSectionValue(selectedClassRow);
+        if (
+          (studentForm.student_main_class_name || '') !== (nextMainClassName || '')
+          || (studentForm.student_class_section || 'None') !== (nextSection || 'None')
+        ) {
+          setStudentForm((prev) => ({
+            ...prev,
+            student_main_class_name: nextMainClassName || '',
+            student_class_section: nextSection || 'None'
+          }));
         }
-
-        const availableSectionValues = studentClassSectionOptions.map((option) => option.value);
-        if (!availableSectionValues.includes(studentForm.student_class_section || 'None')) {
-          setStudentForm((prev) => ({ ...prev, student_class_section: 'None' }));
-          return;
-        }
-
-        const nextClassId = findClassRowByMainAndSection(
-          studentForm.student_main_class_name,
-          studentForm.student_class_section
-        )?.id || '';
-
-        if ((studentForm.class_id || '') !== nextClassId) {
-          setStudentForm((prev) => ({ ...prev, class_id: nextClassId }));
-        }
-      }, [studentForm.student_main_class_name, studentForm.student_class_section, studentClassSectionOptions, orderedClassRows]);
+      }, [studentForm.class_id, orderedClassRows]);
 
       useEffect(() => {
         if (!teacherForm.teacher_main_class_name) {
@@ -2839,8 +2796,8 @@
           ? await ensureTeacherClassId(form)
           : null;
 
-        if (roleName === 'student' && form.student_main_class_name && !resolvedStudentClassId) {
-          setNotice({ type: 'danger', text: 'Failed to resolve or create the selected student main class.' });
+        if (roleName === 'student' && !resolvedStudentClassId) {
+          setNotice({ type: 'danger', text: 'Select one of the classes created under the school admin Classes section.' });
           return;
         }
 
@@ -3171,23 +3128,23 @@
 
       const teacherGradeClassOptions = useMemo(() => (
         [{ value: '', label: 'All Classes' }].concat(
-          Array.from(new Set(
-            (teacherAssignableStudents || [])
-              .map((student) => String(student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '').trim())
-              .filter(Boolean)
-          )).sort((a, b) => a.localeCompare(b)).map((value) => ({ value, label: value }))
+          orderedClassRows.map((row) => {
+            const display = buildClassDisplay(row) || row.name || row.class_name || '';
+            return { value: display, label: display };
+          }).filter((option) => option.value)
         )
-      ), [teacherAssignableStudents, classNameMap]);
+      ), [orderedClassRows]);
 
       const teacherGradeStudentOptions = useMemo(() => {
         return (teacherAssignableStudents || [])
           .filter((student) => {
             if (!gradeForm.filter_class_name) return true;
-            const classValue = String(student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '').trim();
+            const linkedClassRow = orderedClassRows.find((row) => row.id === student.class_id) || null;
+            const classValue = String(buildClassDisplay(linkedClassRow) || student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '').trim();
             return classValue === gradeForm.filter_class_name;
           })
           .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
-      }, [teacherAssignableStudents, gradeForm.filter_class_name, classNameMap]);
+      }, [teacherAssignableStudents, gradeForm.filter_class_name, classNameMap, orderedClassRows]);
 
       const teacherAcademicYearOptions = useMemo(() => (
         getAcademicYearOptions(
@@ -3660,7 +3617,7 @@
               ) : (
               <GenericCrudPage
                 title="Student Management"
-                description="Add, edit, archive, and delete student records. Parent full name and parent contact captured here are synced into the Parents section. Assign Main Class uses the fixed ordered list, and Category is a separate optional selector of None, A, B, or C."
+                description="Add, edit, archive, and delete student records. Parent full name and parent contact captured here are synced into the Parents section. Student class now comes directly from the school admin Classes section."
                 columns={[
                   { key: 'full_name', label: 'Full Name' },
                   { key: 'student_no', label: 'Student No' },
@@ -3678,8 +3635,7 @@
                 fields={[
                   { key: 'full_name', label: 'Full Name' },
                   { key: 'student_no', label: 'Student No' },
-                  { key: 'student_main_class_name', label: 'Assign Main Class', type: 'select', options: studentMainClassOptions },
-                  { key: 'student_class_section', label: 'Category', type: 'select', options: studentClassSectionOptions },
+                  { key: 'class_id', label: 'Class', type: 'select', options: schoolManagedClassOptions },
                   { key: 'gender', label: 'Gender', type: 'select', options: genderOptions },
                   { key: 'date_of_birth', label: 'Date of Birth', type: 'date' },
                   { key: 'parent_full_name', label: 'Parent Full Name' },
@@ -3911,13 +3867,13 @@
             {page === 'classes' && (
               <GenericCrudPage
                 title="Classes"
-                description="Manage Nursery, KG, Class 1 to 6, and JHS 1 to 3 structures."
+                description="Add, edit, and delete the school's class list here. These saved classes drive student class assignment and the class dropdown used in teacher grade entry."
                 columns={[{ key:'name', label:'Class' }, { key:'level_group', label:'Level Group' }, { key:'section', label:'Section' }, { key:'capacity', label:'Capacity' }]}
                 rows={classesHook.rows}
                 loading={classesHook.loading}
                 formState={classForm}
                 setFormState={setClassForm}
-                onSave={() => saveEntity('classes', classForm, ()=>setClassForm({ id: '', name: '', level_group: '', section: '', capacity: '' }))}
+                onSave={() => saveEntity('classes', classForm, ()=>setClassForm({ id: '', name: '', level_group: '', section: '', capacity: '' }), school?.id ? { school_id: school.id } : {})}
                 onDelete={(id) => deleteEntity('classes', id)}
                 onEdit={(row) => setClassForm(row)}
               />
