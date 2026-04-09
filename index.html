@@ -191,7 +191,7 @@
     const NAV_BY_ROLE = {
       [ROLE.SUPER_ADMIN]: ["super-dashboard", "schools", "approvals", "licenses", "system-control", "audit-log"],
       [ROLE.ADMIN]: ["users", "school-logo", "students", "teachers", "parents", "accounts-staff", "principals", "subjects", "chat", "audit-log"],
-      [ROLE.PRINCIPAL]: ["principal-dashboard", "students", "teachers", "classes", "attendance-summary", "performance-summary", "reports", "timetable", "chat", "notifications"],
+      [ROLE.PRINCIPAL]: ["principal-dashboard", "students", "teachers", "attendance-summary", "performance-summary", "timetable", "notifications"],
       [ROLE.TEACHER]: ["teacher-dashboard", "attendance", "grades", "timetable", "students", "chat", "notifications"],
       [ROLE.STUDENT]: ["student-dashboard", "my-grades", "my-attendance", "my-fees", "timetable", "chat", "notifications"],
       [ROLE.PARENT]: ["parent-dashboard", "children", "my-grades", "my-attendance", "my-fees", "chat", "notifications"],
@@ -439,6 +439,27 @@
     function formatDate(value) { return value ? new Date(value).toLocaleDateString() : ""; }
     function formatCurrency(value) { return new Intl.NumberFormat("en-GH", { style: "currency", currency: "GHS" }).format(Number(value || 0)); }
     function todayISO() { return new Date().toISOString().slice(0, 10); }
+    function getAcademicYearLabel(date = new Date()) {
+      const month = date.getMonth() + 1;
+      const year = date.getFullYear();
+      const startYear = month >= 8 ? year : year - 1;
+      return `${startYear}/${startYear + 1}`;
+    }
+    function getAcademicYearOptions(existingYears = []) {
+      const current = getAcademicYearLabel();
+      const [startText] = current.split('/');
+      const startYear = Number(startText);
+      const seededYears = [
+        `${startYear - 1}/${startYear}`,
+        current,
+        `${startYear + 1}/${startYear + 2}`
+      ];
+      return Array.from(new Set([...seededYears, ...(existingYears || []).filter(Boolean)])).sort((a, b) => {
+        const aYear = Number(String(a).split('/')[0] || 0);
+        const bYear = Number(String(b).split('/')[0] || 0);
+        return aYear - bYear;
+      });
+    }
 
     function getPageAccess(role, key) { return (NAV_BY_ROLE[role] || []).includes(key); }
 
@@ -901,7 +922,7 @@
       const [notice, setNotice] = useState({ type: "", text: "" });
       const [selectedReport, setSelectedReport] = useState("grade");
       const [currentStudent, setCurrentStudent] = useState(null);
-      const [principalPerformanceFilter, setPrincipalPerformanceFilter] = useState({ class_name: '', student_id: '', term_name: 'All Terms', academic_year: 'All Years' });
+      const [principalPerformanceFilter, setPrincipalPerformanceFilter] = useState({ class_name: '', student_id: '', term_name: 'All Terms', academic_year: getAcademicYearLabel() });
       const [passwordForm, setPasswordForm] = useState({ newPassword: "" });
       const [welcomeContext, setWelcomeContext] = useState(null);
       const [themeConfig, setThemeConfig] = useState(normalizeThemeConfig({ theme_name: DEFAULT_THEME_KEY }));
@@ -946,10 +967,16 @@
       const [subjectForm, setSubjectForm] = useState({ id: "", subject_name: "", subject_code: "" });
       const [principalForm, setPrincipalForm] = useState(buildManagedForm('principal'));
       const [attendanceForm, setAttendanceForm] = useState({ id: "", student_id: "", class_id: "", teacher_assignment_id: "", subject_name: "", attendance_date: todayISO(), status: "Present", remarks: "" });
-      const [gradeForm, setGradeForm] = useState({ id: "", student_id: "", subject_id: "", term_name: "Term 1", academic_year: new Date().getFullYear().toString(), assignment_score: 0, test_score: 0, exam_score: 0 });
-      const [feeForm, setFeeForm] = useState({ id: "", student_id: "", term_name: "Term 1", academic_year: new Date().getFullYear().toString(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
+      const [gradeForm, setGradeForm] = useState({ id: "", student_id: "", subject_id: "", term_name: "Term 1", academic_year: getAcademicYearLabel(), assignment_score: 0, test_score: 0, exam_score: 0 });
+      const [feeForm, setFeeForm] = useState({ id: "", student_id: "", term_name: "Term 1", academic_year: getAcademicYearLabel(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
       const [notificationForm, setNotificationForm] = useState({ id: "", title: "", message: "", audience_role: "all" });
       const [chatForm, setChatForm] = useState({ recipient_profile_id: "", message_text: "" });
+      useEffect(() => {
+        if (role !== ROLE.PRINCIPAL) return;
+        if (['classes', 'chat', 'reports'].includes(page)) {
+          setPage('performance-summary');
+        }
+      }, [role, page]);
       const [importStatus, setImportStatus] = useState("");
       const [accountControlDrafts, setAccountControlDrafts] = useState({});
       const schoolLogoRef = useRef(null);
@@ -2510,50 +2537,94 @@
           .slice(0, 12);
       }, [gradesHook.rows, attendanceHook.rows]);
 
+      const principalStudentClassLookup = useMemo(() => {
+        const map = new Map();
+        (mergedStudentsRows || []).forEach((student) => {
+          const studentKey = String(student.student_id || student.id || '').trim();
+          if (!studentKey) return;
+          const mainClassValue = String(student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '').trim();
+          map.set(studentKey, mainClassValue);
+        });
+        return map;
+      }, [mergedStudentsRows, classNameMap]);
+
       const principalClassFilterOptions = useMemo(() => (
-        [{ value: '', label: 'All Classes' }].concat(
-          Array.from(new Set((gradesHook.rows || []).map((row) => String(row.class_name || '').trim()).filter(Boolean)))
+        [{ value: '', label: 'All Main Classes' }].concat(
+          Array.from(new Set(
+            (mergedStudentsRows || [])
+              .map((student) => String(student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '').trim())
+              .filter(Boolean)
+          ))
             .sort((a, b) => a.localeCompare(b))
             .map((value) => ({ value, label: value }))
         )
-      ), [gradesHook.rows]);
+      ), [mergedStudentsRows, classNameMap]);
 
       const principalStudentFilterOptions = useMemo(() => {
-        const filteredStudents = (gradesHook.rows || []).filter((row) => !principalPerformanceFilter.class_name || String(row.class_name || '') === principalPerformanceFilter.class_name);
-        const seen = new Map();
-        filteredStudents.forEach((row) => {
-          const key = String(row.student_id || row.student_name || '').trim();
-          if (!key || seen.has(key)) return;
-          seen.set(key, { value: row.student_id || '', label: row.student_name || key });
+        const filteredStudents = (mergedStudentsRows || []).filter((student) => {
+          if (!principalPerformanceFilter.class_name) return true;
+          const mainClassValue = String(student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '').trim();
+          return mainClassValue === principalPerformanceFilter.class_name;
         });
-        return [{ value: '', label: 'All Students' }].concat(Array.from(seen.values()).sort((a, b) => a.label.localeCompare(b.label)));
-      }, [gradesHook.rows, principalPerformanceFilter.class_name]);
+
+        const seen = new Map();
+        filteredStudents.forEach((student) => {
+          const key = String(student.student_id || student.id || '').trim();
+          if (!key || seen.has(key)) return;
+          const mainClassValue = String(student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '').trim();
+          seen.set(key, {
+            value: key,
+            label: mainClassValue ? `${student.full_name || key}, ${mainClassValue}` : (student.full_name || key)
+          });
+        });
+
+        return [{ value: '', label: 'All Students' }].concat(
+          Array.from(seen.values()).sort((a, b) => a.label.localeCompare(b.label))
+        );
+      }, [mergedStudentsRows, principalPerformanceFilter.class_name, classNameMap]);
 
       const principalAcademicYearOptions = useMemo(() => (
-        ['All Years'].concat(Array.from(new Set((gradesHook.rows || []).map((row) => String(row.academic_year || '').trim()).filter(Boolean))).sort())
+        ['All Years'].concat(
+          getAcademicYearOptions(
+            Array.from(new Set((gradesHook.rows || []).map((row) => String(row.academic_year || '').trim()).filter(Boolean)))
+          )
+        )
       ), [gradesHook.rows]);
 
       const principalPerformanceRows = useMemo(() => (
         (gradesHook.rows || []).filter((row) => {
-          if (principalPerformanceFilter.class_name && String(row.class_name || '') !== principalPerformanceFilter.class_name) return false;
+          const resolvedClassName = String(row.class_name || principalStudentClassLookup.get(String(row.student_id || '').trim()) || '').trim();
+          if (principalPerformanceFilter.class_name && resolvedClassName !== principalPerformanceFilter.class_name) return false;
           if (principalPerformanceFilter.student_id && String(row.student_id || '') !== principalPerformanceFilter.student_id) return false;
           if (principalPerformanceFilter.term_name && principalPerformanceFilter.term_name !== 'All Terms' && String(row.term_name || '') !== principalPerformanceFilter.term_name) return false;
           if (principalPerformanceFilter.academic_year && principalPerformanceFilter.academic_year !== 'All Years' && String(row.academic_year || '') !== principalPerformanceFilter.academic_year) return false;
           return true;
         })
-      ), [gradesHook.rows, principalPerformanceFilter]);
+      ), [gradesHook.rows, principalPerformanceFilter, principalStudentClassLookup]);
 
       const principalSelectedStudent = useMemo(() => {
         if (!principalPerformanceFilter.student_id) return null;
+        const matchedStudent = mergedStudentsRows.find((row) => String(row.student_id || row.id || '') === principalPerformanceFilter.student_id);
+        if (matchedStudent) return matchedStudent;
         const gradeRow = principalPerformanceRows.find((row) => String(row.student_id || '') === principalPerformanceFilter.student_id);
         if (!gradeRow) return null;
-        const matchedStudent = mergedStudentsRows.find((row) => String(row.student_id || row.id || '') === String(gradeRow.student_id || ''))
-          || mergedStudentsRows.find((row) => String(row.full_name || '') === String(gradeRow.student_name || ''));
-        return matchedStudent || {
+        return {
           student_id: gradeRow.student_id,
-          full_name: gradeRow.student_name
+          full_name: gradeRow.student_name,
+          class_name: principalStudentClassLookup.get(String(gradeRow.student_id || '').trim()) || gradeRow.class_name || ''
         };
-      }, [principalPerformanceFilter.student_id, principalPerformanceRows, mergedStudentsRows]);
+      }, [principalPerformanceFilter.student_id, mergedStudentsRows, principalPerformanceRows, principalStudentClassLookup]);
+
+      useEffect(() => {
+        if (!principalPerformanceFilter.academic_year) {
+          setPrincipalPerformanceFilter((prev) => ({ ...prev, academic_year: getAcademicYearLabel() }));
+          return;
+        }
+        const yearExists = principalAcademicYearOptions.includes(principalPerformanceFilter.academic_year);
+        if (!yearExists) {
+          setPrincipalPerformanceFilter((prev) => ({ ...prev, academic_year: getAcademicYearLabel() }));
+        }
+      }, [principalAcademicYearOptions, principalPerformanceFilter.academic_year]);
 
       useEffect(() => {
         if (!principalPerformanceFilter.student_id) return;
@@ -3824,7 +3895,7 @@
                     <button
                       className="btn"
                       disabled={loginLogoutOnly || !gradeForm.student_id || !gradeForm.subject_id}
-                      onClick={()=>saveEntity('grades', gradeForm, ()=>setGradeForm({ id:'', student_id:'', subject_id:'', term_name:'Term 1', academic_year:new Date().getFullYear().toString(), assignment_score:0, test_score:0, exam_score:0 }), { teacher_profile_id: profile.id })}
+                      onClick={()=>saveEntity('grades', gradeForm, ()=>setGradeForm({ id:'', student_id:'', subject_id:'', term_name:'Term 1', academic_year:getAcademicYearLabel(), assignment_score:0, test_score:0, exam_score:0 }), { teacher_profile_id: profile.id })}
                     >
                       Save Grade
                     </button>
@@ -3841,28 +3912,42 @@
               page === 'performance-summary' && role === ROLE.PRINCIPAL ? (
                 <div className="grid">
                   <div className="card">
-                    <h3>Academic Performance</h3>
+                    <h3>Academic Performance and Reports</h3>
                     <div className="form-grid-3">
-                      <div className="field"><label>Class</label><select value={principalPerformanceFilter.class_name} onChange={(e)=>setPrincipalPerformanceFilter(prev => ({ ...prev, class_name: e.target.value, student_id: '' }))}>{principalClassFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
-                      <div className="field"><label>Student</label><select value={principalPerformanceFilter.student_id} onChange={(e)=>setPrincipalPerformanceFilter(prev => ({ ...prev, student_id: e.target.value }))}>{principalStudentFilterOptions.map((option) => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}</select></div>
+                      <div className="field"><label>Main Class</label><select value={principalPerformanceFilter.class_name} onChange={(e)=>setPrincipalPerformanceFilter(prev => ({ ...prev, class_name: e.target.value, student_id: '' }))}>{principalClassFilterOptions.map((option) => <option key={option.value || 'all-main-classes'} value={option.value}>{option.label}</option>)}</select></div>
+                      <div className="field"><label>Student</label><select value={principalPerformanceFilter.student_id} onChange={(e)=>setPrincipalPerformanceFilter(prev => ({ ...prev, student_id: e.target.value }))}>{principalStudentFilterOptions.map((option) => <option key={option.value || 'all-students'} value={option.value}>{option.label}</option>)}</select></div>
                       <div className="field"><label>Term</label><select value={principalPerformanceFilter.term_name} onChange={(e)=>setPrincipalPerformanceFilter(prev => ({ ...prev, term_name: e.target.value }))}>{['All Terms', ...termOptions].map((option) => <option key={option} value={option}>{option}</option>)}</select></div>
                       <div className="field"><label>Academic Year</label><select value={principalPerformanceFilter.academic_year} onChange={(e)=>setPrincipalPerformanceFilter(prev => ({ ...prev, academic_year: e.target.value }))}>{principalAcademicYearOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></div>
                     </div>
-                    <div style={{display:'flex', gap:12, flexWrap:'wrap', marginTop:16}}>
-                      <button className="btn secondary" onClick={() => { setCurrentStudent(principalSelectedStudent); setSelectedReport('grade'); setPage('reports'); }} disabled={!principalSelectedStudent}>Printable Student Academic Reports</button>
-                    </div>
+                    <p className="subtle" style={{marginTop: 16}}>Main Class now comes directly from the class values assigned in the student records. After you choose a main class, only students in that same class appear in the student dropdown. Academic Year defaults to the current school year and updates automatically as the calendar changes.</p>
                   </div>
                   <div className="card">
                     <div className="table-wrap">
                       <table>
-                        <thead><tr><th>Student</th><th>Class</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Academic Year</th></tr></thead>
+                        <thead><tr><th>Student</th><th>Main Class</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Academic Year</th></tr></thead>
                         <tbody>
                           {principalPerformanceRows.length === 0 && <tr><td colSpan="7"><div className="empty">No grade records found for the selected filters</div></td></tr>}
-                          {principalPerformanceRows.map((row) => <tr key={row.id}><td>{row.student_name}</td><td>{row.class_name || '-'}</td><td>{row.subject_name}</td><td>{row.total_score}</td><td>{row.average_score}</td><td>{row.term_name}</td><td>{row.academic_year}</td></tr>)}
+                          {principalPerformanceRows.map((row) => {
+                            const resolvedClassName = row.class_name || principalStudentClassLookup.get(String(row.student_id || '').trim()) || '-';
+                            return <tr key={row.id}><td>{row.student_name}</td><td>{resolvedClassName}</td><td>{row.subject_name}</td><td>{row.total_score}</td><td>{row.average_score}</td><td>{row.term_name}</td><td>{row.academic_year}</td></tr>;
+                          })}
                         </tbody>
                       </table>
                     </div>
                   </div>
+                  {principalSelectedStudent && (
+                    <ReportsView
+                      school={school}
+                      selectedReport="grade"
+                      gradeRows={principalPerformanceRows.filter((row) => String(row.student_id || '') === String(principalSelectedStudent.student_id || principalSelectedStudent.id || ''))}
+                      feeRows={[]}
+                      currentStudent={{
+                        full_name: principalSelectedStudent.full_name,
+                        class_name: principalSelectedStudent.student_main_class_name || principalSelectedStudent.class_name || classNameMap[principalSelectedStudent.class_id] || '-',
+                        student_id: principalSelectedStudent.student_id || principalSelectedStudent.id || ''
+                      }}
+                    />
+                  )}
                 </div>
               ) : (
               <div className="card">
@@ -3895,7 +3980,7 @@
                       <div className="field"><label>Status</label><select value={feeForm.payment_status} onChange={(e)=>setFeeForm({...feeForm, payment_status:e.target.value})}>{paymentStatusOptions.map(x => <option key={x}>{x}</option>)}</select></div>
                       <div className="field"><label>Remarks</label><input value={feeForm.remarks} onChange={(e)=>setFeeForm({...feeForm, remarks:e.target.value})} /></div>
                     </div>
-                    <div style={{marginTop:16}}><button className="btn" onClick={()=>saveEntity('fee_payments', feeForm, ()=>setFeeForm({ id:'', student_id:'', term_name:'Term 1', academic_year:new Date().getFullYear().toString(), amount_due:0, amount_paid:0, payment_date:todayISO(), payment_method:'Cash', payment_status:'Unpaid', remarks:'' }), { recorded_by_profile_id: profile.id })}>Save Payment</button></div>
+                    <div style={{marginTop:16}}><button className="btn" onClick={()=>saveEntity('fee_payments', feeForm, ()=>setFeeForm({ id:'', student_id:'', term_name:'Term 1', academic_year:getAcademicYearLabel(), amount_due:0, amount_paid:0, payment_date:todayISO(), payment_method:'Cash', payment_status:'Unpaid', remarks:'' }), { recorded_by_profile_id: profile.id })}>Save Payment</button></div>
                   </div>
                 )}
                 <div className="card">
