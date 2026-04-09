@@ -1048,7 +1048,7 @@
       const [teacherForm, setTeacherForm] = useState(buildManagedForm('teacher'));
       const [parentForm, setParentForm] = useState(buildManagedForm('parent'));
       const [userForm, setUserForm] = useState(buildManagedForm('student'));
-      const [classForm, setClassForm] = useState({ id: "", name: "", level_group: "", section: "", capacity: "" });
+      const [classForm, setClassForm] = useState({ id: '', class_name: '', capacity: '' });
       const [subjectForm, setSubjectForm] = useState({ id: "", subject_name: "", subject_code: "" });
       const [principalForm, setPrincipalForm] = useState(buildManagedForm('principal'));
       const [attendanceForm, setAttendanceForm] = useState({ id: "", student_id: "", class_id: "", teacher_assignment_id: "", subject_name: "", attendance_date: todayISO(), status: "Present", remarks: "" });
@@ -2156,16 +2156,14 @@
 
       const buildClassDisplay = (row) => {
         if (!row) return '';
-        const name = normalizeMainClassName(row.name || row.class_name || '') || row.name || row.class_name || '';
-        const section = getClassSectionValue(row);
-        return section !== 'None' ? `${name} (${section})` : name;
+        return normalizeMainClassName(row.class_name || row.name || row.main_class_name || '') || row.class_name || row.name || row.main_class_name || '';
       };
 
       const classOptions = useMemo(() => [{ value: '', label: 'Select Class' }, ...orderedClassRows.map(c => ({ value: c.id, label: buildClassDisplay(c) || c.name }))], [orderedClassRows]);
-      const schoolManagedClassOptions = useMemo(() => [{ value: '', label: 'Select Class' }, ...orderedClassRows.map(c => ({ value: c.id, label: buildClassDisplay(c) || c.name }))], [orderedClassRows]);
-      const teacherMainClassOptions = useMemo(() => [{ value: '', label: 'Select Main Class' }, ...orderedTeacherMainClasses.map(v => ({ value: v, label: v }))], []);
+      const schoolManagedClassOptions = useMemo(() => [{ value: '', label: 'Select Class' }, ...orderedClassRows.map(c => ({ value: c.id, label: buildClassDisplay(c) || c.class_name || c.name }))], [orderedClassRows]);
+      const teacherMainClassOptions = useMemo(() => schoolManagedClassOptions, [schoolManagedClassOptions]);
       const studentClassSectionOptions = useMemo(() => classCategoryOptions, []);
-      const classNameMap = useMemo(() => Object.fromEntries(orderedClassRows.map(c => [c.id, buildClassDisplay(c) || c.name])), [orderedClassRows]);
+      const classNameMap = useMemo(() => Object.fromEntries(orderedClassRows.map(c => [c.id, buildClassDisplay(c) || c.class_name || c.name])), [orderedClassRows]);
       const teacherAssignedClassDisplay = (row) => {
         const source = classNameMap[row.class_id] || row.class_name || '';
         return normalizeTeacherMainClassName(source) || source || '-';
@@ -2204,42 +2202,12 @@
         if (!form.teacher_main_class_name) return form.class_id || '';
         const normalizedTeacherMainClass = normalizeTeacherMainClassName(form.teacher_main_class_name);
         if (!normalizedTeacherMainClass) return form.class_id || '';
-        const matchedRow = orderedClassRows.find((row) => normalizeTeacherMainClassName(row.name || row.class_name || '') === normalizedTeacherMainClass);
+        const matchedRow = orderedClassRows.find((row) => normalizeTeacherMainClassName(row.class_name || row.name || '') === normalizedTeacherMainClass);
         return matchedRow?.id || '';
       };
 
       const ensureTeacherClassId = async (form) => {
-        const existingId = resolveTeacherClassId(form);
-        if (existingId) return existingId;
-        const normalizedTeacherMainClass = normalizeTeacherMainClassName(form.teacher_main_class_name);
-        if (!school?.id || !normalizedTeacherMainClass) return '';
-
-        const insertPayload = {
-          school_id: school.id,
-          name: normalizedTeacherMainClass,
-          level_group: deriveLevelGroupFromMainClass(normalizedTeacherMainClass) || null,
-          section: null,
-          capacity: null
-        };
-
-        const { data: insertedClass, error: insertClassError } = await supabaseClient
-          .from('classes')
-          .insert(insertPayload)
-          .select('*')
-          .single();
-
-        if (insertClassError) {
-          const { data: fallbackClass } = await supabaseClient
-            .from('classes')
-            .select('*')
-            .eq('school_id', school.id)
-            .eq('name', normalizedTeacherMainClass)
-            .is('section', null)
-            .maybeSingle();
-          return fallbackClass?.id || '';
-        }
-
-        return insertedClass?.id || '';
+        return resolveTeacherClassId(form);
       };
 
       const buildStudentFormFromRow = (row) => {
@@ -2254,7 +2222,7 @@
           account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
           force_password_change: String(row.force_password_change ?? true),
           class_id: resolvedClassId,
-          student_main_class_name: normalizeMainClassName(classRow?.name || row.class_name || '') || '',
+          student_main_class_name: normalizeMainClassName(classRow?.class_name || classRow?.name || row.class_name || '') || '',
           student_class_section: getClassSectionValue(classRow || row),
           gender: row.gender || 'Male',
           date_of_birth: row.date_of_birth || '',
@@ -2278,7 +2246,7 @@
         gender: row.gender || '',
         date_of_birth: row.date_of_birth || '',
         class_id: row.class_id || '',
-        teacher_main_class_name: normalizeTeacherMainClassName(row.class_name || classNameMap[row.class_id] || ''),
+        teacher_main_class_name: String(row.class_id || ''),
         subject_specialty: row.subject_specialty || '',
         qualification: row.qualification || '',
         trained_status: row.trained_status || 'Trained'
@@ -2304,8 +2272,8 @@
 
       useEffect(() => {
         const selectedClassRow = orderedClassRows.find((entry) => entry.id === studentForm.class_id) || null;
-        const nextMainClassName = normalizeMainClassName(selectedClassRow?.name || selectedClassRow?.class_name || '');
-        const nextSection = getClassSectionValue(selectedClassRow);
+        const nextMainClassName = normalizeMainClassName(selectedClassRow?.class_name || selectedClassRow?.name || '');
+        const nextSection = 'None';
         if (
           (studentForm.student_main_class_name || '') !== (nextMainClassName || '')
           || (studentForm.student_class_section || 'None') !== (nextSection || 'None')
@@ -2319,18 +2287,10 @@
       }, [studentForm.class_id, orderedClassRows]);
 
       useEffect(() => {
-        if (!teacherForm.teacher_main_class_name) {
-          if (teacherForm.class_id) {
-            setTeacherForm((prev) => ({ ...prev, class_id: '' }));
-          }
-          return;
+        if ((teacherForm.teacher_main_class_name || '') !== (teacherForm.class_id || '')) {
+          setTeacherForm((prev) => ({ ...prev, teacher_main_class_name: prev.class_id || '' }));
         }
-
-        const nextClassId = resolveTeacherClassId(teacherForm) || '';
-        if ((teacherForm.class_id || '') !== nextClassId) {
-          setTeacherForm((prev) => ({ ...prev, class_id: nextClassId }));
-        }
-      }, [teacherForm.teacher_main_class_name, orderedClassRows]);
+      }, [teacherForm.class_id]);
 
       const parentLinksRows = parentLinksHook.rows || [];
       const managedUsersRows = managedUsersHook.rows || [];
@@ -3400,7 +3360,7 @@
                 <div className="grid cards-3">
                   <div className="card">
                     <h3>Class Summary</h3>
-                    {classesHook.rows.length === 0 ? <div className="empty">No classes added yet</div> : classesHook.rows.slice(0, 10).map(cls => <div key={cls.id} style={{padding:'10px 0', borderBottom:'1px solid #e2e8f0'}}><strong>{buildClassDisplay(cls) || cls.name}</strong><div className="subtle">Level Group: {cls.level_group || '-'}</div></div>)}
+                    {classesHook.rows.length === 0 ? <div className="empty">No classes added yet</div> : classesHook.rows.slice(0, 10).map(cls => <div key={cls.id} style={{padding:'10px 0', borderBottom:'1px solid #e2e8f0'}}><strong>{buildClassDisplay(cls) || cls.class_name || cls.name}</strong><div className="subtle">Capacity: {cls.capacity || '-'}</div></div>)}
                   </div>
                   <div className="card">
                     <h3>Attendance Summary</h3>
@@ -3455,7 +3415,7 @@
                     {principalSubjectNames.length === 0 ? <div className="empty">No subjects found yet</div> : <div style={{display:'flex', flexWrap:'wrap', gap:8}}>{principalSubjectNames.map((name) => <span key={name} className="chip info">{name}</span>)}</div>}
                   </div>
                   <div className="card">
-                    <h3>Teacher Assign Main Class and Primary Subject Specialty Summary</h3>
+                    <h3>Teacher Class and Primary Subject Specialty Summary</h3>
                     <div className="table-wrap" style={{marginTop:12}}>
                       <table>
                         <thead><tr><th>Teacher</th><th>Main Class</th><th>Primary Subject</th></tr></thead>
@@ -3691,7 +3651,7 @@
               ) : (
               <GenericCrudPage
                 title="Teacher Management"
-                description="Add, edit, archive, and delete teacher records. Staff number is generated automatically from the school name context, and each teacher keeps one assigned main class and one primary subject specialty with real time updates."
+                description="Add, edit, archive, and delete teacher records. Staff number is generated automatically from the school name context, and each teacher is linked to one class created under the school admin Classes section, alongside a primary subject specialty."
                 columns={[
                   { key: 'full_name', label: 'Full Name' },
                   { key: 'emis_code', label: 'Teacher EMIS Code' },
@@ -3714,7 +3674,7 @@
                   { key: 'ghana_card', label: 'Ghana Card' },
                   { key: 'gender', label: 'Gender', type: 'select', options: genderOptions },
                   { key: 'date_of_birth', label: 'Date of Birth', type: 'date' },
-                  { key: 'teacher_main_class_name', label: 'Assign Main Class', type: 'select', options: teacherMainClassOptions },
+                  { key: 'class_id', label: 'Class', type: 'select', options: schoolManagedClassOptions },
                   { key: 'subject_specialty', label: 'Primary Subject Specialty', type: 'select', options: [{ value: '', label: 'Select Specialty' }, ...subjectOptions.map(v => ({ value: v, label: v }))] },
                   { key: 'qualification', label: 'Qualification', type: 'select', options: [{ value: '', label: 'Select Qualification' }, ...qualificationOptions.map(v => ({ value: v, label: v }))] },
                   { key: 'trained_status', label: 'Training Status', type: 'select', options: trainedStatusOptions },
@@ -3868,15 +3828,27 @@
             {page === 'classes' && (
               <GenericCrudPage
                 title="Classes"
-                description="Add, edit, and delete the school's class list here. These saved classes drive student class assignment and the class dropdown used in teacher grade entry."
-                columns={[{ key:'name', label:'Class' }, { key:'level_group', label:'Level Group' }, { key:'section', label:'Section' }, { key:'capacity', label:'Capacity' }]}
+                description="Add, edit, and delete school classes here. These saved classes replace the old Assign Main Class fields under Students and Teachers, and the same classes drive the class dropdown in Teacher Grades."
+                columns={[{ key:'class_name', label:'Class Name', render: (_, row) => buildClassDisplay(row) || row.class_name || row.name }, { key:'capacity', label:'Capacity' }]}
                 rows={classesHook.rows}
                 loading={classesHook.loading}
                 formState={classForm}
                 setFormState={setClassForm}
-                onSave={() => saveEntity('classes', classForm, ()=>setClassForm({ id: '', name: '', level_group: '', section: '', capacity: '' }), school?.id ? { school_id: school.id } : {})}
+                fields={[
+                  { key:'class_name', label:'Class Name' },
+                  { key:'capacity', label:'Capacity', type:'number' }
+                ]}
+                onSave={() => {
+                  const payload = {
+                    id: classForm.id || null,
+                    class_name: classForm.class_name || '',
+                    name: classForm.class_name || '',
+                    capacity: classForm.capacity || null
+                  };
+                  return saveEntity('classes', payload, ()=>setClassForm({ id: '', class_name: '', capacity: '' }), school?.id ? { school_id: school.id } : {});
+                }}
                 onDelete={(id) => deleteEntity('classes', id)}
-                onEdit={(row) => setClassForm(row)}
+                onEdit={(row) => setClassForm({ id: row.id || '', class_name: row.class_name || row.name || '', capacity: row.capacity || '' })}
               />
             )}
 
