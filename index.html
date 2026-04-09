@@ -916,7 +916,8 @@
       const accountsHook = useSupabaseTable("v_accounts_staff_admin", "*");
       const principalsHook = useSupabaseTable("v_principals_admin", "*");
       const classesHook = useSupabaseTable("classes", "*");
-      const subjectsHook = useSupabaseTable("v_subject_assignments", "*");
+      const subjectsHook = useSupabaseTable("subjects", "*");
+      const subjectAssignmentsHook = useSupabaseTable("v_subject_assignments", "*");
       const attendanceHook = useSupabaseTable("v_attendance_full", "*");
       const gradesHook = useSupabaseTable("v_grades_full", "*");
       const feesHook = useSupabaseTable("v_fee_payments_full", "*");
@@ -942,9 +943,10 @@
       const [parentForm, setParentForm] = useState(buildManagedForm('parent'));
       const [userForm, setUserForm] = useState(buildManagedForm('student'));
       const [classForm, setClassForm] = useState({ id: "", name: "", level_group: "", section: "", capacity: "" });
-      const [subjectForm, setSubjectForm] = useState({ id: "", subject_name: "", class_id: "", teacher_id: "" });
+      const [subjectForm, setSubjectForm] = useState({ id: "", subject_name: "", subject_code: "" });
+      const [principalForm, setPrincipalForm] = useState(buildManagedForm('principal'));
       const [attendanceForm, setAttendanceForm] = useState({ id: "", student_id: "", class_id: "", teacher_assignment_id: "", subject_name: "", attendance_date: todayISO(), status: "Present", remarks: "" });
-      const [gradeForm, setGradeForm] = useState({ id: "", student_id: "", class_id: "", subject_id: "", term_name: "Term 1", academic_year: new Date().getFullYear().toString(), assignment_score: 0, test_score: 0, exam_score: 0 });
+      const [gradeForm, setGradeForm] = useState({ id: "", student_id: "", subject_id: "", term_name: "Term 1", academic_year: new Date().getFullYear().toString(), assignment_score: 0, test_score: 0, exam_score: 0 });
       const [feeForm, setFeeForm] = useState({ id: "", student_id: "", term_name: "Term 1", academic_year: new Date().getFullYear().toString(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
       const [notificationForm, setNotificationForm] = useState({ id: "", title: "", message: "", audience_role: "all" });
       const [chatForm, setChatForm] = useState({ recipient_profile_id: "", message_text: "" });
@@ -1182,7 +1184,7 @@
         if (!profile) return;
         await Promise.all([
           studentsHook.fetchRows(), studentsRawHook.fetchRows(), teachersHook.fetchRows(), teachersRawHook.fetchRows(), parentsHook.fetchRows(), parentLinksHook.fetchRows(), accountsHook.fetchRows(), principalsHook.fetchRows(),
-          classesHook.fetchRows(), subjectsHook.fetchRows(), attendanceHook.fetchRows(), gradesHook.fetchRows(), feesHook.fetchRows(),
+          classesHook.fetchRows(), subjectsHook.fetchRows((q)=>q.order('subject_name')), subjectAssignmentsHook.fetchRows(), attendanceHook.fetchRows(), gradesHook.fetchRows(), feesHook.fetchRows(),
           schoolsHook.fetchRows((q)=>q.order('created_at', { ascending:false })), schoolAdminRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), userLoginRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), managedUsersHook.fetchRows((q)=>q.order('full_name')), registrationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
           auditHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(100)), notificationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
           timetableHook.fetchRows((q)=>q.order('day_of_week')), chatHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(200)),
@@ -1346,6 +1348,7 @@
           supabaseClient.channel('accounts-office-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'accounts_office_staff' }, refreshAll).subscribe(),
           supabaseClient.channel('parent-links-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'parent_student_links' }, refreshAll).subscribe(),
           supabaseClient.channel('classes-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'classes' }, refreshAll).subscribe(),
+          supabaseClient.channel('subjects-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'subjects' }, refreshAll).subscribe(),
           supabaseClient.channel('subject-assignments-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_subject_assignments' }, refreshAll).subscribe(),
           supabaseClient.channel('attendance-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, refreshAll).subscribe(),
           supabaseClient.channel('grades-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'grades' }, refreshAll).subscribe(),
@@ -2195,6 +2198,24 @@
         trained_status: row.trained_status || 'Trained'
       });
 
+      const buildPrincipalFormFromRow = (row) => ({
+        ...buildManagedForm('principal'),
+        profile_id: row.profile_id || '',
+        role_name: 'principal',
+        full_name: row.full_name || '',
+        email: row.email || '',
+        phone: row.phone || row.profile_phone || '',
+        username: row.username || '',
+        account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
+        force_password_change: String(row.force_password_change ?? true)
+      });
+
+      const buildSubjectFormFromRow = (row) => ({
+        id: row.id || '',
+        subject_name: row.subject_name || '',
+        subject_code: row.subject_code || ''
+      });
+
       useEffect(() => {
         if (!studentForm.student_main_class_name) {
           if (studentForm.class_id) {
@@ -2313,12 +2334,12 @@
       const teacherAssignments = useMemo(() => {
         if (role !== ROLE.TEACHER || !profile?.id) return [];
         const teacherRowId = teacherEntityRow?.id;
-        return (subjectsHook.rows || []).filter((row) => (
+        return (subjectAssignmentsHook.rows || []).filter((row) => (
           row.teacher_id === teacherRowId
           || row.teacher_profile_id === profile.id
           || row.profile_id === profile.id
         ));
-      }, [role, profile?.id, teacherEntityRow?.id, subjectsHook.rows]);
+      }, [role, profile?.id, teacherEntityRow?.id, subjectAssignmentsHook.rows]);
 
       const teacherAssignmentOptions = useMemo(() => (
         [{ value: '', label: 'Select Teaching Assignment' }].concat(
@@ -2353,7 +2374,7 @@
         const uniqueAssignments = [];
         const seen = new Set();
 
-        (subjectsHook.rows || []).forEach((assignment) => {
+        (subjectAssignmentsHook.rows || []).forEach((assignment) => {
           const teacherRow = teacherRowMap[assignment.teacher_id] || null;
           const teacherProfileId = assignment.teacher_profile_id || teacherRow?.profile_id || null;
           const key = [
@@ -2390,7 +2411,7 @@
           if (a.status !== b.status) return a.status === 'Absent' ? -1 : 1;
           return String(a.teacher_name).localeCompare(String(b.teacher_name));
         });
-      }, [subjectsHook.rows, attendanceRowsToday, mergedTeachersRows, classNameMap]);
+      }, [subjectAssignmentsHook.rows, attendanceRowsToday, mergedTeachersRows, classNameMap]);
 
       const principalTeacherPresenceSummary = useMemo(() => ({
         present: principalTeacherPresenceRows.filter((row) => row.status === 'Present').length,
@@ -2403,12 +2424,12 @@
           const value = String(row.subject_specialty || '').trim();
           if (value) values.add(value);
         });
-        (subjectsHook.rows || []).forEach((row) => {
+        (subjectAssignmentsHook.rows || []).forEach((row) => {
           const value = String(row.subject_name || '').trim();
           if (value) values.add(value);
         });
         return Array.from(values).sort((a, b) => a.localeCompare(b));
-      }, [mergedTeachersRows, subjectsHook.rows]);
+      }, [mergedTeachersRows, subjectAssignmentsHook.rows]);
 
       const principalAttendanceOverview = useMemo(() => {
         const rows = attendanceHook.rows || [];
@@ -2969,6 +2990,20 @@
         return managedUsersRows.find((row) => row.profile_id === userForm.profile_id) || null;
       }, [managedUsersRows, userForm.profile_id]);
 
+      const schoolSubjectRows = useMemo(() => {
+        return [...(subjectsHook.rows || [])].sort((a, b) => String(a.subject_name || '').localeCompare(String(b.subject_name || '')));
+      }, [subjectsHook.rows]);
+
+      const schoolSubjectOptions = useMemo(() => ([
+        { value: '', label: 'Select Subject' },
+        ...schoolSubjectRows.map((row) => ({ value: row.id, label: row.subject_name }))
+      ]), [schoolSubjectRows]);
+
+      const teacherGradeRows = useMemo(() => {
+        if (role !== ROLE.TEACHER) return gradesHook.rows || [];
+        return (gradesHook.rows || []).filter((row) => String(row.teacher_profile_id || '') === String(profile?.id || ''));
+      }, [gradesHook.rows, role, profile?.id]);
+
       const handleCredentialSelection = (profileId) => {
         const selectedRow = managedUsersRows.find((row) => row.profile_id === profileId);
         if (!selectedRow) {
@@ -3280,8 +3315,8 @@
               <>
                 {renderWelcomeCard()}
                 <MetricCards items={[
-                  { label: 'Assigned Classes', value: [...new Set(subjectsHook.rows.map(x=>x.class_name).filter(Boolean))].length },
-                  { label: 'Assigned Subjects', value: [...new Set(subjectsHook.rows.map(x=>x.subject_name).filter(Boolean))].length },
+                  { label: 'Assigned Classes', value: [...new Set(subjectAssignmentsHook.rows.map(x=>x.class_name).filter(Boolean))].length },
+                  { label: 'Assigned Subjects', value: [...new Set(subjectAssignmentsHook.rows.map(x=>x.subject_name).filter(Boolean))].length },
                   { label: 'Attendance Tasks', value: attendanceHook.rows.filter(x=>x.marked_by_profile_id===profile.id).length },
                   { label: 'Grading Tasks', value: gradesHook.rows.filter(x=>x.teacher_profile_id===profile.id).length }
                 ]} />
@@ -3528,27 +3563,35 @@
             )}
 
             {page === 'principals' && (
-              <div className="card">
-                <h3>Principals</h3>
-                <div className="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th>Credentials</th><th>Actions</th></tr></thead><tbody>
-                  {principalsHook.rows.length === 0 && <tr><td colSpan="6"><div className="empty">No records found</div></td></tr>}
-                  {principalsHook.rows.map(r => {
-                    const ref = managedUserRefMap[r.profile_id];
-                    return <tr key={r.id}>
-                      <td>{r.full_name}</td>
-                      <td>{r.email}</td>
-                      <td>{r.phone}</td>
-                      <td>{r.status}</td>
-                      <td>{ref ? <div className="subtle"><div>{ref.email || '-'}</div><div>Temp: {ref.temporary_password}</div><div>Issued: {formatDate(ref.issued_at)}</div></div> : <span className="subtle">No credentials saved yet</span>}</td>
-                      <td>{canSchoolAdminManageUsers ? <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-                        <button className="btn" onClick={()=>handleProvisionManagedUser(r)}>{ref ? 'Reset Login' : 'Create Login'}</button>
-                        <button className="btn secondary" onClick={()=>copyText(buildManagedUserReferenceText(r), 'User credential reference copied to clipboard')}>Copy</button>
-                        <button className="btn danger" onClick={()=>handleDeleteManagedUser(r)}>Permanent Delete</button>
-                      </div> : <span className="subtle">School admin only</span>}</td>
-                    </tr>
-                  })}
-                </tbody></table></div>
-              </div>
+              <GenericCrudPage
+                title="Principal Management"
+                description="Add, edit, and permanently delete principal records. These changes are saved to Supabase through the managed user backend, and principal login credentials can still be created or reset from here."
+                columns={[
+                  { key: 'full_name', label: 'Full Name' },
+                  { key: 'email', label: 'Email' },
+                  { key: 'phone', label: 'Phone' },
+                  { key: 'account_status', label: 'Account', render: (_, row) => <span className={classNames('chip', normalizeAccountStatus(row.account_status || row.status || 'active') === 'active' ? 'success' : normalizeAccountStatus(row.account_status || row.status || 'active') === 'archived' ? 'warning' : 'danger')}>{normalizeAccountStatus(row.account_status || row.status || 'active')}</span> }
+                ]}
+                rows={principalsHook.rows}
+                loading={principalsHook.loading}
+                formState={principalForm}
+                setFormState={setPrincipalForm}
+                fields={[
+                  { key: 'full_name', label: 'Full Name' },
+                  { key: 'email', label: 'Email', type: 'email' },
+                  { key: 'phone', label: 'Phone' },
+                  { key: 'username', label: 'Username' },
+                  { key: 'account_status', label: 'Account Status', type: 'select', options: statusOptions },
+                  { key: 'force_password_change', label: 'Force First Login Password Change', type: 'select', options: yesNoOptions }
+                ]}
+                onSave={() => saveManagedUserRecord(principalForm, setPrincipalForm, 'principal')}
+                onDelete={(id, row) => handleDeleteManagedUser(row)}
+                onEdit={(row) => setPrincipalForm(buildPrincipalFormFromRow(row))}
+                rowActions={(row) => canSchoolAdminManageUsers ? <>
+                  <button className="btn secondary" onClick={() => openManagedUserCredentials(row)}>User Accounts</button>
+                  <button className="btn warning" onClick={() => handleProvisionManagedUser(row)}>{String(row.auth_user_id || '').trim() ? 'Reset Login' : 'Create Login'}</button>
+                </> : null}
+              />
             )}
 
             {page === 'users' && (
@@ -3633,20 +3676,27 @@
             )}
 
             {page === 'subjects' && (
-              <div className="grid">
-                <div className="card">
-                  <h3>Subject and Teacher Assignment</h3>
-                  <div className="form-grid-3">
-                    <div className="field"><label>Subject Name</label><input value={subjectForm.subject_name} onChange={(e)=>setSubjectForm({...subjectForm, subject_name:e.target.value})} /></div>
-                    <div className="field"><label>Class ID</label><input value={subjectForm.class_id} onChange={(e)=>setSubjectForm({...subjectForm, class_id:e.target.value})} /></div>
-                    <div className="field"><label>Teacher ID</label><input value={subjectForm.teacher_id} onChange={(e)=>setSubjectForm({...subjectForm, teacher_id:e.target.value})} /></div>
-                  </div>
-                  <div style={{marginTop:16}}><button className="btn" onClick={()=>saveEntity('teacher_subject_assignments', subjectForm, ()=>setSubjectForm({ id:'', subject_name:'', class_id:'', teacher_id:'' }))}>Save Assignment</button></div>
-                </div>
-                <div className="card">
-                  <div className="table-wrap"><table><thead><tr><th>Subject</th><th>Class</th><th>Teacher</th></tr></thead><tbody>{subjectsHook.rows.map(r => <tr key={r.id}><td>{r.subject_name}</td><td>{r.class_name}</td><td>{r.teacher_name}</td></tr>)}</tbody></table></div>
-                </div>
-              </div>
+              <GenericCrudPage
+                title="Subjects"
+                description="Create the school's subject master list here. These subjects are separate from each teacher's Primary Subject Specialty, and the saved subjects are used in the teacher grade entry subject dropdown."
+                columns={[
+                  { key: 'subject_name', label: 'Subject Name' },
+                  { key: 'subject_code', label: 'Subject Code' }
+                ]}
+                rows={schoolSubjectRows}
+                loading={subjectsHook.loading}
+                formState={subjectForm}
+                setFormState={setSubjectForm}
+                fields={[
+                  { key: 'subject_name', label: 'Subject Name' },
+                  { key: 'subject_code', label: 'Subject Code' }
+                ]}
+                onSave={() => saveEntity('subjects', subjectForm, () => setSubjectForm({ id: '', subject_name: '', subject_code: '' }), school?.id ? { school_id: school.id } : {})}
+                onDelete={(id) => deleteEntity('subjects', id)}
+                onEdit={(row) => setSubjectForm(buildSubjectFormFromRow(row))}
+              >
+                <div className="footer-note">Teacher class and subject assignments remain separate in the backend. This page manages only the school-owned subject list used by grading.</div>
+              </GenericCrudPage>
             )}
 
             {page === 'attendance' && (
@@ -3762,19 +3812,27 @@
                 <div className="card">
                   <h3>Grades & Results</h3>
                   <div className="form-grid-3">
-                    <div className="field"><label>Student ID</label><input value={gradeForm.student_id} onChange={(e)=>setGradeForm({...gradeForm, student_id:e.target.value})} /></div>
-                    <div className="field"><label>Class ID</label><input value={gradeForm.class_id} onChange={(e)=>setGradeForm({...gradeForm, class_id:e.target.value})} /></div>
-                    <div className="field"><label>Subject ID</label><input value={gradeForm.subject_id} onChange={(e)=>setGradeForm({...gradeForm, subject_id:e.target.value})} /></div>
+                    <div className="field"><label>Student</label><select value={gradeForm.student_id} onChange={(e)=>setGradeForm({...gradeForm, student_id:e.target.value})}><option value="">Select Student</option>{teacherAssignableStudents.map(student => <option key={student.id} value={student.id}>{student.full_name}{(classNameMap[student.class_id] || student.class_name) ? `, ${classNameMap[student.class_id] || student.class_name}` : ''}</option>)}</select></div>
+                    <div className="field"><label>Subject Name</label><select value={gradeForm.subject_id} onChange={(e)=>setGradeForm({...gradeForm, subject_id:e.target.value})}>{schoolSubjectOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
                     <div className="field"><label>Term</label><select value={gradeForm.term_name} onChange={(e)=>setGradeForm({...gradeForm, term_name:e.target.value})}>{termOptions.map(x => <option key={x}>{x}</option>)}</select></div>
                     <div className="field"><label>Academic Year</label><input value={gradeForm.academic_year} onChange={(e)=>setGradeForm({...gradeForm, academic_year:e.target.value})} /></div>
                     <div className="field"><label>Assignment</label><input type="number" value={gradeForm.assignment_score} onChange={(e)=>setGradeForm({...gradeForm, assignment_score:e.target.value})} /></div>
                     <div className="field"><label>Test</label><input type="number" value={gradeForm.test_score} onChange={(e)=>setGradeForm({...gradeForm, test_score:e.target.value})} /></div>
                     <div className="field"><label>Exam</label><input type="number" value={gradeForm.exam_score} onChange={(e)=>setGradeForm({...gradeForm, exam_score:e.target.value})} /></div>
                   </div>
-                  <div style={{marginTop:16}}><button className="btn" disabled={loginLogoutOnly} onClick={()=>saveEntity('grades', gradeForm, ()=>setGradeForm({ id:'', student_id:'', class_id:'', subject_id:'', term_name:'Term 1', academic_year:new Date().getFullYear().toString(), assignment_score:0, test_score:0, exam_score:0 }), { teacher_profile_id: profile.id })}>Save Grade</button></div>
+                  <div style={{marginTop:16}}>
+                    <button
+                      className="btn"
+                      disabled={loginLogoutOnly || !gradeForm.student_id || !gradeForm.subject_id}
+                      onClick={()=>saveEntity('grades', gradeForm, ()=>setGradeForm({ id:'', student_id:'', subject_id:'', term_name:'Term 1', academic_year:new Date().getFullYear().toString(), assignment_score:0, test_score:0, exam_score:0 }), { teacher_profile_id: profile.id })}
+                    >
+                      Save Grade
+                    </button>
+                  </div>
+                  <div className="footer-note">The subject dropdown comes from the school admin Subjects page. Class ID and Teacher ID entry fields have been removed from this teacher grade form.</div>
                 </div>
                 <div className="card">
-                  <div className="table-wrap"><table><thead><tr><th>Student</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Year</th></tr></thead><tbody>{gradesHook.rows.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{r.subject_name}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td></tr>)}</tbody></table></div>
+                  <div className="table-wrap"><table><thead><tr><th>Student</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Year</th></tr></thead><tbody>{teacherGradeRows.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{r.subject_name}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td></tr>)}</tbody></table></div>
                 </div>
               </div>
             )}
