@@ -191,7 +191,7 @@
     const NAV_BY_ROLE = {
       [ROLE.SUPER_ADMIN]: ["super-dashboard", "schools", "approvals", "licenses", "system-control", "audit-log"],
       [ROLE.ADMIN]: ["users", "school-logo", "students", "teachers", "parents", "accounts-staff", "principals", "subjects", "chat", "audit-log"],
-      [ROLE.PRINCIPAL]: ["principal-dashboard", "students", "teachers", "attendance-summary", "performance-summary", "timetable", "notifications"],
+      [ROLE.PRINCIPAL]: ["principal-dashboard", "students", "teachers", "classes", "attendance-summary", "performance-summary", "reports", "timetable", "chat", "notifications"],
       [ROLE.TEACHER]: ["teacher-dashboard", "attendance", "grades", "timetable", "students", "chat", "notifications"],
       [ROLE.STUDENT]: ["student-dashboard", "my-grades", "my-attendance", "my-fees", "timetable", "chat", "notifications"],
       [ROLE.PARENT]: ["parent-dashboard", "children", "my-grades", "my-attendance", "my-fees", "chat", "notifications"],
@@ -901,7 +901,7 @@
       const [notice, setNotice] = useState({ type: "", text: "" });
       const [selectedReport, setSelectedReport] = useState("grade");
       const [currentStudent, setCurrentStudent] = useState(null);
-      const [principalPerformanceFilter, setPrincipalPerformanceFilter] = useState({ class_name: '', student_id: '', term_name: 'All Terms', academic_year: '' });
+      const [principalPerformanceFilter, setPrincipalPerformanceFilter] = useState({ class_name: '', student_id: '', term_name: 'All Terms', academic_year: 'All Years' });
       const [passwordForm, setPasswordForm] = useState({ newPassword: "" });
       const [welcomeContext, setWelcomeContext] = useState(null);
       const [themeConfig, setThemeConfig] = useState(normalizeThemeConfig({ theme_name: DEFAULT_THEME_KEY }));
@@ -2236,19 +2236,70 @@
       const parentLinksRows = parentLinksHook.rows || [];
       const managedUsersRows = managedUsersHook.rows || [];
       const studentLookup = useMemo(() => Object.fromEntries(mergedStudentsRows.map((row) => [row.id, row])), [mergedStudentsRows]);
-      const computedParentsRows = useMemo(() => (
-        (parentsHook.rows || []).map((parent) => {
-          const links = parentLinksRows.filter((link) => link.parent_id === parent.id);
-          const linkedStudents = links.map((link) => studentLookup[link.student_id]).filter(Boolean);
+      const computedParentsRows = useMemo(() => {
+        const normalized = (value) => String(value || '').trim().toLowerCase();
+        const rowsFromParents = (parentsHook.rows || []).map((parent) => {
+          const directLinks = parentLinksRows.filter((link) => link.parent_id === parent.id);
+          const linkedFromJoinTable = directLinks.map((link) => studentLookup[link.student_id]).filter(Boolean);
+          const linkedFromStudentFields = mergedStudentsRows.filter((student) => {
+            const sameParentName = normalized(student.parent_full_name) && normalized(student.parent_full_name) === normalized(parent.full_name);
+            const sameParentPhone = normalized(parent.phone) && normalized(student.parent_contact) === normalized(parent.phone);
+            const sameParentEmail = normalized(parent.email) && normalized(student.parent_contact) === normalized(parent.email);
+            return sameParentName || sameParentPhone || sameParentEmail;
+          });
+          const linkedStudents = [...new Map(
+            [...linkedFromJoinTable, ...linkedFromStudentFields]
+              .filter(Boolean)
+              .map((student) => [student.id, student])
+          ).values()];
           const linkedStudentNames = linkedStudents.map((student) => student.full_name).filter(Boolean);
-          const linkedClassNames = [...new Set(linkedStudents.map((student) => classNameMap[student.class_id] || student.class_name).filter(Boolean))];
+          const linkedClassNames = [...new Set(
+            linkedStudents
+              .map((student) => student.student_main_class_name || classNameMap[student.class_id] || student.class_name)
+              .filter(Boolean)
+          )];
           return {
             ...parent,
             linked_student_names: linkedStudentNames.join(', '),
             linked_class_names: linkedClassNames.join(', ')
           };
-        })
-      ), [parentsHook.rows, parentLinksRows, studentLookup, classNameMap]);
+        });
+
+        const existingParentKeys = new Set(rowsFromParents.map((parent) => `${normalized(parent.full_name)}::${normalized(parent.phone || parent.email)}`));
+        const fallbackRows = mergedStudentsRows.reduce((acc, student) => {
+          const parentName = String(student.parent_full_name || '').trim();
+          const parentContact = String(student.parent_contact || '').trim();
+          if (!parentName && !parentContact) return acc;
+          const key = `${normalized(parentName)}::${normalized(parentContact)}`;
+          const classValue = student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '';
+          const found = acc.get(key) || {
+            id: `fallback-${key || student.id}`,
+            full_name: parentName || 'Parent',
+            phone: parentContact,
+            email: '',
+            linked_student_names: [],
+            linked_class_names: []
+          };
+          if (student.full_name && !found.linked_student_names.includes(student.full_name)) {
+            found.linked_student_names.push(student.full_name);
+          }
+          if (classValue && !found.linked_class_names.includes(classValue)) {
+            found.linked_class_names.push(classValue);
+          }
+          acc.set(key, found);
+          return acc;
+        }, new Map());
+
+        const fallbackParents = [...fallbackRows.entries()]
+          .filter(([key]) => !existingParentKeys.has(key))
+          .map(([, parent]) => ({
+            ...parent,
+            linked_student_names: parent.linked_student_names.join(', '),
+            linked_class_names: parent.linked_class_names.join(', ')
+          }));
+
+        return [...rowsFromParents, ...fallbackParents].sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
+      }, [parentsHook.rows, parentLinksRows, studentLookup, classNameMap, mergedStudentsRows]);
 
       const teacherEntityRow = useMemo(() => {
         if (role !== ROLE.TEACHER || !profile?.id) return null;
@@ -2438,80 +2489,50 @@
           .slice(0, 12);
       }, [gradesHook.rows, attendanceHook.rows]);
 
-      const principalClassFilterOptions = useMemo(() => {
-        const values = Array.from(new Set((mergedStudentsRows || []).map((row) => String(row.student_main_class_name || row.class_name || row.assigned_class || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
-        return [{ value: '', label: 'All Assigned Main Classes' }].concat(values.map((value) => ({ value, label: value })));
-      }, [mergedStudentsRows]);
+      const principalClassFilterOptions = useMemo(() => (
+        [{ value: '', label: 'All Classes' }].concat(
+          Array.from(new Set((gradesHook.rows || []).map((row) => String(row.class_name || '').trim()).filter(Boolean)))
+            .sort((a, b) => a.localeCompare(b))
+            .map((value) => ({ value, label: value }))
+        )
+      ), [gradesHook.rows]);
 
       const principalStudentFilterOptions = useMemo(() => {
-        const filteredStudents = (mergedStudentsRows || []).filter((row) => {
-          const rowClass = String(row.student_main_class_name || row.class_name || row.assigned_class || '').trim();
-          return !principalPerformanceFilter.class_name || rowClass === principalPerformanceFilter.class_name;
-        });
+        const filteredStudents = (gradesHook.rows || []).filter((row) => !principalPerformanceFilter.class_name || String(row.class_name || '') === principalPerformanceFilter.class_name);
         const seen = new Map();
         filteredStudents.forEach((row) => {
-          const key = String(row.student_id || row.profile_id || row.id || '').trim();
+          const key = String(row.student_id || row.student_name || '').trim();
           if (!key || seen.has(key)) return;
-          seen.set(key, { value: key, label: row.full_name || key });
+          seen.set(key, { value: row.student_id || '', label: row.student_name || key });
         });
-        return [{ value: '', label: principalPerformanceFilter.class_name ? 'All Students In Selected Class' : 'All Students' }].concat(Array.from(seen.values()).sort((a, b) => a.label.localeCompare(b.label)));
-      }, [mergedStudentsRows, principalPerformanceFilter.class_name]);
+        return [{ value: '', label: 'All Students' }].concat(Array.from(seen.values()).sort((a, b) => a.label.localeCompare(b.label)));
+      }, [gradesHook.rows, principalPerformanceFilter.class_name]);
 
-      const principalAcademicYearOptions = useMemo(() => {
-        const now = new Date();
-        const baseYear = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
-        const rollingYears = [];
-        for (let offset = -1; offset <= 3; offset += 1) {
-          const startYear = baseYear + offset;
-          rollingYears.push(`${startYear}/${startYear + 1}`);
-        }
-        const gradeYears = Array.from(new Set((gradesHook.rows || []).map((row) => String(row.academic_year || '').trim()).filter(Boolean)));
-        return Array.from(new Set(rollingYears.concat(gradeYears))).sort();
-      }, [gradesHook.rows]);
+      const principalAcademicYearOptions = useMemo(() => (
+        ['All Years'].concat(Array.from(new Set((gradesHook.rows || []).map((row) => String(row.academic_year || '').trim()).filter(Boolean))).sort())
+      ), [gradesHook.rows]);
 
       const principalPerformanceRows = useMemo(() => (
         (gradesHook.rows || []).filter((row) => {
-          const rowClass = String(row.class_name || row.student_main_class_name || row.assigned_class || '').trim();
-          const rowStudentId = String(row.student_id || row.profile_id || row.id || '').trim();
-          if (principalPerformanceFilter.class_name && rowClass !== principalPerformanceFilter.class_name) return false;
-          if (principalPerformanceFilter.student_id && rowStudentId !== principalPerformanceFilter.student_id) return false;
+          if (principalPerformanceFilter.class_name && String(row.class_name || '') !== principalPerformanceFilter.class_name) return false;
+          if (principalPerformanceFilter.student_id && String(row.student_id || '') !== principalPerformanceFilter.student_id) return false;
           if (principalPerformanceFilter.term_name && principalPerformanceFilter.term_name !== 'All Terms' && String(row.term_name || '') !== principalPerformanceFilter.term_name) return false;
-          if (principalPerformanceFilter.academic_year && String(row.academic_year || '') !== principalPerformanceFilter.academic_year) return false;
+          if (principalPerformanceFilter.academic_year && principalPerformanceFilter.academic_year !== 'All Years' && String(row.academic_year || '') !== principalPerformanceFilter.academic_year) return false;
           return true;
         })
       ), [gradesHook.rows, principalPerformanceFilter]);
 
       const principalSelectedStudent = useMemo(() => {
         if (!principalPerformanceFilter.student_id) return null;
-        const matchedStudent = mergedStudentsRows.find((row) => String(row.student_id || row.profile_id || row.id || '') === String(principalPerformanceFilter.student_id || ''));
-        if (matchedStudent) return matchedStudent;
-        const gradeRow = principalPerformanceRows.find((row) => String(row.student_id || row.profile_id || row.id || '') === principalPerformanceFilter.student_id);
+        const gradeRow = principalPerformanceRows.find((row) => String(row.student_id || '') === principalPerformanceFilter.student_id);
         if (!gradeRow) return null;
-        return {
+        const matchedStudent = mergedStudentsRows.find((row) => String(row.student_id || row.id || '') === String(gradeRow.student_id || ''))
+          || mergedStudentsRows.find((row) => String(row.full_name || '') === String(gradeRow.student_name || ''));
+        return matchedStudent || {
           student_id: gradeRow.student_id,
-          full_name: gradeRow.student_name,
-          student_main_class_name: gradeRow.class_name,
-          class_name: gradeRow.class_name
+          full_name: gradeRow.student_name
         };
       }, [principalPerformanceFilter.student_id, principalPerformanceRows, mergedStudentsRows]);
-
-      function handlePrincipalAcademicPrint() {
-        if (!principalSelectedStudent) {
-          notify('warning', 'Select a student first to print the academic report.');
-          return;
-        }
-        const rows = principalPerformanceRows.filter((row) => String(row.student_id || row.profile_id || row.id || '') === String(principalSelectedStudent.student_id || '') || String(row.student_name || '') === String(principalSelectedStudent.full_name || ''));
-        const reportWindow = window.open('', '_blank', 'width=1000,height=800');
-        if (!reportWindow) {
-          notify('warning', 'Pop up blocked. Please allow pop ups to print the report.');
-          return;
-        }
-        const tableRows = rows.map((row) => `<tr><td>${row.subject_name || '-'}</td><td>${row.total_score ?? '-'}</td><td>${row.average_score ?? '-'}</td><td>${row.term_name || '-'}</td><td>${row.academic_year || '-'}</td></tr>`).join('');
-        reportWindow.document.write(`<!DOCTYPE html><html><head><title>Student Academic Report</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#0f172a}h1,h2,p{margin:0 0 12px}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #cbd5e1;padding:10px;text-align:left}th{background:#f8fafc}</style></head><body><h1>Student Academic Report</h1><p><strong>Student:</strong> ${principalSelectedStudent.full_name || '-'}</p><p><strong>Assign Main Class:</strong> ${principalSelectedStudent.student_main_class_name || principalSelectedStudent.class_name || '-'}</p><p><strong>Term:</strong> ${principalPerformanceFilter.term_name || 'All Terms'}</p><p><strong>Academic Year:</strong> ${principalPerformanceFilter.academic_year || '-'}</p><table><thead><tr><th>Subject</th><th>Total Score</th><th>Average Score</th><th>Term</th><th>Academic Year</th></tr></thead><tbody>${tableRows || '<tr><td colspan="5">No grade records found</td></tr>'}</tbody></table></body></html>`);
-        reportWindow.document.close();
-        reportWindow.focus();
-        reportWindow.print();
-      }
 
       useEffect(() => {
         if (!principalPerformanceFilter.student_id) return;
@@ -3770,7 +3791,7 @@
                       <div className="field"><label>Academic Year</label><select value={principalPerformanceFilter.academic_year} onChange={(e)=>setPrincipalPerformanceFilter(prev => ({ ...prev, academic_year: e.target.value }))}>{principalAcademicYearOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></div>
                     </div>
                     <div style={{display:'flex', gap:12, flexWrap:'wrap', marginTop:16}}>
-                      <button className="btn secondary" onClick={handlePrincipalAcademicPrint} disabled={!principalSelectedStudent}>Printable Student Academic Reports</button>
+                      <button className="btn secondary" onClick={() => { setCurrentStudent(principalSelectedStudent); setSelectedReport('grade'); setPage('reports'); }} disabled={!principalSelectedStudent}>Printable Student Academic Reports</button>
                     </div>
                   </div>
                   <div className="card">
