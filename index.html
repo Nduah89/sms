@@ -2398,24 +2398,26 @@
         return Array.from(values);
       }, [teacherAssignments]);
 
-      const teacherAttendanceClassOptions = useMemo(() => {
-        const rows = orderedClassRows.filter((row) => teacherAssignedClassIds.includes(String(row.id || '')));
-        return [{ value: '', label: 'Select Class' }].concat(
-          rows.map((row) => ({
-            value: row.id,
-            label: buildClassDisplay(row) || row.name || 'Class'
-          }))
-        );
-      }, [orderedClassRows, teacherAssignedClassIds]);
-
       const teacherStudentRecordsRows = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
-        const rows = mergedStudentsRows.filter((student) => {
-          const classId = String(student.class_id || '').trim();
-          return classId && teacherAssignedClassIds.includes(classId);
-        });
+        const rows = [...(mergedStudentsRows || [])];
         return rows.sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
-      }, [role, mergedStudentsRows, teacherAssignedClassIds]);
+      }, [role, mergedStudentsRows]);
+
+      const teacherAttendanceClassOptions = useMemo(() => {
+        const seen = new Set();
+        const options = [{ value: '', label: 'Select Class' }];
+        teacherStudentRecordsRows.forEach((student) => {
+          const classId = String(student.class_id || '').trim();
+          if (!classId || seen.has(classId)) return;
+          seen.add(classId);
+          const linkedClassRow = orderedClassRows.find((row) => String(row.id || '') === classId) || null;
+          const label = String(buildClassDisplay(linkedClassRow) || student.student_main_class_name || classNameMap[classId] || student.class_name || '').trim();
+          if (!label) return;
+          options.push({ value: classId, label });
+        });
+        return options;
+      }, [teacherStudentRecordsRows, orderedClassRows, classNameMap]);
 
       const teacherAttendanceStudents = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
@@ -3114,23 +3116,20 @@
 
       const teacherGradeClassOptions = useMemo(() => (
         [{ value: '', label: 'All Classes' }].concat(
-          orderedClassRows.map((row) => {
-            const display = buildClassDisplay(row) || row.name || row.class_name || '';
-            return { value: display, label: display };
-          }).filter((option) => option.value)
+          teacherAttendanceClassOptions
+            .filter((option) => option.value)
+            .map((option) => ({ value: option.value, label: option.label }))
         )
-      ), [orderedClassRows]);
+      ), [teacherAttendanceClassOptions]);
 
       const teacherGradeStudentOptions = useMemo(() => {
         return (teacherAssignableStudents || [])
           .filter((student) => {
             if (!gradeForm.filter_class_name) return true;
-            const linkedClassRow = orderedClassRows.find((row) => row.id === student.class_id) || null;
-            const classValue = String(buildClassDisplay(linkedClassRow) || student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '').trim();
-            return classValue === gradeForm.filter_class_name;
+            return String(student.class_id || '').trim() === String(gradeForm.filter_class_name || '').trim();
           })
           .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
-      }, [teacherAssignableStudents, gradeForm.filter_class_name, classNameMap, orderedClassRows]);
+      }, [teacherAssignableStudents, gradeForm.filter_class_name]);
 
       const teacherAcademicYearOptions = useMemo(() => (
         getAcademicYearOptions(
@@ -3140,14 +3139,16 @@
 
       const teacherDisplayGradeRows = useMemo(() => {
         const filteredRows = (teacherGradeRows || []).filter((row) => {
-          const className = String(row.class_name || principalStudentClassLookup.get(String(row.student_id || '').trim()) || '').trim();
-          if (gradeForm.filter_class_name && className !== gradeForm.filter_class_name) return false;
+          const rowClassId = String(row.class_id || '').trim();
+          const resolvedStudentClassId = String((mergedStudentsRows.find((student) => String(student.id || '') === String(row.student_id || '')) || {}).class_id || '').trim();
+          const effectiveClassId = rowClassId || resolvedStudentClassId;
+          if (gradeForm.filter_class_name && effectiveClassId !== String(gradeForm.filter_class_name || '').trim()) return false;
           if (gradeForm.term_name && String(row.term_name || '') !== gradeForm.term_name) return false;
           if (gradeForm.academic_year && String(row.academic_year || '') !== gradeForm.academic_year) return false;
           return true;
         });
         return buildDisplayGradeRows(filteredRows, principalStudentClassLookup);
-      }, [teacherGradeRows, gradeForm.filter_class_name, gradeForm.term_name, gradeForm.academic_year, principalStudentClassLookup]);
+      }, [teacherGradeRows, gradeForm.filter_class_name, gradeForm.term_name, gradeForm.academic_year, principalStudentClassLookup, mergedStudentsRows]);
 
       const principalDisplayPerformanceRows = useMemo(() => (
         buildDisplayGradeRows(principalPerformanceRows, principalStudentClassLookup)
@@ -3164,7 +3165,8 @@
           setShowGradeEditor(true);
           return;
         }
-        const classValue = String(row.class_name || principalStudentClassLookup.get(String(row.student_id || '').trim()) || '').trim();
+        const linkedStudent = mergedStudentsRows.find((student) => String(student.id || '') === String(row.student_id || '')) || null;
+        const classValue = String(row.class_id || linkedStudent?.class_id || '').trim();
         setGradeForm((prev) => ({
           ...prev,
           id: row.id || '',
@@ -4025,7 +4027,7 @@
                           Save Attendance
                         </button>
                       </div>
-                      {teacherAssignedClassIds.length === 0 && <div className="footer-note">No class assignment has been linked to this teacher yet.</div>}
+                      {teacherAttendanceClassOptions.length <= 1 && <div className="footer-note">No student class record is available for attendance yet.</div>}
                     </>
                   ) : (
                     <div className="footer-note">Attendance recording is reserved for teachers. This page is view only for other roles.</div>
@@ -4107,7 +4109,7 @@
                     <h3>{gradeForm.id ? 'Edit Grade' : 'Add Grade'}</h3>
                     <div className="form-grid-3">
                       <div className="field"><label>Class</label><select value={gradeForm.filter_class_name} onChange={(e)=>setGradeForm(prev => ({...prev, filter_class_name:e.target.value, student_id:''}))}>{teacherGradeClassOptions.map(option => <option key={option.value || 'grade-class-filter'} value={option.value}>{option.label}</option>)}</select></div>
-                      <div className="field"><label>Student</label><select value={gradeForm.student_id} onChange={(e)=>setGradeForm({...gradeForm, student_id:e.target.value})}><option value="">Select Student</option>{teacherGradeStudentOptions.map(student => { const classValue = student.student_main_class_name || classNameMap[student.class_id] || student.class_name || ''; return <option key={student.id} value={student.id}>{student.full_name}{classValue ? `, ${classValue}` : ''}</option>; })}</select></div>
+                      <div className="field"><label>Student</label><select value={gradeForm.student_id} onChange={(e)=>setGradeForm({...gradeForm, student_id:e.target.value})}><option value="">Select Student</option>{teacherGradeStudentOptions.map(student => { const linkedClassRow = orderedClassRows.find((row) => String(row.id || '') === String(student.class_id || '')) || null; const classValue = buildClassDisplay(linkedClassRow) || student.student_main_class_name || classNameMap[student.class_id] || student.class_name || ''; return <option key={student.id} value={student.id}>{student.full_name}{classValue ? `, ${classValue}` : ''}</option>; })}</select></div>
                       <div className="field"><label>Subject Name</label><select value={gradeForm.subject_id} onChange={(e)=>setGradeForm({...gradeForm, subject_id:e.target.value})}>{schoolSubjectOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
                       <div className="field"><label>Term</label><select value={gradeForm.term_name} onChange={(e)=>setGradeForm({...gradeForm, term_name:e.target.value})}>{termOptions.map(x => <option key={x}>{x}</option>)}</select></div>
                       <div className="field"><label>Academic Year</label><select value={gradeForm.academic_year} onChange={(e)=>setGradeForm({...gradeForm, academic_year:e.target.value})}>{teacherAcademicYearOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></div>
