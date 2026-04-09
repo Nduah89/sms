@@ -778,13 +778,7 @@
                 const key = field.key;
                 const label = field.label || key.replace(/_/g, ' ');
                 const value = formState[key] ?? (field.type === 'multiselect' ? [] : '');
-                const setValue = (next) => {
-                  if (typeof field.onChange === 'function') {
-                    field.onChange(next, formState, setFormState);
-                    return;
-                  }
-                  setFormState({ ...formState, [key]: next });
-                };
+                const setValue = (next) => setFormState({ ...formState, [key]: next });
                 return (
                   <div className="field" key={key}>
                     <label>{label}</label>
@@ -907,6 +901,7 @@
       const [notice, setNotice] = useState({ type: "", text: "" });
       const [selectedReport, setSelectedReport] = useState("grade");
       const [currentStudent, setCurrentStudent] = useState(null);
+      const [principalPerformanceFilters, setPrincipalPerformanceFilters] = useState({ class_name:'', student_id:'', term_name:'', academic_year:'' });
       const [passwordForm, setPasswordForm] = useState({ newPassword: "" });
       const [welcomeContext, setWelcomeContext] = useState(null);
       const [themeConfig, setThemeConfig] = useState(normalizeThemeConfig({ theme_name: DEFAULT_THEME_KEY }));
@@ -922,7 +917,6 @@
       const principalsHook = useSupabaseTable("v_principals_admin", "*");
       const classesHook = useSupabaseTable("classes", "*");
       const subjectsHook = useSupabaseTable("v_subject_assignments", "*");
-      const subjectsCatalogHook = useSupabaseTable("subjects", "*");
       const attendanceHook = useSupabaseTable("v_attendance_full", "*");
       const gradesHook = useSupabaseTable("v_grades_full", "*");
       const feesHook = useSupabaseTable("v_fee_payments_full", "*");
@@ -941,16 +935,14 @@
         profile_id: "", role_name: roleName, full_name: "", email: "", username: "", phone: "", account_status: "active", force_password_change: 'true', temporary_password: "",
         class_id: "", student_main_class_name: "", student_class_section: "None", teacher_main_class_name: "", gender: "Male", date_of_birth: "", guardian_contact: "", address: "", student_no: "", staff_no: "",
         subject_specialty: "", qualification: "", assigned_subjects: [], assigned_class_ids: [], relationship_to_student: "",
-        parent_full_name: "", parent_contact: "", linked_student_names: "", linked_class_names: "", emis_code: "", ghana_card: "", trained_status: "Trained"
+        parent_full_name: "", parent_contact: "", emis_code: "", ghana_card: "", trained_status: "Trained"
       });
       const [studentForm, setStudentForm] = useState(buildManagedForm('student'));
       const [teacherForm, setTeacherForm] = useState(buildManagedForm('teacher'));
-      const [principalForm, setPrincipalForm] = useState(buildManagedForm('principal'));
-      const [accountsOfficeForm, setAccountsOfficeForm] = useState(buildManagedForm('accounts_office'));
       const [parentForm, setParentForm] = useState(buildManagedForm('parent'));
       const [userForm, setUserForm] = useState(buildManagedForm('student'));
       const [classForm, setClassForm] = useState({ id: "", name: "", level_group: "", section: "", capacity: "" });
-      const [subjectForm, setSubjectForm] = useState({ id: "", subject_name: "" });
+      const [subjectForm, setSubjectForm] = useState({ id: "", subject_name: "", class_id: "", teacher_id: "" });
       const [attendanceForm, setAttendanceForm] = useState({ id: "", student_id: "", class_id: "", teacher_assignment_id: "", subject_name: "", attendance_date: todayISO(), status: "Present", remarks: "" });
       const [gradeForm, setGradeForm] = useState({ id: "", student_id: "", class_id: "", subject_id: "", term_name: "Term 1", academic_year: new Date().getFullYear().toString(), assignment_score: 0, test_score: 0, exam_score: 0 });
       const [feeForm, setFeeForm] = useState({ id: "", student_id: "", term_name: "Term 1", academic_year: new Date().getFullYear().toString(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
@@ -1036,13 +1028,7 @@
         return 'active';
       };
       const yesNoOptions = [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }];
-      const defaultSubjectOptions = ['Mathematics','English','Science','Social','RME','CAD','CAT','French','Computing','Twi'];
-      const subjectCatalogRows = (subjectsCatalogHook.rows || []).slice().sort((a, b) => String(a?.subject_name || '').localeCompare(String(b?.subject_name || '')));
-      const subjectOptions = Array.from(new Set([
-        ...defaultSubjectOptions,
-        ...subjectCatalogRows.map((row) => String(row?.subject_name || '').trim()).filter(Boolean),
-        ...(subjectsHook.rows || []).map((row) => String(row?.subject_name || '').trim()).filter(Boolean)
-      ])).sort((a, b) => a.localeCompare(b));
+      const subjectOptions = ['Mathematics','English','Science','Social','RME','CAD','CAT','French','Computing','Twi'];
       const qualificationOptions = ['PhD','MSc Degree','Bachelor Degree','HND','Diploma','SHS'];
       const trainedStatusOptions = [{ value: 'Trained', label: 'Trained' }, { value: 'Non-Trained', label: 'Non-Trained' }];
       const relationshipOptions = ['Parent', 'Mother', 'Father', 'Guardian'];
@@ -1196,7 +1182,7 @@
         if (!profile) return;
         await Promise.all([
           studentsHook.fetchRows(), studentsRawHook.fetchRows(), teachersHook.fetchRows(), teachersRawHook.fetchRows(), parentsHook.fetchRows(), parentLinksHook.fetchRows(), accountsHook.fetchRows(), principalsHook.fetchRows(),
-          classesHook.fetchRows(), subjectsHook.fetchRows(), subjectsCatalogHook.fetchRows((q)=>q.order('subject_name')), attendanceHook.fetchRows(), gradesHook.fetchRows(), feesHook.fetchRows(),
+          classesHook.fetchRows(), subjectsHook.fetchRows(), attendanceHook.fetchRows(), gradesHook.fetchRows(), feesHook.fetchRows(),
           schoolsHook.fetchRows((q)=>q.order('created_at', { ascending:false })), schoolAdminRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), userLoginRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), managedUsersHook.fetchRows((q)=>q.order('full_name')), registrationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
           auditHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(100)), notificationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
           timetableHook.fetchRows((q)=>q.order('day_of_week')), chatHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(200)),
@@ -1361,7 +1347,6 @@
           supabaseClient.channel('parent-links-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'parent_student_links' }, refreshAll).subscribe(),
           supabaseClient.channel('classes-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'classes' }, refreshAll).subscribe(),
           supabaseClient.channel('subject-assignments-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_subject_assignments' }, refreshAll).subscribe(),
-          supabaseClient.channel('subjects-catalog-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'subjects' }, refreshAll).subscribe(),
           supabaseClient.channel('attendance-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, refreshAll).subscribe(),
           supabaseClient.channel('grades-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'grades' }, refreshAll).subscribe(),
           supabaseClient.channel('fees-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'fee_payments' }, refreshAll).subscribe(),
@@ -2170,79 +2155,6 @@
         trained_status: row.trained_status || 'Trained'
       });
 
-      const buildPrincipalFormFromRow = (row) => ({
-        ...buildManagedForm('principal'),
-        profile_id: row.profile_id || '',
-        role_name: 'principal',
-        full_name: row.full_name || '',
-        email: row.email || '',
-        phone: row.phone || row.profile_phone || '',
-        account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
-        force_password_change: String(row.force_password_change ?? true)
-      });
-
-      const buildAccountsOfficeFormFromRow = (row) => ({
-        ...buildManagedForm('accounts_office'),
-        profile_id: row.profile_id || '',
-        role_name: 'accounts_office',
-        full_name: row.full_name || '',
-        email: row.email || '',
-        phone: row.phone || row.profile_phone || '',
-        account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
-        force_password_change: String(row.force_password_change ?? true)
-      });
-
-      const buildParentFormFromRow = (row) => {
-        const source = parentSourceMap[String(row.full_name || '').trim().toLowerCase()];
-        return ({
-          ...buildManagedForm('parent'),
-          profile_id: row.profile_id || '',
-          role_name: 'parent',
-          full_name: row.full_name || '',
-          email: row.email || '',
-          phone: row.phone || row.profile_phone || source?.phone || '',
-          relationship_to_student: row.relationship_to_student || source?.relationship_to_student || 'Parent',
-          linked_student_names: row.linked_student_names || source?.linked_student_names?.join(', ') || '',
-          linked_class_names: row.linked_class_names || source?.linked_class_names?.join(', ') || '',
-          account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
-          force_password_change: String(row.force_password_change ?? true)
-        });
-      };
-
-      useEffect(() => {
-        const selectedName = String(parentForm.full_name || '').trim();
-        if (!selectedName) {
-          if (parentForm.phone || parentForm.relationship_to_student || parentForm.linked_student_names || parentForm.linked_class_names) {
-            setParentForm((prev) => ({
-              ...prev,
-              phone: '',
-              relationship_to_student: '',
-              linked_student_names: '',
-              linked_class_names: ''
-            }));
-          }
-          return;
-        }
-        const source = parentSourceMap[selectedName.toLowerCase()];
-        if (!source) return;
-        const nextLinkedStudents = source.linked_student_names.join(', ');
-        const nextLinkedClasses = source.linked_class_names.join(', ');
-        if (
-          (parentForm.phone || '') !== (source.phone || '')
-          || (parentForm.relationship_to_student || 'Parent') !== (source.relationship_to_student || 'Parent')
-          || (parentForm.linked_student_names || '') !== nextLinkedStudents
-          || (parentForm.linked_class_names || '') !== nextLinkedClasses
-        ) {
-          setParentForm((prev) => ({
-            ...prev,
-            phone: source.phone || '',
-            relationship_to_student: source.relationship_to_student || 'Parent',
-            linked_student_names: nextLinkedStudents,
-            linked_class_names: nextLinkedClasses
-          }));
-        }
-      }, [parentForm.full_name, parentSourceMap]);
-
       useEffect(() => {
         if (!studentForm.student_main_class_name) {
           if (studentForm.class_id) {
@@ -2284,75 +2196,19 @@
       const parentLinksRows = parentLinksHook.rows || [];
       const managedUsersRows = managedUsersHook.rows || [];
       const studentLookup = useMemo(() => Object.fromEntries(mergedStudentsRows.map((row) => [row.id, row])), [mergedStudentsRows]);
-      const parentSourceRows = useMemo(() => {
-        const grouped = {};
-        (mergedStudentsRows || []).forEach((student) => {
-          const parentName = String(student.parent_full_name || '').trim();
-          if (!parentName) return;
-          const key = parentName.toLowerCase();
-          if (!grouped[key]) {
-            grouped[key] = {
-              full_name: parentName,
-              phone: String(student.parent_contact || '').trim(),
-              relationship_to_student: String(student.relationship_to_student || 'Parent').trim() || 'Parent',
-              linked_student_names: [],
-              linked_class_names: []
-            };
-          }
-          if (!grouped[key].phone && student.parent_contact) {
-            grouped[key].phone = String(student.parent_contact || '').trim();
-          }
-          if ((!grouped[key].relationship_to_student || grouped[key].relationship_to_student === 'Parent') && student.relationship_to_student) {
-            grouped[key].relationship_to_student = String(student.relationship_to_student || '').trim() || 'Parent';
-          }
-          if (student.full_name && !grouped[key].linked_student_names.includes(student.full_name)) {
-            grouped[key].linked_student_names.push(student.full_name);
-          }
-          const classLabel = classNameMap[student.class_id] || student.class_name || '';
-          if (classLabel && !grouped[key].linked_class_names.includes(classLabel)) {
-            grouped[key].linked_class_names.push(classLabel);
-          }
-        });
-        return Object.values(grouped).sort((a, b) => a.full_name.localeCompare(b.full_name));
-      }, [mergedStudentsRows, classNameMap]);
-      const parentSourceMap = useMemo(() => Object.fromEntries(parentSourceRows.map((row) => [row.full_name.toLowerCase(), row])), [parentSourceRows]);
-      const parentNameOptions = useMemo(() => (
-        [{ value: '', label: 'Select Parent Full Name' }].concat(
-          parentSourceRows.map((row) => ({ value: row.full_name, label: row.full_name }))
-        )
-      ), [parentSourceRows]);
-      const applyParentSourceToForm = (selectedName, currentForm = parentForm) => {
-        const source = parentSourceMap[String(selectedName || '').trim().toLowerCase()];
-        setParentForm({
-          ...currentForm,
-          role_name: 'parent',
-          full_name: selectedName || '',
-          phone: source?.phone || '',
-          relationship_to_student: source?.relationship_to_student || 'Parent',
-          linked_student_names: source?.linked_student_names?.join(', ') || '',
-          linked_class_names: source?.linked_class_names?.join(', ') || ''
-        });
-      };
       const computedParentsRows = useMemo(() => (
         (parentsHook.rows || []).map((parent) => {
           const links = parentLinksRows.filter((link) => link.parent_id === parent.id);
           const linkedStudents = links.map((link) => studentLookup[link.student_id]).filter(Boolean);
-          let linkedStudentNames = linkedStudents.map((student) => student.full_name).filter(Boolean);
-          let linkedClassNames = [...new Set(linkedStudents.map((student) => classNameMap[student.class_id] || student.class_name).filter(Boolean))];
-          const source = parentSourceMap[String(parent.full_name || '').trim().toLowerCase()];
-          if ((!linkedStudentNames.length || !linkedClassNames.length) && source) {
-            if (!linkedStudentNames.length) linkedStudentNames = source.linked_student_names || [];
-            if (!linkedClassNames.length) linkedClassNames = source.linked_class_names || [];
-          }
+          const linkedStudentNames = linkedStudents.map((student) => student.full_name).filter(Boolean);
+          const linkedClassNames = [...new Set(linkedStudents.map((student) => classNameMap[student.class_id] || student.class_name).filter(Boolean))];
           return {
             ...parent,
-            relationship_to_student: parent.relationship_to_student || source?.relationship_to_student || 'Parent',
-            phone: parent.phone || source?.phone || '',
             linked_student_names: linkedStudentNames.join(', '),
             linked_class_names: linkedClassNames.join(', ')
           };
         })
-      ), [parentsHook.rows, parentLinksRows, studentLookup, classNameMap, parentSourceMap]);
+      ), [parentsHook.rows, parentLinksRows, studentLookup, classNameMap]);
 
       const teacherEntityRow = useMemo(() => {
         if (role !== ROLE.TEACHER || !profile?.id) return null;
@@ -2449,6 +2305,55 @@
         present: principalTeacherPresenceRows.filter((row) => row.status === 'Present').length,
         absent: principalTeacherPresenceRows.filter((row) => row.status === 'Absent').length
       }), [principalTeacherPresenceRows]);
+
+      const principalSubjectNames = useMemo(() => ([...new Set((subjectsHook.rows || []).map((row) => String(row.subject_name || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b))), [subjectsHook.rows]);
+
+      const principalClassPerformanceRows = useMemo(() => {
+        const map = new Map();
+        (gradesHook.rows || []).forEach((row) => {
+          const key = String(row.class_name || row.class_id || 'Unassigned');
+          const current = map.get(key) || { class_name: key, entries: 0, total_score_sum: 0, average_score_sum: 0, student_names: new Set() };
+          current.entries += 1;
+          current.total_score_sum += Number(row.total_score || 0);
+          current.average_score_sum += Number(row.average_score || 0);
+          if (row.student_name) current.student_names.add(String(row.student_name));
+          map.set(key, current);
+        });
+        return Array.from(map.values()).map((row) => ({
+          class_name: row.class_name,
+          entries: row.entries,
+          student_count: row.student_names.size,
+          average_total_score: row.entries ? (row.total_score_sum / row.entries) : 0,
+          average_score: row.entries ? (row.average_score_sum / row.entries) : 0
+        })).sort((a, b) => String(a.class_name).localeCompare(String(b.class_name)));
+      }, [gradesHook.rows]);
+
+      const principalRecentAcademicUpdates = useMemo(() => {
+        return [...(auditHook.rows || [])]
+          .filter((row) => ['students', 'teachers', 'grades', 'student_attendance', 'attendance', 'profiles'].includes(String(row.table_name || '').toLowerCase()))
+          .sort((a, b) => new Date(b.created_at || b.updated_at || 0) - new Date(a.created_at || a.updated_at || 0))
+          .slice(0, 10);
+      }, [auditHook.rows]);
+
+      const principalStudentClassOptions = useMemo(() => ([...new Set(mergedStudentsRows.map((row) => teacherAssignedClassDisplay(row) || String(row.class_name || '')).filter(Boolean))].sort((a, b) => a.localeCompare(b))), [mergedStudentsRows]);
+
+      const principalStudentOptions = useMemo(() => (mergedStudentsRows.map((row) => ({ value: row.student_id || row.id, label: row.full_name || row.student_name || 'Student', class_name: teacherAssignedClassDisplay(row) || row.class_name || '', student_id: row.student_id || row.id })).sort((a, b) => String(a.label).localeCompare(String(b.label)))), [mergedStudentsRows]);
+
+      const principalAcademicYearOptions = useMemo(() => ([...new Set((gradesHook.rows || []).map((row) => String(row.academic_year || '').trim()).filter(Boolean))].sort()), [gradesHook.rows]);
+
+      const principalFilteredGrades = useMemo(() => {
+        return (gradesHook.rows || []).filter((row) => {
+          const className = String(row.class_name || row.class_id || '');
+          const studentId = String(row.student_id || '');
+          const termName = String(row.term_name || '');
+          const academicYear = String(row.academic_year || '');
+          if (principalPerformanceFilters.class_name && className !== principalPerformanceFilters.class_name) return false;
+          if (principalPerformanceFilters.student_id && studentId !== principalPerformanceFilters.student_id) return false;
+          if (principalPerformanceFilters.term_name && termName !== principalPerformanceFilters.term_name) return false;
+          if (principalPerformanceFilters.academic_year && academicYear !== principalPerformanceFilters.academic_year) return false;
+          return true;
+        });
+      }, [gradesHook.rows, principalPerformanceFilters]);
 
       useEffect(() => {
         if (role !== ROLE.TEACHER) return;
@@ -3090,14 +2995,21 @@
               <div className="grid">
                 {renderWelcomeCard()}
                 <MetricCards items={[
-                  { label: 'Total Students', value: studentsHook.rows.length },
-                  { label: 'Total Teachers', value: teachersHook.rows.length },
+                  { label: 'Total Students', value: mergedStudentsRows.length },
+                  { label: 'Total Teachers', value: mergedTeachersRows.length },
+                  { label: 'Total Subjects Taught', value: principalSubjectNames.length },
                   { label: 'Teachers Present Today', value: principalTeacherPresenceSummary.present },
-                  { label: 'Teachers Absent Today', value: principalTeacherPresenceSummary.absent }
+                  { label: 'Teachers Absent Today', value: principalTeacherPresenceSummary.absent },
+                  { label: 'Attendance Records Today', value: attendanceRowsToday.length }
                 ]} />
                 <div className="grid cards-2">
                   <div className="card">
-                    <h3>Attendance Oversight</h3>
+                    <h3>Subjects Taught in the School</h3>
+                    {principalSubjectNames.length === 0 ? <div className="empty">No taught subjects found yet</div> : <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>{principalSubjectNames.map((name) => <span key={name} className="chip info">{name}</span>)}</div>}
+                    <div className="subtle" style={{marginTop:12}}>This list updates automatically from subject and teacher assignment records.</div>
+                  </div>
+                  <div className="card">
+                    <h3>Student Attendance Overview</h3>
                     <div style={{display:'grid', gap:10}}>
                       <div><strong>Total Attendance Records Today:</strong> {attendanceRowsToday.length}</div>
                       <div><strong>Student Present:</strong> {attendanceRowsToday.filter(r => String(r.status || '').toLowerCase() === 'present').length}</div>
@@ -3106,9 +3018,76 @@
                       <div className="subtle">When a teacher records attendance for an assigned class, this dashboard updates automatically in real time.</div>
                     </div>
                   </div>
+                </div>
+                <div className="grid cards-2">
                   <div className="card">
-                    <h3>Academic Oversight</h3>
-                    <p className="subtle">Principal access is limited to students, teachers, classes, attendance summaries, academic performance, teacher assignment monitoring, and academic reporting only.</p>
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap'}}>
+                      <h3 style={{margin:0}}>Student Performance Overview</h3>
+                      <div className="subtle">Based on current saved grade records</div>
+                    </div>
+                    <div style={{display:'grid', gap:10, marginTop:12}}>
+                      <div><strong>Total Grade Entries:</strong> {gradesHook.rows.length}</div>
+                      <div><strong>Students with Grades:</strong> {[...new Set((gradesHook.rows || []).map((row) => row.student_id).filter(Boolean))].length}</div>
+                      <div><strong>Average Score:</strong> {gradesHook.rows.length ? (gradesHook.rows.reduce((sum, row) => sum + Number(row.average_score || 0), 0) / gradesHook.rows.length).toFixed(2) : '0.00'}</div>
+                    </div>
+                  </div>
+                  <div className="card">
+                    <h3>Teacher Main Class and Primary Subject Summary</h3>
+                    <div className="table-wrap" style={{marginTop:12}}>
+                      <table>
+                        <thead><tr><th>Teacher</th><th>Main Class</th><th>Primary Subject Specialty</th></tr></thead>
+                        <tbody>
+                          {mergedTeachersRows.length === 0 && <tr><td colSpan="3"><div className="empty">No teacher records found</div></td></tr>}
+                          {mergedTeachersRows.slice(0, 10).map((row) => <tr key={row.id}><td>{row.full_name}</td><td>{teacherAssignedClassDisplay(row) || '-'}</td><td>{row.subject_specialty || '-'}</td></tr>)}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+                <div className="card">
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:12}}>
+                    <h3 style={{margin:0}}>Class Academic Performance Summary</h3>
+                    <button className="btn secondary" onClick={() => setPage('performance-summary')}>Open Academic Performance Section</button>
+                  </div>
+                  <div className="table-wrap" style={{marginTop:16}}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Class</th>
+                          <th>Students with Grades</th>
+                          <th>Grade Entries</th>
+                          <th>Average Total Score</th>
+                          <th>Average Score</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {principalClassPerformanceRows.length === 0 && <tr><td colSpan="5"><div className="empty">No class performance data found yet</div></td></tr>}
+                        {principalClassPerformanceRows.map((row) => (
+                          <tr key={row.class_name}>
+                            <td>{row.class_name}</td>
+                            <td>{row.student_count}</td>
+                            <td>{row.entries}</td>
+                            <td>{Number(row.average_total_score || 0).toFixed(2)}</td>
+                            <td>{Number(row.average_score || 0).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div className="card">
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:12}}>
+                    <h3 style={{margin:0}}>Recent Academic Updates Related to Students and Teachers</h3>
+                    <div className="subtle">Latest audit events only</div>
+                  </div>
+                  <div className="table-wrap" style={{marginTop:16}}>
+                    <table>
+                      <thead><tr><th>Date</th><th>Action</th><th>Table</th><th>Summary</th><th>Actor</th></tr></thead>
+                      <tbody>
+                        {principalRecentAcademicUpdates.length === 0 && <tr><td colSpan="5"><div className="empty">No recent academic updates found</div></td></tr>}
+                        {principalRecentAcademicUpdates.map((row) => <tr key={row.id}><td>{formatDate(row.created_at || row.updated_at)}</td><td>{row.action_type || '-'}</td><td>{row.table_name || '-'}</td><td>{row.summary || '-'}</td><td>{row.actor_name || '-'}</td></tr>)}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
                 <div className="card">
@@ -3216,6 +3195,18 @@
               </div>
             )}
             {page === 'students' && (
+              role === ROLE.PRINCIPAL ? (
+                <div className="card">
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:12}}>
+                    <div>
+                      <h3 style={{margin:'0 0 6px'}}>Student Records</h3>
+                      <div className="subtle">View only. New, edited, and deleted student records, including linked parent details, reflect here automatically in real time.</div>
+                    </div>
+                    <button className="btn secondary" onClick={() => exportCsv(mergedStudentsRows.map((row) => ({ full_name: row.full_name || '', student_no: row.student_no || '', assigned_class: teacherAssignedClassDisplay(row) || '', gender: row.gender || '', date_of_birth: row.date_of_birth || '', parent_full_name: row.parent_full_name || '', parent_contact: row.parent_contact || row.guardian_contact || '', account_status: row.account_status || row.status || '' })), 'principal-student-records.csv')}>Export CSV</button>
+                  </div>
+                  <div className="table-wrap" style={{marginTop:16}}><table><thead><tr><th>Full Name</th><th>Student No</th><th>Assigned Class</th><th>Gender</th><th>Date of Birth</th><th>Parent Full Name</th><th>Parent Contact</th><th>Account</th></tr></thead><tbody>{mergedStudentsRows.length === 0 ? <tr><td colSpan="8"><div className="empty">No student records found</div></td></tr> : mergedStudentsRows.map((row) => <tr key={row.id}><td>{row.full_name || '-'}</td><td>{row.student_no || '-'}</td><td>{teacherAssignedClassDisplay(row) || '-'}</td><td>{row.gender || '-'}</td><td>{formatDate(row.date_of_birth)}</td><td>{row.parent_full_name || '-'}</td><td>{row.parent_contact || row.guardian_contact || '-'}</td><td><span className={classNames('chip', (row.account_status || row.status) === 'active' ? 'success' : (row.account_status || row.status) === 'archived' ? 'warning' : 'danger')}>{row.account_status || row.status || '-'}</span></td></tr>)}</tbody></table></div>
+                </div>
+              ) : (
               <GenericCrudPage
                 title="Student Management"
                 description="Add, edit, archive, and delete student records. Parent full name and parent contact captured here are synced into the Parents section. Assign Main Class uses the fixed ordered list, and Category is a separate optional selector of None, A, B, or C."
@@ -3258,9 +3249,22 @@
               >
                 {importStatus && <div className="footer-note">{importStatus}</div>}
               </GenericCrudPage>
+              )
             )}
 
             {page === 'teachers' && (
+              role === ROLE.PRINCIPAL ? (
+                <div className="card">
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:12}}>
+                    <div>
+                      <h3 style={{margin:'0 0 6px'}}>Teacher Records</h3>
+                      <div className="subtle">View only. Teacher additions, edits, and deletions reflect here automatically in real time.</div>
+                    </div>
+                    <button className="btn secondary" onClick={() => exportCsv(mergedTeachersRows.map((row) => ({ full_name: row.full_name || '', emis_code: row.emis_code || '', assigned_class: teacherAssignedClassDisplay(row) || '', subject_specialty: row.subject_specialty || '', qualification: row.qualification || '', gender: row.gender || '', date_of_birth: row.date_of_birth || '', trained_status: row.trained_status || '', account_status: row.account_status || row.status || '' })), 'principal-teacher-records.csv')}>Export CSV</button>
+                  </div>
+                  <div className="table-wrap" style={{marginTop:16}}><table><thead><tr><th>Full Name</th><th>Teacher EMIS Code</th><th>Assigned Class</th><th>Primary Subject</th><th>Qualification</th><th>Gender</th><th>Date of Birth</th><th>Training Status</th><th>Account</th></tr></thead><tbody>{mergedTeachersRows.length === 0 ? <tr><td colSpan="9"><div className="empty">No teacher records found</div></td></tr> : mergedTeachersRows.map((row) => <tr key={row.id}><td>{row.full_name || '-'}</td><td>{row.emis_code || '-'}</td><td>{teacherAssignedClassDisplay(row) || '-'}</td><td>{row.subject_specialty || '-'}</td><td>{row.qualification || '-'}</td><td>{row.gender || '-'}</td><td>{formatDate(row.date_of_birth)}</td><td>{row.trained_status || '-'}</td><td><span className={classNames('chip', (row.account_status || row.status) === 'active' ? 'success' : (row.account_status || row.status) === 'archived' ? 'warning' : 'danger')}>{row.account_status || row.status || '-'}</span></td></tr>)}</tbody></table></div>
+                </div>
+              ) : (
               <GenericCrudPage
                 title="Teacher Management"
                 description="Add, edit, archive, and delete teacher records. Staff number is generated automatically from the school name context, and each teacher keeps one assigned main class and one primary subject specialty with real time updates."
@@ -3303,125 +3307,65 @@
                 </> : null}
                 extraActions={<><button className="btn secondary" onClick={()=>exportCsv(mergedTeachersRows.map((row) => ({ ...row, assigned_class: teacherAssignedClassDisplay(row) })), 'teachers.csv')}>Export CSV</button></>}
               />
+              )
             )}
 
             {page === 'parents' && (
-              <GenericCrudPage
-                title="Parents Management"
-                description="Choose a parent full name from names already captured in Student Management. When selected, the system automatically fills the parent phone, relationship, linked student names, and class records already tied to that parent from Student Management, while keeping realtime consistency across both sections."
-                columns={[
-                  { key: 'full_name', label: 'Full Name' },
-                  { key: 'phone', label: 'Phone' },
-                  { key: 'email', label: 'Email' },
-                  { key: 'relationship_to_student', label: 'Relationship' },
-                  { key: 'linked_student_names', label: 'Linked Students', render: v => v || '-' },
-                  { key: 'linked_class_names', label: 'Assigned Classes', render: v => v || '-' },
-                  { key: 'account_status', label: 'Account', render: v => <span className={classNames('chip', v === 'active' ? 'success' : v === 'archived' ? 'warning' : 'danger')}>{normalizeAccountStatus(v || 'active')}</span> },
-                  { key: 'credentials', label: 'Credentials', render: (_, row) => {
-                    const ref = managedUserRefMap[row.profile_id];
-                    return ref ? <div className="subtle"><div>{ref.email || '-'}</div><div>Temp: {ref.temporary_password}</div><div>Issued: {formatDate(ref.issued_at)}</div></div> : <span className="subtle">No credentials saved yet</span>;
-                  }}
-                ]}
-                rows={computedParentsRows}
-                loading={parentsHook.loading || parentLinksHook.loading || studentsHook.loading || studentsRawHook.loading}
-                formState={parentForm}
-                setFormState={setParentForm}
-                fields={[
-                  { key: 'full_name', label: 'Parent Full Name', type: 'select', options: parentNameOptions, onChange: (next) => applyParentSourceToForm(next, parentForm) },
-                  { key: 'phone', label: 'Phone', readOnly: true },
-                  { key: 'email', label: 'Email' },
-                  { key: 'relationship_to_student', label: 'Relationship', type: 'select', options: [{ value: '', label: 'Select Relationship' }, ...relationshipOptions.map(v => ({ value: v, label: v }))], disabled: true },
-                  { key: 'linked_student_names', label: 'Linked Student Name(s)', readOnly: true },
-                  { key: 'linked_class_names', label: 'Linked Class(es)', readOnly: true },
-                  { key: 'account_status', label: 'Account Status', type: 'select', options: statusOptions },
-                  { key: 'force_password_change', label: 'Force First Login Password Change', type: 'select', options: yesNoOptions }
-                ]}
-                onSave={() => saveManagedUserRecord(parentForm, setParentForm, 'parent')}
-                onDelete={(id, row) => handleDeleteManagedUser(row)}
-                onEdit={(row) => setParentForm(buildParentFormFromRow(row))}
-                extraActions={
-                  <div className="subtle" style={{alignSelf:'center'}}>
-                    Select a parent name from Student Management to auto fill phone, relationship, linked student names, and linked classes.
-                  </div>
-                }
-                rowActions={(row) => canSchoolAdminManageUsers ? <>
-                  <button className="btn secondary" onClick={() => setManagedUserStatus(row, 'archived')}>Archive</button>
-                  <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
-                  <button className="btn secondary" onClick={() => openManagedUserInCredentials(row)}>Open in User Accounts</button>
-                </> : null}
-              />
+              <div className="card">
+                <h3>Parents</h3>
+                <p className="subtle">This section is view only. Parent full name and contact are populated from linked student records, and student name and class links refresh automatically when the student record or link changes.</p>
+                <div className="table-wrap"><table><thead><tr><th>Parent Full Name</th><th>Contact</th><th>Linked Student Full Name</th><th>Class Assigned</th></tr></thead><tbody>
+                  {computedParentsRows.length === 0 && <tr><td colSpan="4"><div className="empty">No linked parent records found</div></td></tr>}
+                  {computedParentsRows.map(parent => <tr key={parent.id}><td>{parent.full_name || '-'}</td><td>{parent.phone || parent.email || '-'}</td><td>{parent.linked_student_names || '-'}</td><td>{parent.linked_class_names || '-'}</td></tr>)}
+                </tbody></table></div>
+              </div>
             )}
 
             {page === 'accounts-staff' && (
-              <GenericCrudPage
-                title="Accounts Office Staff Management"
-                description="School admin can add, edit, and delete Accounts Office Staff records here. Full name, phone, and email are stored on the linked managed user profile and Accounts Office Staff record, and realtime consistency is preserved through the existing live refresh subscriptions."
-                columns={[
-                  { key: 'full_name', label: 'Full Name' },
-                  { key: 'email', label: 'Email' },
-                  { key: 'phone', label: 'Phone' },
-                  { key: 'account_status', label: 'Account', render: v => <span className={classNames('chip', v === 'active' ? 'success' : v === 'archived' ? 'warning' : 'danger')}>{normalizeAccountStatus(v || 'active')}</span> },
-                  { key: 'credentials', label: 'Credentials', render: (_, row) => {
-                    const ref = managedUserRefMap[row.profile_id];
-                    return ref ? <div className="subtle"><div>{ref.email || '-'}</div><div>Temp: {ref.temporary_password}</div><div>Issued: {formatDate(ref.issued_at)}</div></div> : <span className="subtle">No credentials saved yet</span>;
-                  }}
-                ]}
-                rows={accountsHook.rows}
-                loading={accountsHook.loading}
-                formState={accountsOfficeForm}
-                setFormState={setAccountsOfficeForm}
-                fields={[
-                  { key: 'full_name', label: 'Full Name' },
-                  { key: 'email', label: 'Email' },
-                  { key: 'phone', label: 'Phone' },
-                  { key: 'account_status', label: 'Account Status', type: 'select', options: statusOptions },
-                  { key: 'force_password_change', label: 'Force First Login Password Change', type: 'select', options: yesNoOptions }
-                ]}
-                onSave={() => saveManagedUserRecord(accountsOfficeForm, setAccountsOfficeForm, 'accounts_office')}
-                onDelete={(id, row) => handleDeleteManagedUser(row)}
-                onEdit={(row) => setAccountsOfficeForm(buildAccountsOfficeFormFromRow(row))}
-                rowActions={(row) => canSchoolAdminManageUsers ? <>
-                  <button className="btn secondary" onClick={() => setManagedUserStatus(row, 'archived')}>Archive</button>
-                  <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
-                  <button className="btn secondary" onClick={() => openManagedUserInCredentials(row)}>Open in User Accounts</button>
-                </> : null}
-              />
+              <div className="card">
+                <h3>Accounts Office Staff</h3>
+                <div className="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Credentials</th><th>Actions</th></tr></thead><tbody>
+                  {accountsHook.rows.length === 0 && <tr><td colSpan="5"><div className="empty">No records found</div></td></tr>}
+                  {accountsHook.rows.map(r => {
+                    const ref = managedUserRefMap[r.profile_id];
+                    return <tr key={r.id}>
+                      <td>{r.full_name}</td>
+                      <td>{r.email}</td>
+                      <td>{r.phone}</td>
+                      <td>{ref ? <div className="subtle"><div>{ref.email || '-'}</div><div>Temp: {ref.temporary_password}</div><div>Issued: {formatDate(ref.issued_at)}</div></div> : <span className="subtle">No credentials saved yet</span>}</td>
+                      <td>{canSchoolAdminManageUsers ? <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                        <button className="btn" onClick={()=>handleProvisionManagedUser(r)}>{ref ? 'Reset Login' : 'Create Login'}</button>
+                        <button className="btn secondary" onClick={()=>copyText(buildManagedUserReferenceText(r), 'User credential reference copied to clipboard')}>Copy</button>
+                        <button className="btn danger" onClick={()=>handleDeleteManagedUser(r)}>Permanent Delete</button>
+                      </div> : <span className="subtle">School admin only</span>}</td>
+                    </tr>
+                  })}
+                </tbody></table></div>
+              </div>
             )}
 
             {page === 'principals' && (
-              <GenericCrudPage
-                title="Principal Management"
-                description="School admin can add, edit, and delete principal records here. Full name, phone, and email are stored on the linked managed user profile and principal record, and realtime consistency is preserved through the existing live refresh subscriptions."
-                columns={[
-                  { key: 'full_name', label: 'Full Name' },
-                  { key: 'email', label: 'Email' },
-                  { key: 'phone', label: 'Phone' },
-                  { key: 'account_status', label: 'Account', render: v => <span className={classNames('chip', v === 'active' ? 'success' : v === 'archived' ? 'warning' : 'danger')}>{normalizeAccountStatus(v || 'active')}</span> },
-                  { key: 'credentials', label: 'Credentials', render: (_, row) => {
-                    const ref = managedUserRefMap[row.profile_id];
-                    return ref ? <div className="subtle"><div>{ref.email || '-'}</div><div>Temp: {ref.temporary_password}</div><div>Issued: {formatDate(ref.issued_at)}</div></div> : <span className="subtle">No credentials saved yet</span>;
-                  }}
-                ]}
-                rows={principalsHook.rows}
-                loading={principalsHook.loading}
-                formState={principalForm}
-                setFormState={setPrincipalForm}
-                fields={[
-                  { key: 'full_name', label: 'Full Name' },
-                  { key: 'email', label: 'Email' },
-                  { key: 'phone', label: 'Phone' },
-                  { key: 'account_status', label: 'Account Status', type: 'select', options: statusOptions },
-                  { key: 'force_password_change', label: 'Force First Login Password Change', type: 'select', options: yesNoOptions }
-                ]}
-                onSave={() => saveManagedUserRecord(principalForm, setPrincipalForm, 'principal')}
-                onDelete={(id, row) => handleDeleteManagedUser(row)}
-                onEdit={(row) => setPrincipalForm(buildPrincipalFormFromRow(row))}
-                rowActions={(row) => canSchoolAdminManageUsers ? <>
-                  <button className="btn secondary" onClick={() => setManagedUserStatus(row, 'archived')}>Archive</button>
-                  <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
-                  <button className="btn secondary" onClick={() => openManagedUserInCredentials(row)}>Open in User Accounts</button>
-                </> : null}
-              />
+              <div className="card">
+                <h3>Principals</h3>
+                <div className="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th>Credentials</th><th>Actions</th></tr></thead><tbody>
+                  {principalsHook.rows.length === 0 && <tr><td colSpan="6"><div className="empty">No records found</div></td></tr>}
+                  {principalsHook.rows.map(r => {
+                    const ref = managedUserRefMap[r.profile_id];
+                    return <tr key={r.id}>
+                      <td>{r.full_name}</td>
+                      <td>{r.email}</td>
+                      <td>{r.phone}</td>
+                      <td>{r.status}</td>
+                      <td>{ref ? <div className="subtle"><div>{ref.email || '-'}</div><div>Temp: {ref.temporary_password}</div><div>Issued: {formatDate(ref.issued_at)}</div></div> : <span className="subtle">No credentials saved yet</span>}</td>
+                      <td>{canSchoolAdminManageUsers ? <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                        <button className="btn" onClick={()=>handleProvisionManagedUser(r)}>{ref ? 'Reset Login' : 'Create Login'}</button>
+                        <button className="btn secondary" onClick={()=>copyText(buildManagedUserReferenceText(r), 'User credential reference copied to clipboard')}>Copy</button>
+                        <button className="btn danger" onClick={()=>handleDeleteManagedUser(r)}>Permanent Delete</button>
+                      </div> : <span className="subtle">School admin only</span>}</td>
+                    </tr>
+                  })}
+                </tbody></table></div>
+              </div>
             )}
 
             {page === 'users' && (
@@ -3506,24 +3450,20 @@
             )}
 
             {page === 'subjects' && (
-              <GenericCrudPage
-                title="Subject Management"
-                description="Add, edit, and delete saved subjects. These saved subjects automatically power the Primary Subject Specialty field in Teacher Management."
-                columns={[
-                  { key: 'subject_name', label: 'Subject Name' }
-                ]}
-                rows={subjectCatalogRows}
-                loading={subjectsCatalogHook.loading}
-                formState={subjectForm}
-                setFormState={setSubjectForm}
-                fields={[
-                  { key: 'subject_name', label: 'Subject Name' }
-                ]}
-                onSave={() => saveEntity('subjects', { ...subjectForm, subject_name: String(subjectForm.subject_name || '').trim() }, ()=>setSubjectForm({ id:'', subject_name:'' }))}
-                onDelete={(id) => deleteEntity('subjects', id)}
-                onEdit={(row) => setSubjectForm({ id: row.id || '', subject_name: row.subject_name || '' })}
-                extraActions={<div className="footer-note">This section now stores only the subject record. Class ID and Teacher ID were removed here, and every saved subject reflects automatically in Primary Subject Specialty.</div>}
-              />
+              <div className="grid">
+                <div className="card">
+                  <h3>Subject and Teacher Assignment</h3>
+                  <div className="form-grid-3">
+                    <div className="field"><label>Subject Name</label><input value={subjectForm.subject_name} onChange={(e)=>setSubjectForm({...subjectForm, subject_name:e.target.value})} /></div>
+                    <div className="field"><label>Class ID</label><input value={subjectForm.class_id} onChange={(e)=>setSubjectForm({...subjectForm, class_id:e.target.value})} /></div>
+                    <div className="field"><label>Teacher ID</label><input value={subjectForm.teacher_id} onChange={(e)=>setSubjectForm({...subjectForm, teacher_id:e.target.value})} /></div>
+                  </div>
+                  <div style={{marginTop:16}}><button className="btn" onClick={()=>saveEntity('teacher_subject_assignments', subjectForm, ()=>setSubjectForm({ id:'', subject_name:'', class_id:'', teacher_id:'' }))}>Save Assignment</button></div>
+                </div>
+                <div className="card">
+                  <div className="table-wrap"><table><thead><tr><th>Subject</th><th>Class</th><th>Teacher</th></tr></thead><tbody>{subjectsHook.rows.map(r => <tr key={r.id}><td>{r.subject_name}</td><td>{r.class_name}</td><td>{r.teacher_name}</td></tr>)}</tbody></table></div>
+                </div>
+              </div>
             )}
 
             {page === 'attendance' && (
@@ -3585,10 +3525,30 @@
             )}
 
             {(page === 'attendance-summary' || page === 'my-attendance') && (
-              <div className="card">
-                <h3>Attendance Summary</h3>
-                <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Subject</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}</tbody></table></div>
-              </div>
+              role === ROLE.PRINCIPAL ? (
+                <div className="grid">
+                  <MetricCards items={[
+                    { label: 'Attendance Records Today', value: attendanceRowsToday.length },
+                    { label: 'Students Present Today', value: attendanceRowsToday.filter(r => String(r.status || '').toLowerCase() === 'present').length },
+                    { label: 'Students Absent Today', value: attendanceRowsToday.filter(r => String(r.status || '').toLowerCase() === 'absent').length },
+                    { label: 'Teachers Present Today', value: principalTeacherPresenceSummary.present },
+                    { label: 'Teachers Absent Today', value: principalTeacherPresenceSummary.absent }
+                  ]} />
+                  <div className="card">
+                    <h3>Attendance Summary</h3>
+                    <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Subject</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead><tbody>{attendanceHook.rows.length === 0 ? <tr><td colSpan="7"><div className="empty">No attendance records found</div></td></tr> : attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}</tbody></table></div>
+                  </div>
+                  <div className="card">
+                    <h3>Teacher Attendance Presence Summary</h3>
+                    <div className="table-wrap"><table><thead><tr><th>Teacher</th><th>Class</th><th>Subject</th><th>Status</th><th>Last Update</th></tr></thead><tbody>{principalTeacherPresenceRows.length === 0 ? <tr><td colSpan="5"><div className="empty">No teacher attendance presence records found</div></td></tr> : principalTeacherPresenceRows.map((row) => <tr key={row.id}><td>{row.teacher_name}</td><td>{row.class_name}</td><td>{row.subject_name}</td><td><span className={`chip ${row.status === 'Present' ? 'success' : 'danger'}`}>{row.status}</span></td><td>{row.marked_at ? formatDate(row.marked_at) : 'Not yet recorded today'}</td></tr>)}</tbody></table></div>
+                  </div>
+                </div>
+              ) : (
+                <div className="card">
+                  <h3>Attendance Summary</h3>
+                  <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Subject</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}</tbody></table></div>
+                </div>
+              )
             )}
 
             {page === 'grades' && (
@@ -3614,10 +3574,32 @@
             )}
 
             {(page === 'performance-summary' || page === 'my-grades') && (
-              <div className="card">
-                <h3>Academic Performance Summary</h3>
-                <div className="table-wrap"><table><thead><tr><th>Student</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Year</th></tr></thead><tbody>{gradesHook.rows.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{r.subject_name}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td></tr>)}</tbody></table></div>
-              </div>
+              role === ROLE.PRINCIPAL ? (
+                <div className="grid">
+                  <div className="card">
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:12}}>
+                      <h3 style={{margin:0}}>Academic Performance</h3>
+                      <button className="btn secondary" disabled={!currentStudent} onClick={() => { setSelectedReport('grade'); setPage('reports'); }}>Printable Student Academic Report</button>
+                    </div>
+                    <div className="form-grid-3" style={{marginTop:16}}>
+                      <div className="field"><label>Class</label><select value={principalPerformanceFilters.class_name} onChange={(e)=>setPrincipalPerformanceFilters((prev)=>({ ...prev, class_name:e.target.value }))}><option value="">All Classes</option>{principalStudentClassOptions.map((value) => <option key={value} value={value}>{value}</option>)}</select></div>
+                      <div className="field"><label>Student</label><select value={principalPerformanceFilters.student_id} onChange={(e)=>{ const value = e.target.value; const selected = principalStudentOptions.find((option) => option.value === value); setPrincipalPerformanceFilters((prev)=>({ ...prev, student_id:value, class_name: selected?.class_name || prev.class_name })); setCurrentStudent(selected ? { full_name: selected.label, class_name: selected.class_name, student_id: selected.student_id } : null); }}><option value="">All Students</option>{principalStudentOptions.filter((option) => !principalPerformanceFilters.class_name || option.class_name === principalPerformanceFilters.class_name).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+                      <div className="field"><label>Term</label><select value={principalPerformanceFilters.term_name} onChange={(e)=>setPrincipalPerformanceFilters((prev)=>({ ...prev, term_name:e.target.value }))}><option value="">All Terms</option>{termOptions.map((value) => <option key={value} value={value}>{value}</option>)}</select></div>
+                      <div className="field"><label>Academic Year</label><select value={principalPerformanceFilters.academic_year} onChange={(e)=>setPrincipalPerformanceFilters((prev)=>({ ...prev, academic_year:e.target.value }))}><option value="">All Years</option>{principalAcademicYearOptions.map((value) => <option key={value} value={value}>{value}</option>)}</select></div>
+                      <div className="field"><label>Summary</label><div className="subtle" style={{padding:'12px 14px', border:'1px solid var(--line)', borderRadius:14, background:'var(--card)'}}>{principalFilteredGrades.length} grade record(s)</div></div>
+                    </div>
+                  </div>
+                  <div className="card">
+                    <h3>Filtered Grades</h3>
+                    <div className="table-wrap"><table><thead><tr><th>Student</th><th>Class</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Year</th></tr></thead><tbody>{principalFilteredGrades.length === 0 ? <tr><td colSpan="7"><div className="empty">No grade records found for the selected filters</div></td></tr> : principalFilteredGrades.map(r => <tr key={r.id} onClick={() => setCurrentStudent({ full_name: r.student_name, class_name: r.class_name, student_id: r.student_id })}><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td></tr>)}</tbody></table></div>
+                  </div>
+                </div>
+              ) : (
+                <div className="card">
+                  <h3>Academic Performance Summary</h3>
+                  <div className="table-wrap"><table><thead><tr><th>Student</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Year</th></tr></thead><tbody>{gradesHook.rows.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{r.subject_name}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td></tr>)}</tbody></table></div>
+                </div>
+              )
             )}
 
             {page === 'timetable' && (
