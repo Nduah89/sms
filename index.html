@@ -2310,87 +2310,87 @@
         );
       }, [role, profile?.id, mergedTeachersRows, teachersRawHook.rows]);
 
-      const teacherMainClassName = useMemo(() => {
-        if (role !== ROLE.TEACHER) return '';
-        const rawValue = teacherEntityRow?.teacher_main_class_name || teacherAssignedClassDisplay(teacherEntityRow || {}) || '';
-        return normalizeTeacherMainClassName(rawValue) || rawValue || '';
-      }, [role, teacherEntityRow, teacherAssignedClassDisplay]);
+      const teacherAssignments = useMemo(() => {
+        if (role !== ROLE.TEACHER || !profile?.id) return [];
+        const teacherRowId = teacherEntityRow?.id;
+        return (subjectsHook.rows || []).filter((row) => (
+          row.teacher_id === teacherRowId
+          || row.teacher_profile_id === profile.id
+          || row.profile_id === profile.id
+        ));
+      }, [role, profile?.id, teacherEntityRow?.id, subjectsHook.rows]);
 
-      const teacherAttendanceClassOptions = useMemo(() => {
-        if (role !== ROLE.TEACHER) return [{ value: '', label: 'Select Main Class' }];
-        const options = [];
-        const seen = new Set();
-        (mergedStudentsRows || []).forEach((student) => {
-          const studentClassName = normalizeTeacherMainClassName(student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '');
-          const classId = String(student.class_id || '').trim();
-          if (!classId || !studentClassName) return;
-          if (teacherMainClassName && studentClassName !== teacherMainClassName) return;
-          if (seen.has(classId)) return;
-          seen.add(classId);
-          options.push({ value: classId, label: studentClassName });
-        });
-        if (!options.length && teacherMainClassName) {
-          const matchedClassRow = orderedClassRows.find((row) => normalizeTeacherMainClassName(buildClassDisplay(row)) === teacherMainClassName || normalizeTeacherMainClassName(row.name || row.class_name || '') === teacherMainClassName);
-          if (matchedClassRow?.id) {
-            options.push({ value: matchedClassRow.id, label: teacherMainClassName });
-          }
-        }
-        return [{ value: '', label: 'Select Main Class' }, ...options];
-      }, [role, mergedStudentsRows, classNameMap, teacherMainClassName, orderedClassRows]);
+      const teacherAssignmentOptions = useMemo(() => (
+        [{ value: '', label: 'Select Teaching Assignment' }].concat(
+          teacherAssignments.map((assignment) => ({
+            value: assignment.id,
+            label: `${assignment.subject_name || 'Subject'} - ${assignment.class_name || classNameMap[assignment.class_id] || 'Class'}`
+          }))
+        )
+      ), [teacherAssignments, classNameMap]);
 
-      const selectedTeacherAttendanceClassId = attendanceForm.class_id || teacherAttendanceClassOptions[1]?.value || '';
-
-      const selectedTeacherAttendanceClassName = useMemo(() => {
-        if (!selectedTeacherAttendanceClassId) return teacherMainClassName || '';
-        return classNameMap[selectedTeacherAttendanceClassId] || mergedStudentsRows.find((student) => student.class_id === selectedTeacherAttendanceClassId)?.student_main_class_name || teacherMainClassName || '';
-      }, [selectedTeacherAttendanceClassId, classNameMap, mergedStudentsRows, teacherMainClassName]);
+      const selectedTeacherAssignment = useMemo(() => (
+        teacherAssignments.find((assignment) => assignment.id === attendanceForm.teacher_assignment_id) || null
+      ), [teacherAssignments, attendanceForm.teacher_assignment_id]);
 
       const teacherAssignableStudents = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
-        const rows = (mergedStudentsRows || []).filter((student) => {
-          const studentClassId = String(student.class_id || '').trim();
-          const studentClassName = normalizeTeacherMainClassName(student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '');
-          if (selectedTeacherAttendanceClassId) {
-            return studentClassId === selectedTeacherAttendanceClassId;
-          }
-          if (teacherMainClassName) {
-            return studentClassName === teacherMainClassName;
-          }
-          return false;
+        const targetClassId = selectedTeacherAssignment?.class_id || '';
+        const rows = mergedStudentsRows.filter((student) => {
+          if (!student?.class_id) return false;
+          if (targetClassId) return student.class_id === targetClassId;
+          return teacherAssignments.some((assignment) => assignment.class_id === student.class_id);
         });
         return rows.sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
-      }, [role, mergedStudentsRows, selectedTeacherAttendanceClassId, teacherMainClassName, classNameMap]);
+      }, [role, selectedTeacherAssignment?.class_id, mergedStudentsRows, teacherAssignments]);
 
       const attendanceRowsToday = useMemo(() => (
         (attendanceHook.rows || []).filter((row) => row.attendance_date === todayISO())
       ), [attendanceHook.rows]);
 
       const principalTeacherPresenceRows = useMemo(() => {
-        const rows = (mergedTeachersRows || []).map((teacherRow) => {
-          const assignedClassName = teacherAssignedClassDisplay(teacherRow);
+        const teacherRowMap = Object.fromEntries(mergedTeachersRows.map((row) => [row.id, row]));
+        const uniqueAssignments = [];
+        const seen = new Set();
+
+        (subjectsHook.rows || []).forEach((assignment) => {
+          const teacherRow = teacherRowMap[assignment.teacher_id] || null;
+          const teacherProfileId = assignment.teacher_profile_id || teacherRow?.profile_id || null;
+          const key = [
+            teacherProfileId || assignment.teacher_id || assignment.teacher_name || 'teacher',
+            assignment.class_id || assignment.class_name || 'class',
+            assignment.subject_name || 'subject'
+          ].join('::');
+          if (seen.has(key)) return;
+          seen.add(key);
+
           const matchingAttendance = attendanceRowsToday.find((row) => {
-            const sameTeacher = row.marked_by_profile_id === teacherRow.profile_id || (row.marked_by_name || '') === (teacherRow.full_name || '');
-            const sameClass = teacherRow.class_id
-              ? row.class_id === teacherRow.class_id
-              : normalizeTeacherMainClassName(row.class_name || classNameMap[row.class_id] || '') === normalizeTeacherMainClassName(assignedClassName || '');
-            return sameTeacher && sameClass;
+            const sameTeacher = teacherProfileId
+              ? row.marked_by_profile_id === teacherProfileId
+              : (row.marked_by_name || '') === (assignment.teacher_name || '');
+            const sameClass = assignment.class_id ? row.class_id === assignment.class_id : (row.class_name || '') === (assignment.class_name || '');
+            const sameSubject = assignment.subject_name
+              ? ((row.subject_name || '') === assignment.subject_name || !(row.subject_name || '').trim())
+              : true;
+            return sameTeacher && sameClass && sameSubject;
           });
 
-          return {
-            id: teacherRow.id || teacherRow.profile_id || teacherRow.full_name,
-            teacher_name: teacherRow.full_name || 'Teacher',
-            class_name: assignedClassName || '-',
+          uniqueAssignments.push({
+            id: assignment.id || key,
+            teacher_name: assignment.teacher_name || teacherRow?.full_name || 'Teacher',
+            class_name: assignment.class_name || classNameMap[assignment.class_id] || 'Class',
+            subject_name: assignment.subject_name || 'Subject',
             status: matchingAttendance ? 'Present' : 'Absent',
             marked_at: matchingAttendance?.updated_at || matchingAttendance?.created_at || null,
-            recorded_by_name: matchingAttendance?.marked_by_name || teacherRow.full_name || 'Teacher'
-          };
+            recorded_by_name: matchingAttendance?.marked_by_name || assignment.teacher_name || teacherRow?.full_name || 'Teacher'
+          });
         });
 
-        return rows.sort((a, b) => {
+        return uniqueAssignments.sort((a, b) => {
           if (a.status !== b.status) return a.status === 'Absent' ? -1 : 1;
           return String(a.teacher_name).localeCompare(String(b.teacher_name));
         });
-      }, [mergedTeachersRows, attendanceRowsToday, classNameMap, teacherAssignedClassDisplay]);
+      }, [subjectsHook.rows, attendanceRowsToday, mergedTeachersRows, classNameMap]);
 
       const principalTeacherPresenceSummary = useMemo(() => ({
         present: principalTeacherPresenceRows.filter((row) => row.status === 'Present').length,
@@ -3277,61 +3277,15 @@
             )}
 
             {page === 'teacher-dashboard' && (
-              <div className="grid">
+              <>
                 {renderWelcomeCard()}
                 <MetricCards items={[
-                  { label: 'Assigned Main Class', value: teacherMainClassName || '-' },
-                  { label: 'Students In Main Class', value: teacherAssignableStudents.length },
-                  { label: 'Attendance Recorded', value: attendanceHook.rows.filter(x=>x.marked_by_profile_id===profile.id).length },
+                  { label: 'Assigned Classes', value: [...new Set(subjectsHook.rows.map(x=>x.class_name).filter(Boolean))].length },
+                  { label: 'Assigned Subjects', value: [...new Set(subjectsHook.rows.map(x=>x.subject_name).filter(Boolean))].length },
+                  { label: 'Attendance Tasks', value: attendanceHook.rows.filter(x=>x.marked_by_profile_id===profile.id).length },
                   { label: 'Grading Tasks', value: gradesHook.rows.filter(x=>x.teacher_profile_id===profile.id).length }
                 ]} />
-                <div className="card">
-                  <h3>Attendance</h3>
-                  <p className="subtle">Teachers alone record attendance here. Select your assigned main class, then select a student in that same class. Once saved, the principal attendance summary updates automatically in real time.</p>
-                  <div className="form-grid-3">
-                    <div className="field">
-                      <label>Main Class</label>
-                      <select value={selectedTeacherAttendanceClassId} onChange={(e)=>setAttendanceForm({...attendanceForm, class_id:e.target.value, student_id:''})}>
-                        {teacherAttendanceClassOptions.map(option => <option key={option.value || 'empty'} value={option.value}>{option.label}</option>)}
-                      </select>
-                    </div>
-                    <div className="field">
-                      <label>Student</label>
-                      <select value={attendanceForm.student_id} onChange={(e)=>setAttendanceForm({...attendanceForm, student_id:e.target.value})}>
-                        <option value="">Select Student</option>
-                        {teacherAssignableStudents.map(student => <option key={student.id} value={student.id}>{student.full_name}{selectedTeacherAttendanceClassName ? `, ${selectedTeacherAttendanceClassName}` : ''}</option>)}
-                      </select>
-                    </div>
-                    <div className="field"><label>Date</label><input type="date" value={attendanceForm.attendance_date} onChange={(e)=>setAttendanceForm({...attendanceForm, attendance_date:e.target.value})} /></div>
-                    <div className="field"><label>Status</label><select value={attendanceForm.status} onChange={(e)=>setAttendanceForm({...attendanceForm, status:e.target.value})}>{attendanceOptions.map(x => <option key={x}>{x}</option>)}</select></div>
-                    <div className="field" style={{gridColumn:'1 / -1'}}><label>Remarks</label><input value={attendanceForm.remarks} onChange={(e)=>setAttendanceForm({...attendanceForm, remarks:e.target.value})} /></div>
-                  </div>
-                  <div style={{marginTop:16}}>
-                    <button
-                      className="btn"
-                      disabled={loginLogoutOnly || !selectedTeacherAttendanceClassId || !attendanceForm.student_id}
-                      onClick={()=>saveEntity(
-                        'attendance',
-                        attendanceForm,
-                        ()=>setAttendanceForm({ id:'', student_id:'', class_id:selectedTeacherAttendanceClassId || '', teacher_assignment_id:'', subject_name:'', attendance_date: todayISO(), status: 'Present', remarks: '' }),
-                        {
-                          marked_by_profile_id: profile.id,
-                          class_id: selectedTeacherAttendanceClassId || null,
-                          teacher_assignment_id: null,
-                          subject_name: null
-                        }
-                      )}
-                    >
-                      Save Attendance
-                    </button>
-                  </div>
-                  {!teacherMainClassName && <div className="footer-note">No assigned main class has been linked to this teacher yet.</div>}
-                </div>
-                <div className="card">
-                  <h3>Attendance Records</h3>
-                  <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.status}</td><td>{r.marked_by_name}</td><td>{r.remarks || '-'}</td></tr>)}</tbody></table></div>
-                </div>
-              </div>
+              </>
             )}
 
             {page === 'student-dashboard' && (
@@ -3701,21 +3655,23 @@
                   <h3>Daily Attendance</h3>
                   {role === ROLE.TEACHER ? (
                     <>
-                      <p className="subtle">Teachers alone can record attendance for students in their assigned main class. Once saved, the principal dashboard updates automatically in real time.</p>
+                      <p className="subtle">Teachers can record attendance only for the classes and subjects assigned to them. Once saved, the principal dashboard updates automatically in real time.</p>
                       <div className="form-grid-3">
                         <div className="field">
-                          <label>Main Class</label>
-                          <select value={selectedTeacherAttendanceClassId} onChange={(e)=>setAttendanceForm({...attendanceForm, class_id:e.target.value, student_id:''})}>
-                            {teacherAttendanceClassOptions.map(option => <option key={option.value || 'empty'} value={option.value}>{option.label}</option>)}
+                          <label>Teaching Assignment</label>
+                          <select value={attendanceForm.teacher_assignment_id} onChange={(e)=>setAttendanceForm({...attendanceForm, teacher_assignment_id:e.target.value, student_id:''})}>
+                            {teacherAssignmentOptions.map(option => <option key={option.value || 'empty'} value={option.value}>{option.label}</option>)}
                           </select>
                         </div>
                         <div className="field">
                           <label>Student</label>
                           <select value={attendanceForm.student_id} onChange={(e)=>setAttendanceForm({...attendanceForm, student_id:e.target.value})}>
                             <option value="">Select Student</option>
-                            {teacherAssignableStudents.map(student => <option key={student.id} value={student.id}>{student.full_name}{selectedTeacherAttendanceClassName ? `, ${selectedTeacherAttendanceClassName}` : ''}</option>)}
+                            {teacherAssignableStudents.map(student => <option key={student.id} value={student.id}>{student.full_name}{(classNameMap[student.class_id] || student.class_name) ? `, ${classNameMap[student.class_id] || student.class_name}` : ''}</option>)}
                           </select>
                         </div>
+                        <div className="field"><label>Assigned Class</label><input value={selectedTeacherAssignment?.class_name || classNameMap[selectedTeacherAssignment?.class_id] || ''} readOnly /></div>
+                        <div className="field"><label>Subject</label><input value={selectedTeacherAssignment?.subject_name || attendanceForm.subject_name || ''} readOnly /></div>
                         <div className="field"><label>Date</label><input type="date" value={attendanceForm.attendance_date} onChange={(e)=>setAttendanceForm({...attendanceForm, attendance_date:e.target.value})} /></div>
                         <div className="field"><label>Status</label><select value={attendanceForm.status} onChange={(e)=>setAttendanceForm({...attendanceForm, status:e.target.value})}>{attendanceOptions.map(x => <option key={x}>{x}</option>)}</select></div>
                         <div className="field" style={{gridColumn:'1 / -1'}}><label>Remarks</label><input value={attendanceForm.remarks} onChange={(e)=>setAttendanceForm({...attendanceForm, remarks:e.target.value})} /></div>
@@ -3723,30 +3679,30 @@
                       <div style={{marginTop:16}}>
                         <button
                           className="btn"
-                          disabled={loginLogoutOnly || !selectedTeacherAttendanceClassId || !attendanceForm.student_id}
+                          disabled={loginLogoutOnly || !attendanceForm.teacher_assignment_id || !attendanceForm.student_id}
                           onClick={()=>saveEntity(
                             'attendance',
                             attendanceForm,
-                            ()=>setAttendanceForm({ id:'', student_id:'', class_id:selectedTeacherAttendanceClassId || '', teacher_assignment_id:'', subject_name:'', attendance_date: todayISO(), status: 'Present', remarks: '' }),
+                            ()=>setAttendanceForm({ id:'', student_id:'', class_id:'', teacher_assignment_id:'', subject_name:'', attendance_date: todayISO(), status: 'Present', remarks: '' }),
                             {
                               marked_by_profile_id: profile.id,
-                              class_id: selectedTeacherAttendanceClassId || null,
-                              teacher_assignment_id: null,
-                              subject_name: null
+                              class_id: selectedTeacherAssignment?.class_id || attendanceForm.class_id || null,
+                              subject_name: selectedTeacherAssignment?.subject_name || attendanceForm.subject_name || null,
+                              teacher_assignment_id: attendanceForm.teacher_assignment_id || null
                             }
                           )}
                         >
                           Save Attendance
                         </button>
                       </div>
-                      {!teacherMainClassName && <div className="footer-note">No assigned main class has been linked to this teacher yet.</div>}
+                      {teacherAssignments.length === 0 && <div className="footer-note">No class and subject assignment has been linked to this teacher yet.</div>}
                     </>
                   ) : (
-                    <div className="footer-note">Attendance recording is reserved for teachers only. Saved records update the principal attendance summary automatically.</div>
+                    <div className="footer-note">Attendance recording is reserved for assigned teachers. This page is view only for other roles.</div>
                   )}
                 </div>
                 <div className="card">
-                  <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.status}</td><td>{r.marked_by_name}</td><td>{r.remarks || '-'}</td></tr>)}</tbody></table></div>
+                  <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Subject</th><th>Status</th><th>Teacher</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name || '-'}</td><td>{r.status}</td><td>{r.marked_by_name}</td></tr>)}</tbody></table></div>
                 </div>
               </div>
             )}
@@ -3767,13 +3723,14 @@
                     <h3>Teacher Presence Summary</h3>
                     <div className="table-wrap">
                       <table>
-                        <thead><tr><th>Teacher</th><th>Assigned Main Class</th><th>Status</th><th>Last Update</th></tr></thead>
+                        <thead><tr><th>Teacher</th><th>Assigned Class</th><th>Primary Subject</th><th>Status</th><th>Last Update</th></tr></thead>
                         <tbody>
-                          {principalTeacherPresenceRows.length === 0 && <tr><td colSpan="4"><div className="empty">No teacher attendance activity found</div></td></tr>}
+                          {principalTeacherPresenceRows.length === 0 && <tr><td colSpan="5"><div className="empty">No teacher attendance activity found</div></td></tr>}
                           {principalTeacherPresenceRows.map((row) => (
                             <tr key={row.id}>
                               <td>{row.teacher_name}</td>
                               <td>{row.class_name}</td>
+                              <td>{row.subject_name}</td>
                               <td><span className={classNames('chip', row.status === 'Present' ? 'success' : 'danger')}>{row.status}</span></td>
                               <td>{row.marked_at ? formatDate(row.marked_at) : 'Not yet recorded'}</td>
                             </tr>
@@ -3786,7 +3743,7 @@
                     <h3>Student Attendance Records</h3>
                     <div className="table-wrap">
                       <table>
-                        <thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead>
+                        <thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Subject</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead>
                         <tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}</tbody>
                       </table>
                     </div>
@@ -3795,7 +3752,7 @@
               ) : (
               <div className="card">
                 <h3>Attendance Summary</h3>
-                <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}</tbody></table></div>
+                <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Subject</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}</tbody></table></div>
               </div>
               )
             )}
