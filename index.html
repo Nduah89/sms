@@ -778,7 +778,13 @@
                 const key = field.key;
                 const label = field.label || key.replace(/_/g, ' ');
                 const value = formState[key] ?? (field.type === 'multiselect' ? [] : '');
-                const setValue = (next) => setFormState({ ...formState, [key]: next });
+                const setValue = (next) => {
+                  if (typeof field.onChange === 'function') {
+                    field.onChange(next, formState, setFormState);
+                    return;
+                  }
+                  setFormState({ ...formState, [key]: next });
+                };
                 return (
                   <div className="field" key={key}>
                     <label>{label}</label>
@@ -934,7 +940,7 @@
         profile_id: "", role_name: roleName, full_name: "", email: "", username: "", phone: "", account_status: "active", force_password_change: 'true', temporary_password: "",
         class_id: "", student_main_class_name: "", student_class_section: "None", teacher_main_class_name: "", gender: "Male", date_of_birth: "", guardian_contact: "", address: "", student_no: "", staff_no: "",
         subject_specialty: "", qualification: "", assigned_subjects: [], assigned_class_ids: [], relationship_to_student: "",
-        parent_full_name: "", parent_contact: "", emis_code: "", ghana_card: "", trained_status: "Trained"
+        parent_full_name: "", parent_contact: "", linked_student_names: "", linked_class_names: "", emis_code: "", ghana_card: "", trained_status: "Trained"
       });
       const [studentForm, setStudentForm] = useState(buildManagedForm('student'));
       const [teacherForm, setTeacherForm] = useState(buildManagedForm('teacher'));
@@ -2178,17 +2184,56 @@
         force_password_change: String(row.force_password_change ?? true)
       });
 
-      const buildParentFormFromRow = (row) => ({
-        ...buildManagedForm('parent'),
-        profile_id: row.profile_id || '',
-        role_name: 'parent',
-        full_name: row.full_name || '',
-        email: row.email || '',
-        phone: row.phone || row.profile_phone || '',
-        relationship_to_student: row.relationship_to_student || 'Parent',
-        account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
-        force_password_change: String(row.force_password_change ?? true)
-      });
+      const buildParentFormFromRow = (row) => {
+        const source = parentSourceMap[String(row.full_name || '').trim().toLowerCase()];
+        return ({
+          ...buildManagedForm('parent'),
+          profile_id: row.profile_id || '',
+          role_name: 'parent',
+          full_name: row.full_name || '',
+          email: row.email || '',
+          phone: row.phone || row.profile_phone || source?.phone || '',
+          relationship_to_student: row.relationship_to_student || source?.relationship_to_student || 'Parent',
+          linked_student_names: row.linked_student_names || source?.linked_student_names?.join(', ') || '',
+          linked_class_names: row.linked_class_names || source?.linked_class_names?.join(', ') || '',
+          account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
+          force_password_change: String(row.force_password_change ?? true)
+        });
+      };
+
+      useEffect(() => {
+        const selectedName = String(parentForm.full_name || '').trim();
+        if (!selectedName) {
+          if (parentForm.phone || parentForm.relationship_to_student || parentForm.linked_student_names || parentForm.linked_class_names) {
+            setParentForm((prev) => ({
+              ...prev,
+              phone: '',
+              relationship_to_student: '',
+              linked_student_names: '',
+              linked_class_names: ''
+            }));
+          }
+          return;
+        }
+        const source = parentSourceMap[selectedName.toLowerCase()];
+        if (!source) return;
+        const nextLinkedStudents = source.linked_student_names.join(', ');
+        const nextLinkedClasses = source.linked_class_names.join(', ');
+        if (
+          (parentForm.phone || '') !== (source.phone || '')
+          || (parentForm.relationship_to_student || 'Parent') !== (source.relationship_to_student || 'Parent')
+          || (parentForm.linked_student_names || '') !== nextLinkedStudents
+          || (parentForm.linked_class_names || '') !== nextLinkedClasses
+        ) {
+          setParentForm((prev) => ({
+            ...prev,
+            phone: source.phone || '',
+            relationship_to_student: source.relationship_to_student || 'Parent',
+            linked_student_names: nextLinkedStudents,
+            linked_class_names: nextLinkedClasses
+          }));
+        }
+      }, [parentForm.full_name, parentSourceMap]);
 
       useEffect(() => {
         if (!studentForm.student_main_class_name) {
@@ -2231,19 +2276,75 @@
       const parentLinksRows = parentLinksHook.rows || [];
       const managedUsersRows = managedUsersHook.rows || [];
       const studentLookup = useMemo(() => Object.fromEntries(mergedStudentsRows.map((row) => [row.id, row])), [mergedStudentsRows]);
+      const parentSourceRows = useMemo(() => {
+        const grouped = {};
+        (mergedStudentsRows || []).forEach((student) => {
+          const parentName = String(student.parent_full_name || '').trim();
+          if (!parentName) return;
+          const key = parentName.toLowerCase();
+          if (!grouped[key]) {
+            grouped[key] = {
+              full_name: parentName,
+              phone: String(student.parent_contact || '').trim(),
+              relationship_to_student: String(student.relationship_to_student || 'Parent').trim() || 'Parent',
+              linked_student_names: [],
+              linked_class_names: []
+            };
+          }
+          if (!grouped[key].phone && student.parent_contact) {
+            grouped[key].phone = String(student.parent_contact || '').trim();
+          }
+          if ((!grouped[key].relationship_to_student || grouped[key].relationship_to_student === 'Parent') && student.relationship_to_student) {
+            grouped[key].relationship_to_student = String(student.relationship_to_student || '').trim() || 'Parent';
+          }
+          if (student.full_name && !grouped[key].linked_student_names.includes(student.full_name)) {
+            grouped[key].linked_student_names.push(student.full_name);
+          }
+          const classLabel = classNameMap[student.class_id] || student.class_name || '';
+          if (classLabel && !grouped[key].linked_class_names.includes(classLabel)) {
+            grouped[key].linked_class_names.push(classLabel);
+          }
+        });
+        return Object.values(grouped).sort((a, b) => a.full_name.localeCompare(b.full_name));
+      }, [mergedStudentsRows, classNameMap]);
+      const parentSourceMap = useMemo(() => Object.fromEntries(parentSourceRows.map((row) => [row.full_name.toLowerCase(), row])), [parentSourceRows]);
+      const parentNameOptions = useMemo(() => (
+        [{ value: '', label: 'Select Parent Full Name' }].concat(
+          parentSourceRows.map((row) => ({ value: row.full_name, label: row.full_name }))
+        )
+      ), [parentSourceRows]);
+      const applyParentSourceToForm = (selectedName, currentForm = parentForm) => {
+        const source = parentSourceMap[String(selectedName || '').trim().toLowerCase()];
+        setParentForm({
+          ...currentForm,
+          role_name: 'parent',
+          full_name: selectedName || '',
+          phone: source?.phone || '',
+          relationship_to_student: source?.relationship_to_student || 'Parent',
+          linked_student_names: source?.linked_student_names?.join(', ') || '',
+          linked_class_names: source?.linked_class_names?.join(', ') || ''
+        });
+      };
       const computedParentsRows = useMemo(() => (
         (parentsHook.rows || []).map((parent) => {
           const links = parentLinksRows.filter((link) => link.parent_id === parent.id);
           const linkedStudents = links.map((link) => studentLookup[link.student_id]).filter(Boolean);
-          const linkedStudentNames = linkedStudents.map((student) => student.full_name).filter(Boolean);
-          const linkedClassNames = [...new Set(linkedStudents.map((student) => classNameMap[student.class_id] || student.class_name).filter(Boolean))];
+          let linkedStudentNames = linkedStudents.map((student) => student.full_name).filter(Boolean);
+          let linkedClassNames = [...new Set(linkedStudents.map((student) => classNameMap[student.class_id] || student.class_name).filter(Boolean))];
+          const source = parentSourceMap[String(parent.full_name || '').trim().toLowerCase()];
+          if ((!linkedStudentNames.length || !linkedClassNames.length) && source) {
+            if (!linkedStudentNames.length) linkedStudentNames = source.linked_student_names || [];
+            if (!linkedClassNames.length) linkedClassNames = source.linked_class_names || [];
+          }
           return {
             ...parent,
+            relationship_to_student: parent.relationship_to_student || source?.relationship_to_student || 'Parent',
+            phone: parent.phone || source?.phone || '',
             linked_student_names: linkedStudentNames.join(', '),
             linked_class_names: linkedClassNames.join(', ')
           };
         })
-      ), [parentsHook.rows, parentLinksRows, studentLookup, classNameMap]);
+      ), [parentsHook.rows, parentLinksRows, studentLookup, classNameMap, parentSourceMap]);
 
       const teacherEntityRow = useMemo(() => {
         if (role !== ROLE.TEACHER || !profile?.id) return null;
@@ -3199,7 +3300,7 @@
             {page === 'parents' && (
               <GenericCrudPage
                 title="Parents Management"
-                description="School admin can add, edit, and delete parent records here. Linked student names and class assignments are reflected automatically from Student Management and parent student links, so changes remain realtime consistent across both sections."
+                description="Choose a parent full name from names already captured in Student Management. When selected, the system automatically fills the parent phone, relationship, linked student names, and class records already tied to that parent from Student Management, while keeping realtime consistency across both sections."
                 columns={[
                   { key: 'full_name', label: 'Full Name' },
                   { key: 'phone', label: 'Phone' },
@@ -3218,10 +3319,12 @@
                 formState={parentForm}
                 setFormState={setParentForm}
                 fields={[
-                  { key: 'full_name', label: 'Full Name' },
-                  { key: 'phone', label: 'Phone' },
+                  { key: 'full_name', label: 'Parent Full Name', type: 'select', options: parentNameOptions, onChange: (next) => applyParentSourceToForm(next, parentForm) },
+                  { key: 'phone', label: 'Phone', readOnly: true },
                   { key: 'email', label: 'Email' },
-                  { key: 'relationship_to_student', label: 'Relationship', type: 'select', options: [{ value: '', label: 'Select Relationship' }, ...relationshipOptions.map(v => ({ value: v, label: v }))] },
+                  { key: 'relationship_to_student', label: 'Relationship', type: 'select', options: [{ value: '', label: 'Select Relationship' }, ...relationshipOptions.map(v => ({ value: v, label: v }))], disabled: true },
+                  { key: 'linked_student_names', label: 'Linked Student Name(s)', readOnly: true },
+                  { key: 'linked_class_names', label: 'Linked Class(es)', readOnly: true },
                   { key: 'account_status', label: 'Account Status', type: 'select', options: statusOptions },
                   { key: 'force_password_change', label: 'Force First Login Password Change', type: 'select', options: yesNoOptions }
                 ]}
@@ -3230,7 +3333,7 @@
                 onEdit={(row) => setParentForm(buildParentFormFromRow(row))}
                 extraActions={
                   <div className="subtle" style={{alignSelf:'center'}}>
-                    Linked student names and classes refresh automatically from Student Management.
+                    Select a parent name from Student Management to auto fill phone, relationship, linked student names, and linked classes.
                   </div>
                 }
                 rowActions={(row) => canSchoolAdminManageUsers ? <>
