@@ -262,14 +262,6 @@
     const attendanceOptions = ["Present", "Absent", "Late"];
     const paymentStatusOptions = ["Paid", "Partially Paid", "Unpaid"];
     const termOptions = ["Term 1", "Term 2", "Term 3"];
-    const buildAcademicYearOptions = (baseYear = new Date().getFullYear(), range = 2) => {
-      const years = [];
-      for (let offset = -1; offset <= range; offset += 1) {
-        const start = baseYear + offset;
-        years.push(`${start}/${start + 1}`);
-      }
-      return years;
-    };
     const SCHOOL_LOGIN_ALLOWED_ROLES = new Set(["admin", "principal", "teacher", "student", "parent", "accounts_office"]);
 
 
@@ -909,13 +901,7 @@
       const [notice, setNotice] = useState({ type: "", text: "" });
       const [selectedReport, setSelectedReport] = useState("grade");
       const [currentStudent, setCurrentStudent] = useState(null);
-      const academicYearOptions = useMemo(() => buildAcademicYearOptions(), []);
-      const [principalPerformanceFilters, setPrincipalPerformanceFilters] = useState({
-        mainClass: '',
-        studentId: '',
-        termName: 'Term 1',
-        academicYear: buildAcademicYearOptions()[1] || `${new Date().getFullYear()}/${new Date().getFullYear() + 1}`
-      });
+      const [principalPerformanceFilter, setPrincipalPerformanceFilter] = useState({ class_name: '', student_id: '', term_name: 'All Terms', academic_year: '' });
       const [passwordForm, setPasswordForm] = useState({ newPassword: "" });
       const [welcomeContext, setWelcomeContext] = useState(null);
       const [themeConfig, setThemeConfig] = useState(normalizeThemeConfig({ theme_name: DEFAULT_THEME_KEY }));
@@ -1918,9 +1904,49 @@
       };
 
       const handleFirstLoginPasswordChange = async () => {
-        const { error } = await changePassword(passwordForm.newPassword);
-        if (error) return setNotice({ type: 'danger', text: error.message });
-        await withNotice(async () => supabaseClient.from('profiles').update({ force_password_change: false }).eq('id', profile.id), 'Password changed successfully');
+        const nextPassword = String(passwordForm.newPassword || '').trim();
+        if (!nextPassword) {
+          setNotice({ type: 'danger', text: 'Enter a new password before continuing.' });
+          return;
+        }
+
+        const { error } = await changePassword(nextPassword);
+        if (error) {
+          setNotice({ type: 'danger', text: error.message });
+          return;
+        }
+
+        setNotice({ type: '', text: '' });
+
+        let completeError = null;
+        try {
+          const { error: rpcError } = await supabaseClient.rpc('complete_first_login_password_change', {
+            p_profile_id: profile.id
+          });
+          completeError = rpcError || null;
+        } catch (rpcErr) {
+          completeError = rpcErr || null;
+        }
+
+        if (completeError) {
+          const { error: fallbackError } = await supabaseClient
+            .from('profiles')
+            .update({ force_password_change: false })
+            .eq('id', profile.id);
+          if (fallbackError) {
+            setNotice({
+              type: 'danger',
+              text: completeError?.message || fallbackError.message || 'Password was changed, but the first login flag could not be cleared.'
+            });
+            return;
+          }
+        }
+
+        setProfile((prev) => prev ? ({ ...prev, force_password_change: false }) : prev);
+        setPasswordForm({ newPassword: '' });
+        setNotice({ type: 'success', text: 'Password changed successfully' });
+        await refreshAll();
+        await loadCore();
       };
 
       const handleBulkStudentImport = (file) => {
@@ -2320,35 +2346,180 @@
         absent: principalTeacherPresenceRows.filter((row) => row.status === 'Absent').length
       }), [principalTeacherPresenceRows]);
 
-      const principalAssignableMainClassOptions = useMemo(() => [{ value: '', label: 'Select Assign Main Class' }, ...orderedTeacherMainClasses.map(v => ({ value: v, label: v }))], [orderedTeacherMainClasses]);
-      const principalStudentsInSelectedMainClass = useMemo(() => {
-        const selectedMainClass = String(principalPerformanceFilters.mainClass || '').trim();
-        const rows = mergedStudentsRows.filter((row) => {
-          const rowMainClass = normalizeMainClassName(row.student_main_class_name || row.class_name || row.assigned_class || '');
-          return !selectedMainClass || rowMainClass === normalizeMainClassName(selectedMainClass);
+      const principalSubjectNames = useMemo(() => {
+        const values = new Set();
+        (mergedTeachersRows || []).forEach((row) => {
+          const value = String(row.subject_specialty || '').trim();
+          if (value) values.add(value);
         });
-        return rows.sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
-      }, [mergedStudentsRows, principalPerformanceFilters.mainClass]);
-      const principalFilteredGrades = useMemo(() => (
-        gradesHook.rows.filter((row) => {
-          const mainClass = normalizeMainClassName(row.class_name || row.assigned_class || '');
-          if (principalPerformanceFilters.mainClass && mainClass !== normalizeMainClassName(principalPerformanceFilters.mainClass)) return false;
-          if (principalPerformanceFilters.studentId && String(row.student_id || '') !== String(principalPerformanceFilters.studentId || '')) return false;
-          if (principalPerformanceFilters.termName && String(row.term_name || '') !== String(principalPerformanceFilters.termName || '')) return false;
-          if (principalPerformanceFilters.academicYear && String(row.academic_year || '') !== String(principalPerformanceFilters.academicYear || '')) return false;
+        (subjectsHook.rows || []).forEach((row) => {
+          const value = String(row.subject_name || '').trim();
+          if (value) values.add(value);
+        });
+        return Array.from(values).sort((a, b) => a.localeCompare(b));
+      }, [mergedTeachersRows, subjectsHook.rows]);
+
+      const principalAttendanceOverview = useMemo(() => {
+        const rows = attendanceHook.rows || [];
+        return {
+          total: rows.length,
+          present: rows.filter((row) => String(row.status || '').toLowerCase() === 'present').length,
+          absent: rows.filter((row) => String(row.status || '').toLowerCase() === 'absent').length,
+          late: rows.filter((row) => String(row.status || '').toLowerCase() === 'late').length
+        };
+      }, [attendanceHook.rows]);
+
+      const principalPerformanceOverview = useMemo(() => {
+        const rows = gradesHook.rows || [];
+        const averages = rows
+          .map((row) => Number(row.average_score || row.total_score || 0))
+          .filter((value) => Number.isFinite(value));
+        const overallAverage = averages.length ? (averages.reduce((sum, value) => sum + value, 0) / averages.length) : 0;
+        return {
+          gradeEntries: rows.length,
+          overallAverage: overallAverage.toFixed(1),
+          uniqueStudents: new Set(rows.map((row) => row.student_id || row.student_name).filter(Boolean)).size
+        };
+      }, [gradesHook.rows]);
+
+      const principalClassPerformanceRows = useMemo(() => {
+        const grouped = new Map();
+        (gradesHook.rows || []).forEach((row) => {
+          const key = String(row.class_name || row.class_id || 'Unassigned');
+          const current = grouped.get(key) || { class_name: key, count: 0, total: 0 };
+          current.count += 1;
+          current.total += Number(row.average_score || row.total_score || 0);
+          grouped.set(key, current);
+        });
+        return Array.from(grouped.values())
+          .map((row) => ({
+            ...row,
+            average_score: row.count ? (row.total / row.count).toFixed(1) : '0.0'
+          }))
+          .sort((a, b) => String(a.class_name).localeCompare(String(b.class_name)));
+      }, [gradesHook.rows]);
+
+      const principalTeacherAssignmentSummaryRows = useMemo(() => (
+        (mergedTeachersRows || []).map((row) => ({
+          id: row.id || row.profile_id || row.full_name,
+          full_name: row.full_name || '-',
+          assigned_class: teacherAssignedClassDisplay(row),
+          primary_subject: row.subject_specialty || '-',
+          qualification: row.qualification || '-',
+          training_status: row.trained_status || '-'
+        }))
+      ), [mergedTeachersRows, teacherAssignedClassDisplay]);
+
+      const recentAcademicUpdates = useMemo(() => {
+        const gradeUpdates = (gradesHook.rows || []).map((row) => ({
+          id: `grade-${row.id}`,
+          update_type: 'Grade Update',
+          subject_name: row.subject_name || '-',
+          student_name: row.student_name || '-',
+          teacher_name: row.teacher_name || row.marked_by_name || '-',
+          class_name: row.class_name || '-',
+          term_name: row.term_name || '-',
+          academic_year: row.academic_year || '-',
+          updated_at: row.updated_at || row.created_at || null
+        }));
+        const attendanceUpdates = (attendanceHook.rows || []).map((row) => ({
+          id: `attendance-${row.id}`,
+          update_type: 'Attendance Update',
+          subject_name: row.subject_name || '-',
+          student_name: row.student_name || '-',
+          teacher_name: row.marked_by_name || '-',
+          class_name: row.class_name || '-',
+          term_name: '-',
+          academic_year: '-',
+          updated_at: row.updated_at || row.created_at || null
+        }));
+        return gradeUpdates.concat(attendanceUpdates)
+          .sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0))
+          .slice(0, 12);
+      }, [gradesHook.rows, attendanceHook.rows]);
+
+      const principalClassFilterOptions = useMemo(() => {
+        const values = Array.from(new Set((mergedStudentsRows || []).map((row) => String(row.student_main_class_name || row.class_name || row.assigned_class || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+        return [{ value: '', label: 'All Assigned Main Classes' }].concat(values.map((value) => ({ value, label: value })));
+      }, [mergedStudentsRows]);
+
+      const principalStudentFilterOptions = useMemo(() => {
+        const filteredStudents = (mergedStudentsRows || []).filter((row) => {
+          const rowClass = String(row.student_main_class_name || row.class_name || row.assigned_class || '').trim();
+          return !principalPerformanceFilter.class_name || rowClass === principalPerformanceFilter.class_name;
+        });
+        const seen = new Map();
+        filteredStudents.forEach((row) => {
+          const key = String(row.student_id || row.profile_id || row.id || '').trim();
+          if (!key || seen.has(key)) return;
+          seen.set(key, { value: key, label: row.full_name || key });
+        });
+        return [{ value: '', label: principalPerformanceFilter.class_name ? 'All Students In Selected Class' : 'All Students' }].concat(Array.from(seen.values()).sort((a, b) => a.label.localeCompare(b.label)));
+      }, [mergedStudentsRows, principalPerformanceFilter.class_name]);
+
+      const principalAcademicYearOptions = useMemo(() => {
+        const now = new Date();
+        const baseYear = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+        const rollingYears = [];
+        for (let offset = -1; offset <= 3; offset += 1) {
+          const startYear = baseYear + offset;
+          rollingYears.push(`${startYear}/${startYear + 1}`);
+        }
+        const gradeYears = Array.from(new Set((gradesHook.rows || []).map((row) => String(row.academic_year || '').trim()).filter(Boolean)));
+        return Array.from(new Set(rollingYears.concat(gradeYears))).sort();
+      }, [gradesHook.rows]);
+
+      const principalPerformanceRows = useMemo(() => (
+        (gradesHook.rows || []).filter((row) => {
+          const rowClass = String(row.class_name || row.student_main_class_name || row.assigned_class || '').trim();
+          const rowStudentId = String(row.student_id || row.profile_id || row.id || '').trim();
+          if (principalPerformanceFilter.class_name && rowClass !== principalPerformanceFilter.class_name) return false;
+          if (principalPerformanceFilter.student_id && rowStudentId !== principalPerformanceFilter.student_id) return false;
+          if (principalPerformanceFilter.term_name && principalPerformanceFilter.term_name !== 'All Terms' && String(row.term_name || '') !== principalPerformanceFilter.term_name) return false;
+          if (principalPerformanceFilter.academic_year && String(row.academic_year || '') !== principalPerformanceFilter.academic_year) return false;
           return true;
         })
-      ), [gradesHook.rows, principalPerformanceFilters]);
-      const principalCurrentStudent = useMemo(() => {
-        if (!principalPerformanceFilters.studentId) return null;
-        const student = mergedStudentsRows.find((row) => String(row.student_id || row.id || '') === String(principalPerformanceFilters.studentId || ''));
-        if (!student) return null;
+      ), [gradesHook.rows, principalPerformanceFilter]);
+
+      const principalSelectedStudent = useMemo(() => {
+        if (!principalPerformanceFilter.student_id) return null;
+        const matchedStudent = mergedStudentsRows.find((row) => String(row.student_id || row.profile_id || row.id || '') === String(principalPerformanceFilter.student_id || ''));
+        if (matchedStudent) return matchedStudent;
+        const gradeRow = principalPerformanceRows.find((row) => String(row.student_id || row.profile_id || row.id || '') === principalPerformanceFilter.student_id);
+        if (!gradeRow) return null;
         return {
-          student_id: student.student_id || student.id,
-          full_name: student.full_name,
-          class_name: student.student_main_class_name || student.class_name || student.assigned_class || '-'
+          student_id: gradeRow.student_id,
+          full_name: gradeRow.student_name,
+          student_main_class_name: gradeRow.class_name,
+          class_name: gradeRow.class_name
         };
-      }, [mergedStudentsRows, principalPerformanceFilters.studentId]);
+      }, [principalPerformanceFilter.student_id, principalPerformanceRows, mergedStudentsRows]);
+
+      function handlePrincipalAcademicPrint() {
+        if (!principalSelectedStudent) {
+          notify('warning', 'Select a student first to print the academic report.');
+          return;
+        }
+        const rows = principalPerformanceRows.filter((row) => String(row.student_id || row.profile_id || row.id || '') === String(principalSelectedStudent.student_id || '') || String(row.student_name || '') === String(principalSelectedStudent.full_name || ''));
+        const reportWindow = window.open('', '_blank', 'width=1000,height=800');
+        if (!reportWindow) {
+          notify('warning', 'Pop up blocked. Please allow pop ups to print the report.');
+          return;
+        }
+        const tableRows = rows.map((row) => `<tr><td>${row.subject_name || '-'}</td><td>${row.total_score ?? '-'}</td><td>${row.average_score ?? '-'}</td><td>${row.term_name || '-'}</td><td>${row.academic_year || '-'}</td></tr>`).join('');
+        reportWindow.document.write(`<!DOCTYPE html><html><head><title>Student Academic Report</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#0f172a}h1,h2,p{margin:0 0 12px}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #cbd5e1;padding:10px;text-align:left}th{background:#f8fafc}</style></head><body><h1>Student Academic Report</h1><p><strong>Student:</strong> ${principalSelectedStudent.full_name || '-'}</p><p><strong>Assign Main Class:</strong> ${principalSelectedStudent.student_main_class_name || principalSelectedStudent.class_name || '-'}</p><p><strong>Term:</strong> ${principalPerformanceFilter.term_name || 'All Terms'}</p><p><strong>Academic Year:</strong> ${principalPerformanceFilter.academic_year || '-'}</p><table><thead><tr><th>Subject</th><th>Total Score</th><th>Average Score</th><th>Term</th><th>Academic Year</th></tr></thead><tbody>${tableRows || '<tr><td colspan="5">No grade records found</td></tr>'}</tbody></table></body></html>`);
+        reportWindow.document.close();
+        reportWindow.focus();
+        reportWindow.print();
+      }
+
+      useEffect(() => {
+        if (!principalPerformanceFilter.student_id) return;
+        const stillExists = principalStudentFilterOptions.some((option) => option.value === principalPerformanceFilter.student_id);
+        if (!stillExists) {
+          setPrincipalPerformanceFilter((prev) => ({ ...prev, student_id: '' }));
+        }
+      }, [principalStudentFilterOptions, principalPerformanceFilter.student_id]);
 
       useEffect(() => {
         if (role !== ROLE.TEACHER) return;
@@ -2985,81 +3156,106 @@
                 </div>
               </div>
             )}
+
             {page === 'principal-dashboard' && (
               <div className="grid">
                 {renderWelcomeCard()}
                 <MetricCards items={[
-                  { label: 'Total Students', value: studentsHook.rows.length },
-                  { label: 'Total Teachers', value: teachersHook.rows.length },
-                  { label: 'Total Subjects', value: [...new Set(subjectsHook.rows.map(x => x.subject_name).filter(Boolean))].length },
-                  { label: 'Attendance Records Today', value: attendanceRowsToday.length }
+                  { label: 'Total Students', value: mergedStudentsRows.length },
+                  { label: 'Total Teachers', value: mergedTeachersRows.length },
+                  { label: 'Total Subjects', value: principalSubjectNames.length },
+                  { label: 'Attendance Records', value: principalAttendanceOverview.total }
                 ]} />
+
                 <div className="grid cards-2">
                   <div className="card">
                     <h3>Student Attendance Overview</h3>
                     <div style={{display:'grid', gap:10}}>
-                      <div><strong>Present:</strong> {attendanceRowsToday.filter(r => String(r.status || '').toLowerCase() === 'present').length}</div>
-                      <div><strong>Absent:</strong> {attendanceRowsToday.filter(r => String(r.status || '').toLowerCase() === 'absent').length}</div>
-                      <div><strong>Late:</strong> {attendanceRowsToday.filter(r => String(r.status || '').toLowerCase() === 'late').length}</div>
-                      <div className="subtle">Attendance recorded by teachers reflects here automatically.</div>
+                      <div><strong>Total Records:</strong> {principalAttendanceOverview.total}</div>
+                      <div><strong>Present:</strong> {principalAttendanceOverview.present}</div>
+                      <div><strong>Absent:</strong> {principalAttendanceOverview.absent}</div>
+                      <div><strong>Late:</strong> {principalAttendanceOverview.late}</div>
                     </div>
                   </div>
                   <div className="card">
                     <h3>Student Performance Overview</h3>
                     <div style={{display:'grid', gap:10}}>
-                      <div><strong>Total Grade Entries:</strong> {gradesHook.rows.length}</div>
-                      <div><strong>Students With Grades:</strong> {[...new Set(gradesHook.rows.map(r => r.student_id).filter(Boolean))].length}</div>
-                      <div><strong>Average Score:</strong> {gradesHook.rows.length ? (gradesHook.rows.reduce((sum, r) => sum + Number(r.average_score || 0), 0) / gradesHook.rows.length).toFixed(2) : '0.00'}</div>
+                      <div><strong>Grade Entries:</strong> {principalPerformanceOverview.gradeEntries}</div>
+                      <div><strong>Students Covered:</strong> {principalPerformanceOverview.uniqueStudents}</div>
+                      <div><strong>Overall Average:</strong> {principalPerformanceOverview.overallAverage}</div>
                     </div>
                   </div>
                 </div>
+
+                <div className="grid cards-2">
+                  <div className="card">
+                    <h3>Total Subjects</h3>
+                    {principalSubjectNames.length === 0 ? <div className="empty">No subjects found yet</div> : <div style={{display:'flex', flexWrap:'wrap', gap:8}}>{principalSubjectNames.map((name) => <span key={name} className="chip info">{name}</span>)}</div>}
+                  </div>
+                  <div className="card">
+                    <h3>Teacher Assign Main Class and Primary Subject Specialty Summary</h3>
+                    <div className="table-wrap" style={{marginTop:12}}>
+                      <table>
+                        <thead><tr><th>Teacher</th><th>Main Class</th><th>Primary Subject</th></tr></thead>
+                        <tbody>
+                          {principalTeacherAssignmentSummaryRows.length === 0 && <tr><td colSpan="3"><div className="empty">No teacher records found</div></td></tr>}
+                          {principalTeacherAssignmentSummaryRows.slice(0, 10).map((row) => (
+                            <tr key={row.id}>
+                              <td>{row.full_name}</td>
+                              <td>{row.assigned_class}</td>
+                              <td>{row.primary_subject}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="grid cards-2">
                   <div className="card">
                     <h3>Class Academic Performance Summary</h3>
                     <div className="table-wrap">
                       <table>
-                        <thead><tr><th>Assign Main Class</th><th>Grade Entries</th><th>Average Score</th></tr></thead>
+                        <thead><tr><th>Class</th><th>Grade Entries</th><th>Average</th></tr></thead>
                         <tbody>
-                          {principalAssignableMainClassOptions.filter(opt => opt.value).map(opt => {
-                            const rows = gradesHook.rows.filter(r => normalizeMainClassName(r.class_name || '') === normalizeMainClassName(opt.value));
-                            const avg = rows.length ? (rows.reduce((sum, r) => sum + Number(r.average_score || 0), 0) / rows.length).toFixed(2) : '0.00';
-                            return <tr key={opt.value}><td>{opt.label}</td><td>{rows.length}</td><td>{avg}</td></tr>;
-                          })}
+                          {principalClassPerformanceRows.length === 0 && <tr><td colSpan="3"><div className="empty">No class performance records found</div></td></tr>}
+                          {principalClassPerformanceRows.map((row) => (
+                            <tr key={row.class_name}>
+                              <td>{row.class_name}</td>
+                              <td>{row.count}</td>
+                              <td>{row.average_score}</td>
+                            </tr>
+                          ))}
                         </tbody>
                       </table>
-                    </div>
-                  </div>
-                  <div className="card">
-                    <h3>Teacher Assign Main Class and Primary Subject Specialty Summary</h3>
-                    <div className="table-wrap">
-                      <table>
-                        <thead><tr><th>Teacher</th><th>Assign Main Class</th><th>Primary Subject Specialty</th></tr></thead>
-                        <tbody>
-                          {mergedTeachersRows.length === 0 && <tr><td colSpan="3"><div className="empty">No teacher records found</div></td></tr>}
-                          {mergedTeachersRows.map(row => <tr key={row.id}><td>{row.full_name || '-'}</td><td>{row.teacher_main_class_name || row.class_name || '-'}</td><td>{row.subject_specialty || '-'}</td></tr>)}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-                <div className="grid cards-2">
-                  <div className="card">
-                    <h3>Total Subjects</h3>
-                    <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
-                      {[...new Set(subjectsHook.rows.map(x => x.subject_name).filter(Boolean))].length === 0 ? <div className="empty">No subjects found</div> : [...new Set(subjectsHook.rows.map(x => x.subject_name).filter(Boolean))].sort().map(name => <span key={name} className="chip info">{name}</span>)}
                     </div>
                   </div>
                   <div className="card">
                     <h3>Recent Academic Updates</h3>
-                    <div style={{display:'grid', gap:10}}>
-                      {auditHook.rows.filter(r => ['students','teachers','grades','attendance','profiles'].includes(String(r.table_name || ''))).slice(0, 8).map(r => <div key={r.id} style={{padding:'10px 0', borderBottom:'1px solid #e2e8f0'}}><strong>{r.actor_name || 'System'}</strong><div className="subtle">{r.summary || 'Academic record updated'}</div><div className="subtle">{formatDate(r.created_at)}</div></div>)}
+                    <div className="table-wrap">
+                      <table>
+                        <thead><tr><th>Type</th><th>Student</th><th>Class</th><th>Teacher</th><th>Updated</th></tr></thead>
+                        <tbody>
+                          {recentAcademicUpdates.length === 0 && <tr><td colSpan="5"><div className="empty">No recent academic updates found</div></td></tr>}
+                          {recentAcademicUpdates.map((row) => (
+                            <tr key={row.id}>
+                              <td>{row.update_type}</td>
+                              <td>{row.student_name}</td>
+                              <td>{row.class_name}</td>
+                              <td>{row.teacher_name}</td>
+                              <td>{row.updated_at ? formatDate(row.updated_at) : '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </div>
               </div>
             )}
 
-            {page === 'teacher-dashboard'  && (
+            {page === 'teacher-dashboard' && (
               <>
                 {renderWelcomeCard()}
                 <MetricCards items={[
@@ -3128,6 +3324,36 @@
               </div>
             )}
             {page === 'students' && (
+              role === ROLE.PRINCIPAL ? (
+                <div className="card">
+                  <h3>Student Records</h3>
+                  <p className="subtle">View only student records. All saved student changes, including linked parent details, reflect automatically here.</p>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Full Name</th><th>Student No</th><th>Assigned Class</th><th>Gender</th><th>Date of Birth</th><th>Parent Full Name</th><th>Parent Contact</th><th>Account</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {mergedStudentsRows.length === 0 && <tr><td colSpan="8"><div className="empty">No student records found</div></td></tr>}
+                        {mergedStudentsRows.map((row) => (
+                          <tr key={row.id}>
+                            <td>{row.full_name}</td>
+                            <td>{row.student_no || '-'}</td>
+                            <td>{teacherAssignedClassDisplay(row)}</td>
+                            <td>{row.gender || '-'}</td>
+                            <td>{formatDate(row.date_of_birth)}</td>
+                            <td>{row.parent_full_name || '-'}</td>
+                            <td>{row.parent_contact || '-'}</td>
+                            <td><span className={classNames('chip', row.account_status === 'active' ? 'success' : row.account_status === 'archived' ? 'warning' : 'danger')}>{row.account_status || '-'}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
               <GenericCrudPage
                 title="Student Management"
                 description="Add, edit, archive, and delete student records. Parent full name and parent contact captured here are synced into the Parents section. Assign Main Class uses the fixed ordered list, and Category is a separate optional selector of None, A, B, or C."
@@ -3163,16 +3389,45 @@
                 onEdit={(row) => setStudentForm(buildStudentFormFromRow(row))}
                 rowActions={(row) => canSchoolAdminManageUsers ? <>
                   <button className="btn secondary" onClick={() => setManagedUserStatus(row, 'archived')}>Archive</button>
-                  <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
-                  <button className="btn secondary" onClick={() => openManagedUserInCredentials(row)}>Open in User Accounts</button>
+                  <button className="btn secondary" onClick={() => openManagedUserCredentials(row)}>User Accounts</button>
+                  <button className="btn warning" onClick={() => handleProvisionManagedUser(row)}>{String(row.auth_user_id || '').trim() ? 'Reset PW' : 'Generate PW'}</button>
                 </> : null}
-                extraActions={<><button className="btn secondary" onClick={()=>generateStudentNoForCurrentSchool(setStudentForm)}>Generate Student No</button><button className="btn secondary" onClick={()=>exportCsv(mergedStudentsRows.map((row) => ({ ...row, assigned_class: classNameMap[row.class_id] || row.class_name || '' })), 'students.csv')}>Export CSV</button><label className="btn secondary">Import CSV<input hidden type="file" accept=".csv" onChange={(e)=>handleBulkStudentImport(e.target.files?.[0])} /></label></>}
-              >
-                {importStatus && <div className="footer-note">{importStatus}</div>}
-              </GenericCrudPage>
+              />
+              )
             )}
 
             {page === 'teachers' && (
+              role === ROLE.PRINCIPAL ? (
+                <div className="card">
+                  <h3>Teacher Records</h3>
+                  <p className="subtle">View only teacher records. All saved teacher changes reflect automatically here.</p>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Full Name</th><th>Teacher EMIS Code</th><th>Assigned Class</th><th>Primary Subject</th><th>Qualification</th><th>Gender</th><th>Date of Birth</th><th>Training Status</th><th>Account</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {mergedTeachersRows.length === 0 && <tr><td colSpan="9"><div className="empty">No teacher records found</div></td></tr>}
+                        {mergedTeachersRows.map((row) => (
+                          <tr key={row.id}>
+                            <td>{row.full_name}</td>
+                            <td>{row.emis_code || '-'}</td>
+                            <td>{teacherAssignedClassDisplay(row)}</td>
+                            <td>{row.subject_specialty || '-'}</td>
+                            <td>{row.qualification || '-'}</td>
+                            <td>{row.gender || '-'}</td>
+                            <td>{formatDate(row.date_of_birth)}</td>
+                            <td>{row.trained_status || '-'}</td>
+                            <td><span className={classNames('chip', row.account_status === 'active' ? 'success' : row.account_status === 'archived' ? 'warning' : 'danger')}>{row.account_status || '-'}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
               <GenericCrudPage
                 title="Teacher Management"
                 description="Add, edit, archive, and delete teacher records. Staff number is generated automatically from the school name context, and each teacher keeps one assigned main class and one primary subject specialty with real time updates."
@@ -3210,11 +3465,11 @@
                 onEdit={(row) => setTeacherForm(buildTeacherFormFromRow(row))}
                 rowActions={(row) => canSchoolAdminManageUsers ? <>
                   <button className="btn secondary" onClick={() => setManagedUserStatus(row, 'archived')}>Archive</button>
-                  <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
-                  <button className="btn secondary" onClick={() => openManagedUserInCredentials(row)}>Open in User Accounts</button>
+                  <button className="btn secondary" onClick={() => openManagedUserCredentials(row)}>User Accounts</button>
+                  <button className="btn warning" onClick={() => handleProvisionManagedUser(row)}>{String(row.auth_user_id || '').trim() ? 'Reset PW' : 'Generate PW'}</button>
                 </> : null}
-                extraActions={<><button className="btn secondary" onClick={()=>exportCsv(mergedTeachersRows.map((row) => ({ ...row, assigned_class: teacherAssignedClassDisplay(row) })), 'teachers.csv')}>Export CSV</button></>}
               />
+              )
             )}
 
             {page === 'parents' && (
@@ -3432,10 +3687,53 @@
             )}
 
             {(page === 'attendance-summary' || page === 'my-attendance') && (
+              page === 'attendance-summary' && role === ROLE.PRINCIPAL ? (
+                <div className="grid">
+                  <div className="card">
+                    <h3>Attendance Summary</h3>
+                    <div className="grid cards-4">
+                      <div className="card"><strong>Total Records</strong><div className="metric">{principalAttendanceOverview.total}</div></div>
+                      <div className="card"><strong>Present</strong><div className="metric">{principalAttendanceOverview.present}</div></div>
+                      <div className="card"><strong>Absent</strong><div className="metric">{principalAttendanceOverview.absent}</div></div>
+                      <div className="card"><strong>Late</strong><div className="metric">{principalAttendanceOverview.late}</div></div>
+                    </div>
+                  </div>
+                  <div className="card">
+                    <h3>Teacher Presence Summary</h3>
+                    <div className="table-wrap">
+                      <table>
+                        <thead><tr><th>Teacher</th><th>Assigned Class</th><th>Primary Subject</th><th>Status</th><th>Last Update</th></tr></thead>
+                        <tbody>
+                          {principalTeacherPresenceRows.length === 0 && <tr><td colSpan="5"><div className="empty">No teacher attendance activity found</div></td></tr>}
+                          {principalTeacherPresenceRows.map((row) => (
+                            <tr key={row.id}>
+                              <td>{row.teacher_name}</td>
+                              <td>{row.class_name}</td>
+                              <td>{row.subject_name}</td>
+                              <td><span className={classNames('chip', row.status === 'Present' ? 'success' : 'danger')}>{row.status}</span></td>
+                              <td>{row.marked_at ? formatDate(row.marked_at) : 'Not yet recorded'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div className="card">
+                    <h3>Student Attendance Records</h3>
+                    <div className="table-wrap">
+                      <table>
+                        <thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Subject</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead>
+                        <tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}</tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              ) : (
               <div className="card">
                 <h3>Attendance Summary</h3>
                 <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Subject</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}</tbody></table></div>
               </div>
+              )
             )}
 
             {page === 'grades' && (
@@ -3459,54 +3757,43 @@
                 </div>
               </div>
             )}
+
             {(page === 'performance-summary' || page === 'my-grades') && (
-              role === ROLE.PRINCIPAL ? (
+              page === 'performance-summary' && role === ROLE.PRINCIPAL ? (
                 <div className="grid">
                   <div className="card">
                     <h3>Academic Performance</h3>
                     <div className="form-grid-3">
-                      <div className="field">
-                        <label>Assign Main Class</label>
-                        <select value={principalPerformanceFilters.mainClass} onChange={(e)=>setPrincipalPerformanceFilters({...principalPerformanceFilters, mainClass:e.target.value, studentId:''})}>
-                          {principalAssignableMainClassOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                        </select>
-                      </div>
-                      <div className="field">
-                        <label>Student</label>
-                        <select value={principalPerformanceFilters.studentId} onChange={(e)=>setPrincipalPerformanceFilters({...principalPerformanceFilters, studentId:e.target.value})}>
-                          <option value="">Select Student</option>
-                          {principalStudentsInSelectedMainClass.map(student => <option key={student.student_id || student.id} value={student.student_id || student.id}>{student.full_name}</option>)}
-                        </select>
-                      </div>
-                      <div className="field">
-                        <label>Term</label>
-                        <select value={principalPerformanceFilters.termName} onChange={(e)=>setPrincipalPerformanceFilters({...principalPerformanceFilters, termName:e.target.value})}>{termOptions.map(x => <option key={x} value={x}>{x}</option>)}</select>
-                      </div>
-                      <div className="field">
-                        <label>Academic Year</label>
-                        <select value={principalPerformanceFilters.academicYear} onChange={(e)=>setPrincipalPerformanceFilters({...principalPerformanceFilters, academicYear:e.target.value})}>{academicYearOptions.map(x => <option key={x} value={x}>{x}</option>)}</select>
-                      </div>
+                      <div className="field"><label>Class</label><select value={principalPerformanceFilter.class_name} onChange={(e)=>setPrincipalPerformanceFilter(prev => ({ ...prev, class_name: e.target.value, student_id: '' }))}>{principalClassFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+                      <div className="field"><label>Student</label><select value={principalPerformanceFilter.student_id} onChange={(e)=>setPrincipalPerformanceFilter(prev => ({ ...prev, student_id: e.target.value }))}>{principalStudentFilterOptions.map((option) => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}</select></div>
+                      <div className="field"><label>Term</label><select value={principalPerformanceFilter.term_name} onChange={(e)=>setPrincipalPerformanceFilter(prev => ({ ...prev, term_name: e.target.value }))}>{['All Terms', ...termOptions].map((option) => <option key={option} value={option}>{option}</option>)}</select></div>
+                      <div className="field"><label>Academic Year</label><select value={principalPerformanceFilter.academic_year} onChange={(e)=>setPrincipalPerformanceFilter(prev => ({ ...prev, academic_year: e.target.value }))}>{principalAcademicYearOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></div>
                     </div>
-                    <div className="toolbar" style={{marginTop:16}}>
-                      <button className="btn secondary" onClick={()=>window.print()}>Print Current View</button>
-                      <button className="btn secondary" onClick={()=>{ setSelectedReport('grade'); setCurrentStudent(principalCurrentStudent); }}>Printable Student Academic Report</button>
+                    <div style={{display:'flex', gap:12, flexWrap:'wrap', marginTop:16}}>
+                      <button className="btn secondary" onClick={handlePrincipalAcademicPrint} disabled={!principalSelectedStudent}>Printable Student Academic Reports</button>
                     </div>
                   </div>
                   <div className="card">
-                    <h3>Academic Performance Records</h3>
-                    <div className="table-wrap"><table><thead><tr><th>Student</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Academic Year</th></tr></thead><tbody>{principalFilteredGrades.length === 0 ? <tr><td colSpan="6"><div className="empty">No academic performance records found for the selected filters</div></td></tr> : principalFilteredGrades.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{r.subject_name}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td></tr>)}</tbody></table></div>
+                    <div className="table-wrap">
+                      <table>
+                        <thead><tr><th>Student</th><th>Class</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Academic Year</th></tr></thead>
+                        <tbody>
+                          {principalPerformanceRows.length === 0 && <tr><td colSpan="7"><div className="empty">No grade records found for the selected filters</div></td></tr>}
+                          {principalPerformanceRows.map((row) => <tr key={row.id}><td>{row.student_name}</td><td>{row.class_name || '-'}</td><td>{row.subject_name}</td><td>{row.total_score}</td><td>{row.average_score}</td><td>{row.term_name}</td><td>{row.academic_year}</td></tr>)}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                  <ReportsView school={school} selectedReport="grade" gradeRows={principalFilteredGrades.filter(r => !principalCurrentStudent || r.student_id === principalCurrentStudent.student_id)} feeRows={[]} currentStudent={principalCurrentStudent} />
                 </div>
               ) : (
-                <div className="card">
-                  <h3>Academic Performance Summary</h3>
-                  <div className="table-wrap"><table><thead><tr><th>Student</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Year</th></tr></thead><tbody>{gradesHook.rows.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{r.subject_name}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td></tr>)}</tbody></table></div>
-                </div>
+              <div className="card">
+                <h3>Academic Performance Summary</h3>
+                <div className="table-wrap"><table><thead><tr><th>Student</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Year</th></tr></thead><tbody>{gradesHook.rows.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{r.subject_name}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td></tr>)}</tbody></table></div>
+              </div>
               )
             )}
 
-            {page === 'timetable'  && (
+            {page === 'timetable' && (
               <div className="card">
                 <h3>Timetable</h3>
                 <div className="table-wrap"><table><thead><tr><th>Class</th><th>Day</th><th>Start</th><th>End</th><th>Subject</th><th>Teacher</th></tr></thead><tbody>{timetableHook.rows.map(r => <tr key={r.id}><td>{r.class_name}</td><td>{r.day_of_week}</td><td>{r.start_time}</td><td>{r.end_time}</td><td>{r.subject_name}</td><td>{r.teacher_name}</td></tr>)}</tbody></table></div>
