@@ -922,6 +922,7 @@
       const principalsHook = useSupabaseTable("v_principals_admin", "*");
       const classesHook = useSupabaseTable("classes", "*");
       const subjectsHook = useSupabaseTable("v_subject_assignments", "*");
+      const subjectsCatalogHook = useSupabaseTable("subjects", "*");
       const attendanceHook = useSupabaseTable("v_attendance_full", "*");
       const gradesHook = useSupabaseTable("v_grades_full", "*");
       const feesHook = useSupabaseTable("v_fee_payments_full", "*");
@@ -949,7 +950,7 @@
       const [parentForm, setParentForm] = useState(buildManagedForm('parent'));
       const [userForm, setUserForm] = useState(buildManagedForm('student'));
       const [classForm, setClassForm] = useState({ id: "", name: "", level_group: "", section: "", capacity: "" });
-      const [subjectForm, setSubjectForm] = useState({ id: "", subject_name: "", class_id: "", teacher_id: "" });
+      const [subjectForm, setSubjectForm] = useState({ id: "", subject_name: "" });
       const [attendanceForm, setAttendanceForm] = useState({ id: "", student_id: "", class_id: "", teacher_assignment_id: "", subject_name: "", attendance_date: todayISO(), status: "Present", remarks: "" });
       const [gradeForm, setGradeForm] = useState({ id: "", student_id: "", class_id: "", subject_id: "", term_name: "Term 1", academic_year: new Date().getFullYear().toString(), assignment_score: 0, test_score: 0, exam_score: 0 });
       const [feeForm, setFeeForm] = useState({ id: "", student_id: "", term_name: "Term 1", academic_year: new Date().getFullYear().toString(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
@@ -1035,7 +1036,13 @@
         return 'active';
       };
       const yesNoOptions = [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }];
-      const subjectOptions = ['Mathematics','English','Science','Social','RME','CAD','CAT','French','Computing','Twi'];
+      const defaultSubjectOptions = ['Mathematics','English','Science','Social','RME','CAD','CAT','French','Computing','Twi'];
+      const subjectCatalogRows = (subjectsCatalogHook.rows || []).slice().sort((a, b) => String(a?.subject_name || '').localeCompare(String(b?.subject_name || '')));
+      const subjectOptions = Array.from(new Set([
+        ...defaultSubjectOptions,
+        ...subjectCatalogRows.map((row) => String(row?.subject_name || '').trim()).filter(Boolean),
+        ...(subjectsHook.rows || []).map((row) => String(row?.subject_name || '').trim()).filter(Boolean)
+      ])).sort((a, b) => a.localeCompare(b));
       const qualificationOptions = ['PhD','MSc Degree','Bachelor Degree','HND','Diploma','SHS'];
       const trainedStatusOptions = [{ value: 'Trained', label: 'Trained' }, { value: 'Non-Trained', label: 'Non-Trained' }];
       const relationshipOptions = ['Parent', 'Mother', 'Father', 'Guardian'];
@@ -1189,7 +1196,7 @@
         if (!profile) return;
         await Promise.all([
           studentsHook.fetchRows(), studentsRawHook.fetchRows(), teachersHook.fetchRows(), teachersRawHook.fetchRows(), parentsHook.fetchRows(), parentLinksHook.fetchRows(), accountsHook.fetchRows(), principalsHook.fetchRows(),
-          classesHook.fetchRows(), subjectsHook.fetchRows(), attendanceHook.fetchRows(), gradesHook.fetchRows(), feesHook.fetchRows(),
+          classesHook.fetchRows(), subjectsHook.fetchRows(), subjectsCatalogHook.fetchRows((q)=>q.order('subject_name')), attendanceHook.fetchRows(), gradesHook.fetchRows(), feesHook.fetchRows(),
           schoolsHook.fetchRows((q)=>q.order('created_at', { ascending:false })), schoolAdminRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), userLoginRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), managedUsersHook.fetchRows((q)=>q.order('full_name')), registrationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
           auditHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(100)), notificationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
           timetableHook.fetchRows((q)=>q.order('day_of_week')), chatHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(200)),
@@ -1354,6 +1361,7 @@
           supabaseClient.channel('parent-links-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'parent_student_links' }, refreshAll).subscribe(),
           supabaseClient.channel('classes-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'classes' }, refreshAll).subscribe(),
           supabaseClient.channel('subject-assignments-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_subject_assignments' }, refreshAll).subscribe(),
+          supabaseClient.channel('subjects-catalog-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'subjects' }, refreshAll).subscribe(),
           supabaseClient.channel('attendance-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, refreshAll).subscribe(),
           supabaseClient.channel('grades-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'grades' }, refreshAll).subscribe(),
           supabaseClient.channel('fees-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'fee_payments' }, refreshAll).subscribe(),
@@ -3498,20 +3506,24 @@
             )}
 
             {page === 'subjects' && (
-              <div className="grid">
-                <div className="card">
-                  <h3>Subject and Teacher Assignment</h3>
-                  <div className="form-grid-3">
-                    <div className="field"><label>Subject Name</label><input value={subjectForm.subject_name} onChange={(e)=>setSubjectForm({...subjectForm, subject_name:e.target.value})} /></div>
-                    <div className="field"><label>Class ID</label><input value={subjectForm.class_id} onChange={(e)=>setSubjectForm({...subjectForm, class_id:e.target.value})} /></div>
-                    <div className="field"><label>Teacher ID</label><input value={subjectForm.teacher_id} onChange={(e)=>setSubjectForm({...subjectForm, teacher_id:e.target.value})} /></div>
-                  </div>
-                  <div style={{marginTop:16}}><button className="btn" onClick={()=>saveEntity('teacher_subject_assignments', subjectForm, ()=>setSubjectForm({ id:'', subject_name:'', class_id:'', teacher_id:'' }))}>Save Assignment</button></div>
-                </div>
-                <div className="card">
-                  <div className="table-wrap"><table><thead><tr><th>Subject</th><th>Class</th><th>Teacher</th></tr></thead><tbody>{subjectsHook.rows.map(r => <tr key={r.id}><td>{r.subject_name}</td><td>{r.class_name}</td><td>{r.teacher_name}</td></tr>)}</tbody></table></div>
-                </div>
-              </div>
+              <GenericCrudPage
+                title="Subject Management"
+                description="Add, edit, and delete saved subjects. These saved subjects automatically power the Primary Subject Specialty field in Teacher Management."
+                columns={[
+                  { key: 'subject_name', label: 'Subject Name' }
+                ]}
+                rows={subjectCatalogRows}
+                loading={subjectsCatalogHook.loading}
+                formState={subjectForm}
+                setFormState={setSubjectForm}
+                fields={[
+                  { key: 'subject_name', label: 'Subject Name' }
+                ]}
+                onSave={() => saveEntity('subjects', { ...subjectForm, subject_name: String(subjectForm.subject_name || '').trim() }, ()=>setSubjectForm({ id:'', subject_name:'' }))}
+                onDelete={(id) => deleteEntity('subjects', id)}
+                onEdit={(row) => setSubjectForm({ id: row.id || '', subject_name: row.subject_name || '' })}
+                extraActions={<div className="footer-note">This section now stores only the subject record. Class ID and Teacher ID were removed here, and every saved subject reflects automatically in Primary Subject Specialty.</div>}
+              />
             )}
 
             {page === 'attendance' && (
