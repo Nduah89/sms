@@ -461,6 +461,90 @@
       });
     }
 
+    function parseScore(value) {
+      const num = Number(value);
+      return Number.isFinite(num) ? num : 0;
+    }
+
+    function clampScore(value, min = 0, max = 100) {
+      return Math.min(max, Math.max(min, parseScore(value)));
+    }
+
+    function ordinalLabel(value) {
+      const number = Number(value || 0);
+      if (!Number.isFinite(number) || number <= 0) return '-';
+      const mod100 = number % 100;
+      if (mod100 >= 11 && mod100 <= 13) return `${number}th`;
+      const mod10 = number % 10;
+      if (mod10 === 1) return `${number}st`;
+      if (mod10 === 2) return `${number}nd`;
+      if (mod10 === 3) return `${number}rd`;
+      return `${number}th`;
+    }
+
+    function getBeceGradeDetails(percentScore) {
+      const percent = clampScore(percentScore, 0, 100);
+      if (percent >= 90) return { bece_grade: 1, remark: 'AA+', interpretation: 'Highest' };
+      if (percent >= 80) return { bece_grade: 2, remark: 'A1', interpretation: 'Excellent' };
+      if (percent >= 70) return { bece_grade: 3, remark: 'B2', interpretation: 'Very Good' };
+      if (percent >= 65) return { bece_grade: 4, remark: 'B3', interpretation: 'Good' };
+      if (percent >= 60) return { bece_grade: 5, remark: 'C4', interpretation: 'Credit' };
+      if (percent >= 55) return { bece_grade: 6, remark: 'C5', interpretation: 'Credit' };
+      if (percent >= 50) return { bece_grade: 7, remark: 'C6', interpretation: 'Pass' };
+      if (percent >= 40) return { bece_grade: 8, remark: 'D7', interpretation: 'Weak Pass' };
+      return { bece_grade: 9, remark: 'E8/F9', interpretation: 'Fail' };
+    }
+
+    function buildDisplayGradeRows(rows = [], studentClassLookup = new Map()) {
+      const normalized = (rows || []).map((row) => {
+        const midTermA = clampScore(row.assignment_score, 0, 50);
+        const endTermB = clampScore(row.exam_score, 0, 50);
+        const total = clampScore(row.total_score || (midTermA + endTermB), 0, 100);
+        const percent = total;
+        const gradeMeta = getBeceGradeDetails(percent);
+        const className = String(row.class_name || studentClassLookup.get(String(row.student_id || '').trim()) || row.student_main_class_name || '-').trim() || '-';
+        return {
+          ...row,
+          class_name: className,
+          mid_term_a_score: midTermA,
+          end_of_term_b_score: endTermB,
+          total_ab_score: total,
+          percent_score: percent,
+          bece_grade: gradeMeta.bece_grade,
+          remark_label: gradeMeta.remark,
+          interpretation_label: gradeMeta.interpretation,
+          position_label: '-'
+        };
+      });
+
+      const groups = new Map();
+      normalized.forEach((row) => {
+        const key = [row.class_name || '-', row.term_name || '-', row.academic_year || '-'].join('::');
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(row);
+      });
+
+      groups.forEach((groupRows) => {
+        groupRows.sort((a, b) => {
+          const scoreDiff = Number(b.total_ab_score || 0) - Number(a.total_ab_score || 0);
+          if (scoreDiff !== 0) return scoreDiff;
+          return String(a.student_name || '').localeCompare(String(b.student_name || ''));
+        });
+        let displayRank = 0;
+        let previousScore = null;
+        groupRows.forEach((row, index) => {
+          const currentScore = Number(row.total_ab_score || 0);
+          if (previousScore === null || currentScore !== previousScore) {
+            displayRank = index + 1;
+            previousScore = currentScore;
+          }
+          row.position_label = ordinalLabel(displayRank);
+        });
+      });
+
+      return normalized;
+    }
+
     function getPageAccess(role, key) { return (NAV_BY_ROLE[role] || []).includes(key); }
 
     function useSupabaseTable(table, select = "*") {
@@ -967,8 +1051,9 @@
       const [subjectForm, setSubjectForm] = useState({ id: "", subject_name: "", subject_code: "" });
       const [principalForm, setPrincipalForm] = useState(buildManagedForm('principal'));
       const [attendanceForm, setAttendanceForm] = useState({ id: "", student_id: "", class_id: "", teacher_assignment_id: "", subject_name: "", attendance_date: todayISO(), status: "Present", remarks: "" });
-      const [gradeForm, setGradeForm] = useState({ id: "", student_id: "", subject_id: "", term_name: "Term 1", academic_year: getAcademicYearLabel(), assignment_score: 0, test_score: 0, exam_score: 0 });
+      const [gradeForm, setGradeForm] = useState({ id: '', student_id: '', subject_id: '', term_name: 'Term 1', academic_year: getAcademicYearLabel(), filter_class_name: '', mid_term_a_score: '', end_of_term_raw_score: '' });
       const [feeForm, setFeeForm] = useState({ id: "", student_id: "", term_name: "Term 1", academic_year: getAcademicYearLabel(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
+      const [showGradeEditor, setShowGradeEditor] = useState(false);
       const [notificationForm, setNotificationForm] = useState({ id: "", title: "", message: "", audience_role: "all" });
       const [chatForm, setChatForm] = useState({ recipient_profile_id: "", message_text: "" });
       useEffect(() => {
@@ -1412,12 +1497,20 @@
         return withNotice(async () => {
           const query = payload.id ? supabaseClient.from(table).update(payload).eq('id', payload.id) : supabaseClient.from(table).insert(payload);
           const res = await query;
+          if (res?.error) throw res.error;
           resetFn();
+          await refreshAll();
           return res;
         }, `${table} saved successfully`);
       };
 
-      const deleteEntity = async (table, id) => withNotice(async () => supabaseClient.from(table).delete().eq('id', id), `${table} deleted successfully`);
+      const deleteEntity = async (table, id) => withNotice(async () => {
+        const res = await supabaseClient.from(table).delete().eq('id', id);
+        if (res?.error) throw res.error;
+        await refreshAll();
+        return res;
+      }, `${table} deleted successfully`);
+
 
       const handleSchoolApproval = async (registrationId, action) => {
         if (!requireSuperAdminAction()) return;
@@ -3075,6 +3168,90 @@
         return (gradesHook.rows || []).filter((row) => String(row.teacher_profile_id || '') === String(profile?.id || ''));
       }, [gradesHook.rows, role, profile?.id]);
 
+
+      const teacherGradeClassOptions = useMemo(() => (
+        [{ value: '', label: 'All Classes' }].concat(
+          Array.from(new Set(
+            (teacherAssignableStudents || [])
+              .map((student) => String(student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '').trim())
+              .filter(Boolean)
+          )).sort((a, b) => a.localeCompare(b)).map((value) => ({ value, label: value }))
+        )
+      ), [teacherAssignableStudents, classNameMap]);
+
+      const teacherGradeStudentOptions = useMemo(() => {
+        return (teacherAssignableStudents || [])
+          .filter((student) => {
+            if (!gradeForm.filter_class_name) return true;
+            const classValue = String(student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '').trim();
+            return classValue === gradeForm.filter_class_name;
+          })
+          .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
+      }, [teacherAssignableStudents, gradeForm.filter_class_name, classNameMap]);
+
+      const teacherAcademicYearOptions = useMemo(() => (
+        getAcademicYearOptions(
+          Array.from(new Set((teacherGradeRows || []).map((row) => String(row.academic_year || '').trim()).filter(Boolean)))
+        )
+      ), [teacherGradeRows]);
+
+      const teacherDisplayGradeRows = useMemo(() => {
+        const filteredRows = (teacherGradeRows || []).filter((row) => {
+          const className = String(row.class_name || principalStudentClassLookup.get(String(row.student_id || '').trim()) || '').trim();
+          if (gradeForm.filter_class_name && className !== gradeForm.filter_class_name) return false;
+          if (gradeForm.term_name && String(row.term_name || '') !== gradeForm.term_name) return false;
+          if (gradeForm.academic_year && String(row.academic_year || '') !== gradeForm.academic_year) return false;
+          return true;
+        });
+        return buildDisplayGradeRows(filteredRows, principalStudentClassLookup);
+      }, [teacherGradeRows, gradeForm.filter_class_name, gradeForm.term_name, gradeForm.academic_year, principalStudentClassLookup]);
+
+      const principalDisplayPerformanceRows = useMemo(() => (
+        buildDisplayGradeRows(principalPerformanceRows, principalStudentClassLookup)
+      ), [principalPerformanceRows, principalStudentClassLookup]);
+
+      const resetTeacherGradeForm = () => {
+        setGradeForm({ id: '', student_id: '', subject_id: '', term_name: 'Term 1', academic_year: getAcademicYearLabel(), filter_class_name: '', mid_term_a_score: '', end_of_term_raw_score: '' });
+        setShowGradeEditor(false);
+      };
+
+      const openTeacherGradeEditor = (row = null) => {
+        if (!row) {
+          setGradeForm((prev) => ({ ...prev, id: '', student_id: '', subject_id: '', term_name: prev.term_name || 'Term 1', academic_year: prev.academic_year || getAcademicYearLabel(), mid_term_a_score: '', end_of_term_raw_score: '' }));
+          setShowGradeEditor(true);
+          return;
+        }
+        const classValue = String(row.class_name || principalStudentClassLookup.get(String(row.student_id || '').trim()) || '').trim();
+        setGradeForm((prev) => ({
+          ...prev,
+          id: row.id || '',
+          filter_class_name: classValue,
+          student_id: row.student_id || '',
+          subject_id: row.subject_id || '',
+          term_name: row.term_name || 'Term 1',
+          academic_year: row.academic_year || getAcademicYearLabel(),
+          mid_term_a_score: String(clampScore(row.assignment_score, 0, 50)),
+          end_of_term_raw_score: String(clampScore(Number(row.exam_score || 0) * 2, 0, 100))
+        }));
+        setShowGradeEditor(true);
+      };
+
+      const saveTeacherGrade = async () => {
+        const midTermA = clampScore(gradeForm.mid_term_a_score, 0, 50);
+        const endTermRaw = clampScore(gradeForm.end_of_term_raw_score, 0, 100);
+        const endTermB = Number((endTermRaw / 2).toFixed(2));
+        await saveEntity('grades', {
+          id: gradeForm.id,
+          student_id: gradeForm.student_id,
+          subject_id: gradeForm.subject_id,
+          term_name: gradeForm.term_name,
+          academic_year: gradeForm.academic_year,
+          assignment_score: midTermA,
+          test_score: 0,
+          exam_score: endTermB
+        }, resetTeacherGradeForm, { teacher_profile_id: profile.id });
+      };
+
       const handleCredentialSelection = (profileId) => {
         const selectedRow = managedUsersRows.find((row) => row.profile_id === profileId);
         if (!selectedRow) {
@@ -3881,29 +4058,40 @@
             {page === 'grades' && (
               <div className="grid">
                 <div className="card">
-                  <h3>Grades & Results</h3>
-                  <div className="form-grid-3">
-                    <div className="field"><label>Student</label><select value={gradeForm.student_id} onChange={(e)=>setGradeForm({...gradeForm, student_id:e.target.value})}><option value="">Select Student</option>{teacherAssignableStudents.map(student => <option key={student.id} value={student.id}>{student.full_name}{(classNameMap[student.class_id] || student.class_name) ? `, ${classNameMap[student.class_id] || student.class_name}` : ''}</option>)}</select></div>
-                    <div className="field"><label>Subject Name</label><select value={gradeForm.subject_id} onChange={(e)=>setGradeForm({...gradeForm, subject_id:e.target.value})}>{schoolSubjectOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
-                    <div className="field"><label>Term</label><select value={gradeForm.term_name} onChange={(e)=>setGradeForm({...gradeForm, term_name:e.target.value})}>{termOptions.map(x => <option key={x}>{x}</option>)}</select></div>
-                    <div className="field"><label>Academic Year</label><input value={gradeForm.academic_year} onChange={(e)=>setGradeForm({...gradeForm, academic_year:e.target.value})} /></div>
-                    <div className="field"><label>Assignment</label><input type="number" value={gradeForm.assignment_score} onChange={(e)=>setGradeForm({...gradeForm, assignment_score:e.target.value})} /></div>
-                    <div className="field"><label>Test</label><input type="number" value={gradeForm.test_score} onChange={(e)=>setGradeForm({...gradeForm, test_score:e.target.value})} /></div>
-                    <div className="field"><label>Exam</label><input type="number" value={gradeForm.exam_score} onChange={(e)=>setGradeForm({...gradeForm, exam_score:e.target.value})} /></div>
+                  <div className="topbar" style={{marginBottom: 0}}>
+                    <div className="page-title"><h2 style={{fontSize: 22, marginBottom: 0}}>Grades & Results</h2></div>
+                    <div className="actions"><button className="btn" onClick={()=>openTeacherGradeEditor()} disabled={loginLogoutOnly}>+ Add Grade</button></div>
                   </div>
-                  <div style={{marginTop:16}}>
-                    <button
-                      className="btn"
-                      disabled={loginLogoutOnly || !gradeForm.student_id || !gradeForm.subject_id}
-                      onClick={()=>saveEntity('grades', gradeForm, ()=>setGradeForm({ id:'', student_id:'', subject_id:'', term_name:'Term 1', academic_year:getAcademicYearLabel(), assignment_score:0, test_score:0, exam_score:0 }), { teacher_profile_id: profile.id })}
-                    >
-                      Save Grade
-                    </button>
-                  </div>
-                  <div className="footer-note">The subject dropdown comes from the school admin Subjects page. Class ID and Teacher ID entry fields have been removed from this teacher grade form.</div>
                 </div>
                 <div className="card">
-                  <div className="table-wrap"><table><thead><tr><th>Student</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Year</th></tr></thead><tbody>{teacherGradeRows.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{r.subject_name}</td><td>{r.total_score}</td><td>{r.average_score}</td><td>{r.term_name}</td><td>{r.academic_year}</td></tr>)}</tbody></table></div>
+                  <div className="form-grid-3">
+                    <div className="field"><label>Filter by Class</label><select value={gradeForm.filter_class_name} onChange={(e)=>setGradeForm(prev => ({...prev, filter_class_name:e.target.value, student_id:''}))}>{teacherGradeClassOptions.map(option => <option key={option.value || 'all-teacher-classes'} value={option.value}>{option.label}</option>)}</select></div>
+                    <div className="field"><label>Term</label><select value={gradeForm.term_name} onChange={(e)=>setGradeForm({...gradeForm, term_name:e.target.value})}>{termOptions.map(x => <option key={x}>{x}</option>)}</select></div>
+                    <div className="field"><label>Academic Year</label><select value={gradeForm.academic_year} onChange={(e)=>setGradeForm({...gradeForm, academic_year:e.target.value})}>{teacherAcademicYearOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></div>
+                  </div>
+                </div>
+                {showGradeEditor && (
+                  <div className="card">
+                    <h3>{gradeForm.id ? 'Edit Grade' : 'Add Grade'}</h3>
+                    <div className="form-grid-3">
+                      <div className="field"><label>Class</label><select value={gradeForm.filter_class_name} onChange={(e)=>setGradeForm(prev => ({...prev, filter_class_name:e.target.value, student_id:''}))}>{teacherGradeClassOptions.map(option => <option key={option.value || 'grade-class-filter'} value={option.value}>{option.label}</option>)}</select></div>
+                      <div className="field"><label>Student</label><select value={gradeForm.student_id} onChange={(e)=>setGradeForm({...gradeForm, student_id:e.target.value})}><option value="">Select Student</option>{teacherGradeStudentOptions.map(student => { const classValue = student.student_main_class_name || classNameMap[student.class_id] || student.class_name || ''; return <option key={student.id} value={student.id}>{student.full_name}{classValue ? `, ${classValue}` : ''}</option>; })}</select></div>
+                      <div className="field"><label>Subject Name</label><select value={gradeForm.subject_id} onChange={(e)=>setGradeForm({...gradeForm, subject_id:e.target.value})}>{schoolSubjectOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+                      <div className="field"><label>Term</label><select value={gradeForm.term_name} onChange={(e)=>setGradeForm({...gradeForm, term_name:e.target.value})}>{termOptions.map(x => <option key={x}>{x}</option>)}</select></div>
+                      <div className="field"><label>Academic Year</label><select value={gradeForm.academic_year} onChange={(e)=>setGradeForm({...gradeForm, academic_year:e.target.value})}>{teacherAcademicYearOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></div>
+                      <div className="field"><label>Mid Term Exams A (50)</label><input type="number" min="0" max="50" value={gradeForm.mid_term_a_score} onChange={(e)=>setGradeForm({...gradeForm, mid_term_a_score:e.target.value})} /></div>
+                      <div className="field"><label>End of Term Exams B Raw Score (100)</label><input type="number" min="0" max="100" value={gradeForm.end_of_term_raw_score} onChange={(e)=>setGradeForm({...gradeForm, end_of_term_raw_score:e.target.value})} /></div>
+                      <div className="field"><label>Total A+B (100 Marks)</label><input value={(clampScore(gradeForm.mid_term_a_score, 0, 50) + clampScore(gradeForm.end_of_term_raw_score, 0, 100) / 2).toFixed(1)} readOnly /></div>
+                    </div>
+                    <div style={{marginTop:16, display:'flex', gap:10, flexWrap:'wrap'}}>
+                      <button className="btn" disabled={loginLogoutOnly || !gradeForm.student_id || !gradeForm.subject_id} onClick={saveTeacherGrade}>{gradeForm.id ? 'Update Grade' : 'Save Grade'}</button>
+                      <button className="btn secondary" onClick={resetTeacherGradeForm}>Cancel</button>
+                    </div>
+                    <div className="footer-note">The teacher form now records Mid Term Exams A out of 50 and End of Term Exams B as a raw score out of 100. The saved total is normalized to 100 marks, and those saved rows reflect immediately in the principal academic performance table. WAEC BECE uses a nine point scale, Grade 1 as highest and Grade 9 as lowest. This screen applies that interpretation to the saved 100 mark total.</div>
+                  </div>
+                )}
+                <div className="card">
+                  <div className="table-wrap"><table><thead><tr><th>Student</th><th>Class</th><th>Subject</th><th>Term</th><th>Mid Term A (50)</th><th>End of Term B (50)</th><th>Total A+B</th><th>%</th><th>Grade</th><th>Remark</th><th>Interpretation</th><th>Position</th><th>Actions</th></tr></thead><tbody>{teacherDisplayGradeRows.length === 0 ? <tr><td colSpan="13"><div className="empty">No grade records found</div></td></tr> : teacherDisplayGradeRows.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name}</td><td>{r.term_name}</td><td>{r.mid_term_a_score}</td><td>{r.end_of_term_b_score}</td><td><strong>{r.total_ab_score}</strong></td><td>{r.percent_score}%</td><td><strong>{r.bece_grade}</strong></td><td><strong>{r.remark_label}</strong></td><td>{r.interpretation_label}</td><td><strong>{r.position_label}</strong></td><td><div style={{display:'flex', gap:8}}><button className="btn secondary" onClick={()=>openTeacherGradeEditor(r)}>Edit</button><button className="btn danger" onClick={()=>deleteEntity('grades', r.id)}>Delete</button></div></td></tr>)}</tbody></table></div>
                 </div>
               </div>
             )}
@@ -3924,12 +4112,12 @@
                   <div className="card">
                     <div className="table-wrap">
                       <table>
-                        <thead><tr><th>Student</th><th>Main Class</th><th>Subject</th><th>Total</th><th>Average</th><th>Term</th><th>Academic Year</th></tr></thead>
+                        <thead><tr><th>Student</th><th>Main Class</th><th>Subject</th><th>Term</th><th>Mid Term A (50)</th><th>End of Term B (50)</th><th>Total A+B</th><th>%</th><th>Grade</th><th>Remark</th><th>Interpretation</th><th>Position</th><th>Academic Year</th></tr></thead>
                         <tbody>
-                          {principalPerformanceRows.length === 0 && <tr><td colSpan="7"><div className="empty">No grade records found for the selected filters</div></td></tr>}
-                          {principalPerformanceRows.map((row) => {
+                          {principalDisplayPerformanceRows.length === 0 && <tr><td colSpan="13"><div className="empty">No grade records found for the selected filters</div></td></tr>}
+                          {principalDisplayPerformanceRows.map((row) => {
                             const resolvedClassName = row.class_name || principalStudentClassLookup.get(String(row.student_id || '').trim()) || '-';
-                            return <tr key={row.id}><td>{row.student_name}</td><td>{resolvedClassName}</td><td>{row.subject_name}</td><td>{row.total_score}</td><td>{row.average_score}</td><td>{row.term_name}</td><td>{row.academic_year}</td></tr>;
+                            return <tr key={row.id}><td>{row.student_name}</td><td>{resolvedClassName}</td><td>{row.subject_name}</td><td>{row.term_name}</td><td>{row.mid_term_a_score}</td><td>{row.end_of_term_b_score}</td><td><strong>{row.total_ab_score}</strong></td><td>{row.percent_score}%</td><td><strong>{row.bece_grade}</strong></td><td><strong>{row.remark_label}</strong></td><td>{row.interpretation_label}</td><td><strong>{row.position_label}</strong></td><td>{row.academic_year}</td></tr>;
                           })}
                         </tbody>
                       </table>
@@ -3939,7 +4127,7 @@
                     <ReportsView
                       school={school}
                       selectedReport="grade"
-                      gradeRows={principalPerformanceRows.filter((row) => String(row.student_id || '') === String(principalSelectedStudent.student_id || principalSelectedStudent.id || ''))}
+                      gradeRows={principalDisplayPerformanceRows.filter((row) => String(row.student_id || '') === String(principalSelectedStudent.student_id || principalSelectedStudent.id || ''))}
                       feeRows={[]}
                       currentStudent={{
                         full_name: principalSelectedStudent.full_name,
