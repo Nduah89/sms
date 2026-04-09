@@ -3839,11 +3839,15 @@
                   { key:'capacity', label:'Capacity', type:'number' }
                 ]}
                 onSave={() => {
+                  const trimmedClassName = String(classForm.class_name || '').trim();
+                  if (!trimmedClassName) {
+                    setNotice({ type: 'danger', text: 'Class Name is required.' });
+                    return;
+                  }
                   const payload = {
                     id: classForm.id || null,
-                    class_name: classForm.class_name || '',
-                    name: classForm.class_name || '',
-                    capacity: classForm.capacity || null
+                    name: trimmedClassName,
+                    capacity: classForm.capacity === '' || classForm.capacity == null ? null : Number(classForm.capacity)
                   };
                   return saveEntity('classes', payload, ()=>setClassForm({ id: '', class_name: '', capacity: '' }), school?.id ? { school_id: school.id } : {});
                 }}
