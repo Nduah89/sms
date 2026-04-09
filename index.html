@@ -939,6 +939,7 @@
       const [studentForm, setStudentForm] = useState(buildManagedForm('student'));
       const [teacherForm, setTeacherForm] = useState(buildManagedForm('teacher'));
       const [principalForm, setPrincipalForm] = useState(buildManagedForm('principal'));
+      const [accountsOfficeForm, setAccountsOfficeForm] = useState(buildManagedForm('accounts_office'));
       const [parentForm, setParentForm] = useState(buildManagedForm('parent'));
       const [userForm, setUserForm] = useState(buildManagedForm('student'));
       const [classForm, setClassForm] = useState({ id: "", name: "", level_group: "", section: "", capacity: "" });
@@ -2155,6 +2156,28 @@
         trained_status: row.trained_status || 'Trained'
       });
 
+      const buildPrincipalFormFromRow = (row) => ({
+        ...buildManagedForm('principal'),
+        profile_id: row.profile_id || '',
+        role_name: 'principal',
+        full_name: row.full_name || '',
+        email: row.email || '',
+        phone: row.phone || row.profile_phone || '',
+        account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
+        force_password_change: String(row.force_password_change ?? true)
+      });
+
+      const buildAccountsOfficeFormFromRow = (row) => ({
+        ...buildManagedForm('accounts_office'),
+        profile_id: row.profile_id || '',
+        role_name: 'accounts_office',
+        full_name: row.full_name || '',
+        email: row.email || '',
+        phone: row.phone || row.profile_phone || '',
+        account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
+        force_password_change: String(row.force_password_change ?? true)
+      });
+
       useEffect(() => {
         if (!studentForm.student_main_class_name) {
           if (studentForm.class_id) {
@@ -3173,26 +3196,39 @@
             )}
 
             {page === 'accounts-staff' && (
-              <div className="card">
-                <h3>Accounts Office Staff</h3>
-                <div className="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Credentials</th><th>Actions</th></tr></thead><tbody>
-                  {accountsHook.rows.length === 0 && <tr><td colSpan="5"><div className="empty">No records found</div></td></tr>}
-                  {accountsHook.rows.map(r => {
-                    const ref = managedUserRefMap[r.profile_id];
-                    return <tr key={r.id}>
-                      <td>{r.full_name}</td>
-                      <td>{r.email}</td>
-                      <td>{r.phone}</td>
-                      <td>{ref ? <div className="subtle"><div>{ref.email || '-'}</div><div>Temp: {ref.temporary_password}</div><div>Issued: {formatDate(ref.issued_at)}</div></div> : <span className="subtle">No credentials saved yet</span>}</td>
-                      <td>{canSchoolAdminManageUsers ? <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-                        <button className="btn" onClick={()=>handleProvisionManagedUser(r)}>{ref ? 'Reset Login' : 'Create Login'}</button>
-                        <button className="btn secondary" onClick={()=>copyText(buildManagedUserReferenceText(r), 'User credential reference copied to clipboard')}>Copy</button>
-                        <button className="btn danger" onClick={()=>handleDeleteManagedUser(r)}>Permanent Delete</button>
-                      </div> : <span className="subtle">School admin only</span>}</td>
-                    </tr>
-                  })}
-                </tbody></table></div>
-              </div>
+              <GenericCrudPage
+                title="Accounts Office Staff Management"
+                description="School admin can add, edit, and delete Accounts Office Staff records here. Full name, phone, and email are stored on the linked managed user profile and Accounts Office Staff record, and realtime consistency is preserved through the existing live refresh subscriptions."
+                columns={[
+                  { key: 'full_name', label: 'Full Name' },
+                  { key: 'email', label: 'Email' },
+                  { key: 'phone', label: 'Phone' },
+                  { key: 'account_status', label: 'Account', render: v => <span className={classNames('chip', v === 'active' ? 'success' : v === 'archived' ? 'warning' : 'danger')}>{normalizeAccountStatus(v || 'active')}</span> },
+                  { key: 'credentials', label: 'Credentials', render: (_, row) => {
+                    const ref = managedUserRefMap[row.profile_id];
+                    return ref ? <div className="subtle"><div>{ref.email || '-'}</div><div>Temp: {ref.temporary_password}</div><div>Issued: {formatDate(ref.issued_at)}</div></div> : <span className="subtle">No credentials saved yet</span>;
+                  }}
+                ]}
+                rows={accountsHook.rows}
+                loading={accountsHook.loading}
+                formState={accountsOfficeForm}
+                setFormState={setAccountsOfficeForm}
+                fields={[
+                  { key: 'full_name', label: 'Full Name' },
+                  { key: 'email', label: 'Email' },
+                  { key: 'phone', label: 'Phone' },
+                  { key: 'account_status', label: 'Account Status', type: 'select', options: statusOptions },
+                  { key: 'force_password_change', label: 'Force First Login Password Change', type: 'select', options: yesNoOptions }
+                ]}
+                onSave={() => saveManagedUserRecord(accountsOfficeForm, setAccountsOfficeForm, 'accounts_office')}
+                onDelete={(id, row) => handleDeleteManagedUser(row)}
+                onEdit={(row) => setAccountsOfficeForm(buildAccountsOfficeFormFromRow(row))}
+                rowActions={(row) => canSchoolAdminManageUsers ? <>
+                  <button className="btn secondary" onClick={() => setManagedUserStatus(row, 'archived')}>Archive</button>
+                  <button className="btn" onClick={() => handleProvisionManagedUser(row)}>{managedUserRefMap[row.profile_id] ? 'Reset Login' : 'Create Login'}</button>
+                  <button className="btn secondary" onClick={() => openManagedUserInCredentials(row)}>Open in User Accounts</button>
+                </> : null}
+              />
             )}
 
             {page === 'principals' && (
