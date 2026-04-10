@@ -142,49 +142,68 @@
     .mobile-nav-toggle { display: none; }
     .empty { padding: 30px; text-align: center; color: var(--text-soft); }
     .printable { background: var(--card); padding: 24px; border-radius: 18px; border: 1px solid var(--line); }
-    .chat-box { height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 16px; padding: 12px; background: var(--app-bg); }
+    .chat-box { height: 460px; overflow: auto; border: 1px solid rgba(139, 92, 246, 0.14); border-radius: 24px; padding: 12px; background: linear-gradient(180deg, #ffffff 0%, #f9f7ff 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.7); }
     .nav-btn-inner { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; }
     .nav-badge { min-width:22px; height:22px; padding:0 7px; border-radius:999px; background:#ef4444; color:#fff; font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
-    .chat-layout { display:grid; gap:16px; grid-template-columns: 300px minmax(0,1fr) 360px; align-items:start; }
-    .chat-layout.no-monitor { grid-template-columns: 300px minmax(0,1fr); }
+    .chat-layout { display:grid; gap:18px; grid-template-columns: 320px minmax(0,1fr) 360px; align-items:start; }
+    .chat-layout.no-monitor { grid-template-columns: 320px minmax(0,1fr); }
     .chat-layout.monitor-only { grid-template-columns: 1fr; }
-    .chat-sidebar, .chat-thread-panel, .chat-monitor-panel { min-width:0; }
-    .chat-contacts { display:flex; flex-direction:column; gap:8px; max-height:640px; overflow:auto; }
-    .chat-contact-btn { width:100%; border:1px solid var(--line); background:var(--card); border-radius:14px; padding:12px; text-align:left; cursor:pointer; }
-    .chat-contact-btn.active { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.08); }
-    .chat-contact-title { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
-    .chat-contact-role { display:inline-flex; align-items:center; padding:3px 8px; border-radius:999px; background:#e2e8f0; color:#334155; font-size:11px; font-weight:700; text-transform:capitalize; }
-    .chat-contact-meta { font-size:12px; color:var(--text-soft); line-height:1.45; }
+    .chat-sidebar, .chat-thread-panel, .chat-monitor-panel { min-width:0; border-radius:28px; background:linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(247,243,255,0.98) 100%); border:1px solid rgba(167,139,250,0.18); box-shadow:0 22px 50px rgba(124,58,237,0.08); overflow:hidden; }
+    .chat-panel-head { padding:22px 22px 16px; border-bottom:1px solid rgba(167,139,250,0.14); background:linear-gradient(135deg, rgba(124,58,237,0.10), rgba(56,189,248,0.10)); }
+    .chat-panel-body { padding:18px 20px 22px; }
+    .chat-panel-title-row { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .chat-panel-title { margin:0; font-size:24px; line-height:1.1; color:#312e81; }
+    .chat-panel-subtitle { margin:8px 0 0; color:#6b7280; }
+    .chat-toolbar-grid { display:grid; gap:12px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top:16px; }
+    .chat-modern-field label { display:block; margin-bottom:7px; font-size:12px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:#7c3aed; }
+    .chat-modern-field input, .chat-modern-field select, .chat-modern-field textarea { width:100%; border:1px solid rgba(167,139,250,0.18); border-radius:18px; padding:13px 14px; background:rgba(255,255,255,0.95); box-shadow: inset 0 1px 0 rgba(255,255,255,0.6); }
+    .chat-search-shell { position:relative; margin-top:16px; }
+    .chat-search-shell::after { content:'🔎'; position:absolute; right:14px; top:50%; transform:translateY(-50%); font-size:16px; opacity:0.6; }
+    .chat-search-input { width:100%; border:1px solid rgba(167,139,250,0.18); padding:13px 42px 13px 14px; border-radius:18px; background:rgba(255,255,255,0.96); }
+    .chat-contacts { display:flex; flex-direction:column; gap:10px; max-height:680px; overflow:auto; padding-right:2px; }
+    .chat-contact-btn { width:100%; border:1px solid rgba(167,139,250,0.14); background:rgba(255,255,255,0.92); border-radius:20px; padding:14px; text-align:left; cursor:pointer; transition:transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; }
+    .chat-contact-btn:hover { transform:translateY(-1px); box-shadow:0 12px 28px rgba(124,58,237,0.08); }
+    .chat-contact-btn.active { border-color:#7c3aed; box-shadow:0 0 0 3px rgba(124,58,237,0.10); background:linear-gradient(135deg, rgba(124,58,237,0.10), rgba(56,189,248,0.08)); }
+    .chat-contact-row { display:flex; align-items:center; gap:12px; }
+    .chat-avatar { width:46px; height:46px; border-radius:16px; display:grid; place-items:center; color:#fff; font-weight:800; letter-spacing:0.03em; flex:0 0 auto; box-shadow:0 10px 20px rgba(79,70,229,0.18); }
+    .chat-contact-title { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px; }
+    .chat-contact-role { display:inline-flex; align-items:center; padding:4px 10px; border-radius:999px; background:rgba(224,231,255,0.9); color:#4338ca; font-size:11px; font-weight:700; text-transform:capitalize; }
+    .chat-contact-meta { font-size:12px; color:#6b7280; line-height:1.45; }
     .chat-thread-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
     .chat-thread-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    .chat-empty-state { min-height:420px; display:grid; place-items:center; color:var(--text-soft); border:1px dashed var(--line); border-radius:18px; background:rgba(148,163,184,0.08); padding:20px; text-align:center; }
-    .virtual-chat-box { height: 420px; padding: 0; position: relative; }
+    .chat-empty-state { min-height:460px; display:grid; place-items:center; color:#6b7280; border:1px dashed rgba(167,139,250,0.22); border-radius:24px; background:linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(245,243,255,0.96) 100%); padding:24px; text-align:center; }
+    .virtual-chat-box { height: 460px; padding: 0; position: relative; }
     .virtual-chat-inner { position: relative; }
     .virtual-chat-stack { position: absolute; inset-inline: 0; }
-    .chat-message-shell { padding: 10px 12px; }
+    .chat-message-shell { padding: 10px 14px; }
     .chat-message-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
-    .icon-btn { border:1px solid var(--line); background:#fff; border-radius:12px; padding:7px 10px; cursor:pointer; font-size:12px; font-weight:600; }
+    .icon-btn { border:1px solid rgba(167,139,250,0.16); background:#fff; border-radius:14px; padding:8px 12px; cursor:pointer; font-size:12px; font-weight:700; color:#4c1d95; }
     .icon-btn.danger { color:#b91c1c; border-color:#fecaca; background:#fff5f5; }
     .icon-btn.warning { color:#92400e; border-color:#fde68a; background:#fffbeb; }
-    .chat-compose { display:grid; gap:10px; margin-top:14px; }
+    .chat-compose { display:grid; gap:12px; margin-top:16px; padding:16px; border:1px solid rgba(167,139,250,0.14); border-radius:24px; background:linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(244,247,255,0.98) 100%); }
     .emoji-row { display:flex; gap:8px; flex-wrap:wrap; }
-    .emoji-btn { border:1px solid var(--line); background:#fff; border-radius:12px; padding:7px 10px; cursor:pointer; font-size:18px; line-height:1; }
-    .chat-monitor-list { display:flex; flex-direction:column; gap:10px; max-height:640px; overflow:auto; }
-    .chat-monitor-item { border:1px solid var(--line); border-radius:16px; padding:14px; background:var(--card); }
+    .emoji-btn { border:1px solid rgba(167,139,250,0.16); background:#fff; border-radius:14px; padding:8px 11px; cursor:pointer; font-size:18px; line-height:1; }
+    .chat-monitor-list { display:flex; flex-direction:column; gap:12px; max-height:700px; overflow:auto; }
+    .chat-monitor-item { border:1px solid rgba(167,139,250,0.14); border-radius:22px; padding:16px; background:rgba(255,255,255,0.95); }
     .chat-monitor-item-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; }
-    .chat-monitor-message { margin:10px 0; padding:12px; border-radius:14px; background:rgba(148,163,184,0.08); white-space:pre-wrap; word-break:break-word; }
+    .chat-monitor-message { margin:12px 0; padding:14px; border-radius:18px; background:linear-gradient(180deg, rgba(238,242,255,0.88) 0%, rgba(250,245,255,0.88) 100%); white-space:pre-wrap; word-break:break-word; }
     .chat-monitor-actions { display:flex; gap:8px; flex-wrap:wrap; }
-    .chat-rule-list { display:grid; gap:10px; }
-    .chat-rule-item { padding:12px 14px; border:1px solid var(--line); border-radius:14px; background:rgba(148,163,184,0.06); }
-    .chat-search-input { width:100%; border:1px solid var(--line); padding:12px 14px; border-radius:14px; background:var(--card); }
-    .chat-unread-pill { display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px; padding:0 8px; border-radius:999px; background:#2563eb; color:#fff; font-size:12px; font-weight:700; }
+    .chat-rule-list { display:grid; gap:12px; }
+    .chat-rule-item { padding:14px 16px; border:1px solid rgba(167,139,250,0.14); border-radius:18px; background:rgba(255,255,255,0.92); }
+    .chat-unread-pill { display:inline-flex; align-items:center; justify-content:center; min-width:24px; height:24px; padding:0 8px; border-radius:999px; background:linear-gradient(135deg, #7c3aed, #3b82f6); color:#fff; font-size:12px; font-weight:800; }
+    .chat-header-status { display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:999px; background:rgba(255,255,255,0.86); color:#4c1d95; font-size:12px; font-weight:700; }
+    .chat-dot { width:8px; height:8px; border-radius:999px; background:#22c55e; box-shadow:0 0 0 4px rgba(34,197,94,0.12); }
+    .chat-section-note { margin-top:10px; color:#6b7280; font-size:13px; }
+    .chat-compose-actions { display:flex; gap:10px; flex-wrap:wrap; }
+    .chat-contact-empty { padding:22px; border:1px dashed rgba(167,139,250,0.24); border-radius:20px; background:rgba(255,255,255,0.9); text-align:center; color:#6b7280; }
     @media (max-width: 1180px) {
       .chat-layout, .chat-layout.no-monitor { grid-template-columns: 1fr; }
+      .chat-toolbar-grid { grid-template-columns: 1fr; }
     }
-    .msg { margin-bottom: 10px; }
+    .msg { margin-bottom: 12px; }
     .msg.mine { text-align: right; }
-    .msg .bubble { display: inline-block; max-width: 78%; padding: 10px 14px; border-radius: 16px; background: var(--card); border: 1px solid var(--line); }
-    .msg.mine .bubble { background: color-mix(in srgb, var(--primary) 18%, white 82%); border-color: color-mix(in srgb, var(--primary) 28%, white 72%); }
+    .msg .bubble { display: inline-block; max-width: 82%; padding: 14px 16px; border-radius: 22px 22px 22px 10px; background: linear-gradient(180deg, #ffffff 0%, #f8f6ff 100%); border: 1px solid rgba(167,139,250,0.18); box-shadow:0 10px 24px rgba(99,102,241,0.08); }
+    .msg.mine .bubble { border-radius:22px 22px 10px 22px; background:linear-gradient(135deg, rgba(124,58,237,0.16), rgba(59,130,246,0.12)); border-color:rgba(124,58,237,0.22); }
     .footer-note { margin-top: 18px; color: var(--text-soft); font-size: 13px; }
     @media (max-width: 1120px) {
       .cards-4, .cards-3, .form-grid-3, .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -508,6 +527,25 @@
     }
 
     function classNames(...arr) { return arr.filter(Boolean).join(" "); }
+    function getInitials(value = '') {
+      const parts = String(value || '').trim().split(/\s+/).filter(Boolean).slice(0, 2);
+      const initials = parts.map((part) => String(part || '').charAt(0).toUpperCase()).join('');
+      return initials || '?';
+    }
+    function getAvatarTone(value = '') {
+      const palette = [
+        'linear-gradient(135deg, #7c3aed, #3b82f6)',
+        'linear-gradient(135deg, #ec4899, #f97316)',
+        'linear-gradient(135deg, #06b6d4, #14b8a6)',
+        'linear-gradient(135deg, #f59e0b, #ef4444)',
+        'linear-gradient(135deg, #22c55e, #06b6d4)',
+        'linear-gradient(135deg, #8b5cf6, #ec4899)'
+      ];
+      const key = String(value || '');
+      let total = 0;
+      for (let index = 0; index < key.length; index += 1) total += key.charCodeAt(index);
+      return palette[total % palette.length];
+    }
     function formatDate(value) { return value ? new Date(value).toLocaleDateString() : ""; }
     function formatCurrency(value) { return new Intl.NumberFormat("en-GH", { style: "currency", currency: "GHS" }).format(Number(value || 0)); }
     function todayISO() { return new Date().toISOString().slice(0, 10); }
@@ -1284,6 +1322,7 @@
       const [studentChatClassId, setStudentChatClassId] = useState('');
       const [chatMonitorClassId, setChatMonitorClassId] = useState('');
       const [chatMonitorSearch, setChatMonitorSearch] = useState('');
+      const [chatContactSearch, setChatContactSearch] = useState('');
       const [chatLastSeenAt, setChatLastSeenAt] = useState(0);
       useEffect(() => {
         if (role !== ROLE.PRINCIPAL) return;
@@ -3532,6 +3571,16 @@
           return String(a.full_name || '').localeCompare(String(b.full_name || ''));
         });
       }, [profile?.id, role, currentStudentIsJhs, currentStudentClassId, studentRecordsRows, mergedTeachersRows, principalsHook.rows, teacherRestrictedStudentRows, teacherAccessibleClassIds, classNameMap, parentProfileToLinkedClassIds, chatPermissionByStudentProfileId]);
+
+      const filteredChatContactOptions = useMemo(() => {
+        const query = String(chatContactSearch || '').trim().toLowerCase();
+        if (!query) return chatContactOptions;
+        return chatContactOptions.filter((contact) => {
+          return [contact.full_name, contact.role_name, contact.class_name, contact.note]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(query));
+        });
+      }, [chatContactOptions, chatContactSearch]);
 
       const studentChatClassOptions = useMemo(() => {
         if (role !== ROLE.STUDENT || !currentStudentIsJhs || !currentStudentClassId) return [];
@@ -5965,189 +6014,246 @@
             {page === 'chat' && (
               <div className={classNames('chat-layout', role === ROLE.ADMIN && 'monitor-only', role !== ROLE.ADMIN && role !== ROLE.TEACHER && 'no-monitor')}>
                 {role !== ROLE.ADMIN && (
-                  <div className="card chat-sidebar">
-                    <h3 style={{ marginTop:0 }}>System Chat</h3>
-                    <p className="subtle">{chatRuleDescription(role)}</p>
-                    {role === ROLE.STUDENT && currentStudentIsJhs && (
-                      <div className="toolbar" style={{ marginBottom: 14 }}>
-                        <div className="field-inline">
-                          <label>JHS Class Filter</label>
-                          <select value={studentChatClassId} onChange={(event) => setStudentChatClassId(event.target.value)}>
-                            {studentChatClassOptions.length === 0 ? <option value="">No JHS Class</option> : studentChatClassOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                          </select>
+                  <div className="chat-sidebar">
+                    <div className="chat-panel-head">
+                      <div className="chat-panel-title-row">
+                        <div>
+                          <h3 className="chat-panel-title">System Chat</h3>
+                          <p className="chat-panel-subtitle">{chatRuleDescription(role)}</p>
                         </div>
-                        <div className="field-inline">
-                          <label>Class Chat Room Student</label>
-                          <select
-                            value={studentClassChatRecipientOptions.some((contact) => String(contact.profile_id || '').trim() === String(chatForm.recipient_profile_id || '').trim()) ? chatForm.recipient_profile_id : ''}
-                            onChange={(event) => setChatForm((current) => ({ ...current, recipient_profile_id: event.target.value }))}
-                          >
-                            <option value="">Select student</option>
-                            {studentClassChatRecipientOptions.map((contact) => <option key={contact.profile_id} value={contact.profile_id}>{contact.full_name}</option>)}
-                          </select>
+                        <div className="chat-header-status">
+                          <span className="chat-dot"></span>
+                          Live Messaging
                         </div>
                       </div>
-                    )}
-                    {role === ROLE.TEACHER && (
-                      <div className="toolbar" style={{ marginBottom: 14 }}>
-                        <div className="field-inline">
-                          <label>JHS Class Filter</label>
-                          <select value={chatMonitorClassId} onChange={(event) => setChatMonitorClassId(event.target.value)}>
-                            {jhsChatMonitorClassOptions.length === 0 ? <option value="">No JHS Class</option> : [{ value: '', label: 'Select JHS Class' }, ...jhsChatMonitorClassOptions].map((option) => <option key={option.value || 'teacher-chat-jhs'} value={option.value}>{option.label}</option>)}
-                          </select>
+                      {(role === ROLE.STUDENT && currentStudentIsJhs) || role === ROLE.TEACHER ? (
+                        <div className="chat-toolbar-grid">
+                          {role === ROLE.STUDENT && currentStudentIsJhs && (
+                            <>
+                              <div className="chat-modern-field">
+                                <label>JHS Class</label>
+                                <select value={studentChatClassId} onChange={(event) => setStudentChatClassId(event.target.value)}>
+                                  {studentChatClassOptions.length === 0 ? <option value="">No JHS Class</option> : studentChatClassOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                </select>
+                              </div>
+                              <div className="chat-modern-field">
+                                <label>Classmate</label>
+                                <select
+                                  value={studentClassChatRecipientOptions.some((contact) => String(contact.profile_id || '').trim() === String(chatForm.recipient_profile_id || '').trim()) ? chatForm.recipient_profile_id : ''}
+                                  onChange={(event) => setChatForm((current) => ({ ...current, recipient_profile_id: event.target.value }))}
+                                >
+                                  <option value="">Select student</option>
+                                  {studentClassChatRecipientOptions.map((contact) => <option key={contact.profile_id} value={contact.profile_id}>{contact.full_name}</option>)}
+                                </select>
+                              </div>
+                            </>
+                          )}
+                          {role === ROLE.TEACHER && (
+                            <>
+                              <div className="chat-modern-field">
+                                <label>JHS Class</label>
+                                <select value={chatMonitorClassId} onChange={(event) => setChatMonitorClassId(event.target.value)}>
+                                  {jhsChatMonitorClassOptions.length === 0 ? <option value="">No JHS Class</option> : [{ value: '', label: 'Select JHS Class' }, ...jhsChatMonitorClassOptions].map((option) => <option key={option.value || 'teacher-chat-jhs'} value={option.value}>{option.label}</option>)}
+                                </select>
+                              </div>
+                              <div className="chat-modern-field">
+                                <label>Student</label>
+                                <select
+                                  value={chatContactOptions.some((contact) => String(contact.profile_id || '').trim() === String(chatForm.recipient_profile_id || '').trim() && String(contact.role_name || '').trim().toLowerCase() === 'student') ? chatForm.recipient_profile_id : ''}
+                                  onChange={(event) => setChatForm((current) => ({ ...current, recipient_profile_id: event.target.value }))}
+                                >
+                                  <option value="">Select student</option>
+                                  {chatContactOptions.filter((contact) => String(contact.role_name || '').trim().toLowerCase() === 'student' && (!chatMonitorClassId || String(contact.class_id || '').trim() === String(chatMonitorClassId || '').trim())).map((contact) => <option key={contact.profile_id} value={contact.profile_id}>{contact.full_name}</option>)}
+                                </select>
+                              </div>
+                            </>
+                          )}
                         </div>
-                        <div className="field-inline">
-                          <label>Student</label>
-                          <select
-                            value={chatContactOptions.some((contact) => String(contact.profile_id || '').trim() === String(chatForm.recipient_profile_id || '').trim() && String(contact.role_name || '').trim().toLowerCase() === 'student') ? chatForm.recipient_profile_id : ''}
-                            onChange={(event) => setChatForm((current) => ({ ...current, recipient_profile_id: event.target.value }))}
-                          >
-                            <option value="">Select student</option>
-                            {chatContactOptions.filter((contact) => String(contact.role_name || '').trim().toLowerCase() === 'student' && (!chatMonitorClassId || String(contact.class_id || '').trim() === String(chatMonitorClassId || '').trim())).map((contact) => <option key={contact.profile_id} value={contact.profile_id}>{contact.full_name}</option>)}
-                          </select>
-                        </div>
+                      ) : null}
+                      <div className="chat-search-shell">
+                        <input className="chat-search-input" value={chatContactSearch} onChange={(event) => setChatContactSearch(event.target.value)} placeholder="Search contacts, role, or class" />
                       </div>
-                    )}
-                    <div className="chat-contacts">
-                      {chatContactOptions.length === 0 ? <div className="empty">No chat contacts are available for this account yet.</div> : chatContactOptions.map((contact) => {
-                        const contactId = String(contact.profile_id || '').trim();
-                        const unread = chatUnreadByContact[contactId] || 0;
-                        return (
-                          <button key={contactId} className={classNames('chat-contact-btn', String(chatForm.recipient_profile_id || '').trim() === contactId && 'active')} onClick={() => setChatForm((current) => ({ ...current, recipient_profile_id: contactId }))}>
-                            <div className="chat-contact-title">
-                              <strong>{contact.full_name || '-'}</strong>
-                              {unread > 0 ? <span className="chat-unread-pill">{unread}</span> : <span className="chat-contact-role">{contact.role_name}</span>}
-                            </div>
-                            <div className="chat-contact-meta">{contact.note || chatTypeLabel(deriveChatTypeFromRoles(role, contact.role_name))}</div>
-                            {contact.class_name ? <div className="chat-contact-meta">{contact.class_name}</div> : null}
-                          </button>
-                        );
-                      })}
+                    </div>
+                    <div className="chat-panel-body">
+                      <div className="chat-contacts">
+                        {filteredChatContactOptions.length === 0 ? <div className="chat-contact-empty">No chat contacts are available for this account yet.</div> : filteredChatContactOptions.map((contact) => {
+                          const contactId = String(contact.profile_id || '').trim();
+                          const unread = chatUnreadByContact[contactId] || 0;
+                          return (
+                            <button key={contactId} className={classNames('chat-contact-btn', String(chatForm.recipient_profile_id || '').trim() === contactId && 'active')} onClick={() => setChatForm((current) => ({ ...current, recipient_profile_id: contactId }))}>
+                              <div className="chat-contact-row">
+                                <div className="chat-avatar" style={{ background: getAvatarTone(contact.full_name || contact.role_name || contactId) }}>{getInitials(contact.full_name || contact.role_name || '?')}</div>
+                                <div style={{ flex:1, minWidth:0 }}>
+                                  <div className="chat-contact-title">
+                                    <strong style={{ color:'#1f2937' }}>{contact.full_name || '-'}</strong>
+                                    {unread > 0 ? <span className="chat-unread-pill">{unread}</span> : <span className="chat-contact-role">{contact.role_name}</span>}
+                                  </div>
+                                  <div className="chat-contact-meta">{contact.note || chatTypeLabel(deriveChatTypeFromRoles(role, contact.role_name))}</div>
+                                  {contact.class_name ? <div className="chat-contact-meta">{contact.class_name}</div> : null}
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 )}
 
                 {role !== ROLE.ADMIN && (
-                  <div className="card chat-thread-panel">
-                    <div className="chat-thread-header">
-                      <div>
-                        <h3 style={{ margin:'0 0 4px' }}>{currentChatRecipient ? currentChatRecipient.full_name : 'Select a contact'}</h3>
-                        <div className="subtle">{currentChatRecipient ? `${currentChatRecipient.role_name}${currentChatRecipient.class_name ? ` | ${currentChatRecipient.class_name}` : ''}` : 'Choose a teacher, student, parent, or principal based on your role permissions.'}</div>
-                      </div>
-                      <div className="chat-thread-actions">
-                        {chatUnreadCount > 0 ? <span className="chip info">{chatUnreadCount} unread</span> : <span className="chip success">Up to date</span>}
-                        <button className="btn secondary" onClick={markChatSeen}>Mark Chat Seen</button>
-                      </div>
-                    </div>
-
-                    {currentChatRecipient ? (
-                      <>
-                        <VirtualizedChatList
-                          messages={currentConversationMessages}
-                          currentProfileId={profile.id}
-                          canDeleteForMe={true}
-                          onDeleteForMe={handleHideChatMessageForCurrentUser}
-                          canPermanentDelete={false}
-                          onPermanentDelete={() => {}}
-                        />
-                        <div className="chat-compose">
-                          <div className="emoji-row">
-                            {['😀','😊','👍','🙏','🎉','❤️','😂','😮','😢','😡','✅','❗'].map((emoji) => <button key={emoji} className="emoji-btn" onClick={() => insertEmojiIntoChat(emoji)}>{emoji}</button>)}
-                          </div>
-                          <div className="field">
-                            <label>Message</label>
-                            <textarea rows="5" value={chatForm.message_text} onChange={(event) => setChatForm({ ...chatForm, message_text: event.target.value })} placeholder="Type your message here. Emojis and symbols are supported." />
-                          </div>
-                          <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
-                            <button className="btn" onClick={handleSendSystemChatMessage}>Send Message</button>
-                            <button className="btn secondary" onClick={() => setChatForm((current) => ({ ...current, message_text: '' }))}>Clear</button>
+                  <div className="chat-thread-panel">
+                    <div className="chat-panel-head">
+                      <div className="chat-thread-header">
+                        <div>
+                          <div className="chat-contact-row">
+                            <div className="chat-avatar" style={{ background: getAvatarTone(currentChatRecipient ? currentChatRecipient.full_name : 'Chat') }}>{getInitials(currentChatRecipient ? currentChatRecipient.full_name : 'SC')}</div>
+                            <div>
+                              <h3 className="chat-panel-title" style={{ fontSize: 22 }}>{currentChatRecipient ? currentChatRecipient.full_name : 'Select a contact'}</h3>
+                              <div className="chat-panel-subtitle">{currentChatRecipient ? `${currentChatRecipient.role_name}${currentChatRecipient.class_name ? ` • ${currentChatRecipient.class_name}` : ''}` : 'Choose a teacher, student, parent, or principal based on your role permissions.'}</div>
+                            </div>
                           </div>
                         </div>
-                      </>
-                    ) : (
-                      <div className="chat-empty-state">Choose a contact to open the conversation.</div>
-                    )}
+                        <div className="chat-thread-actions">
+                          {chatUnreadCount > 0 ? <span className="chat-unread-pill">{chatUnreadCount} unread</span> : <span className="chat-header-status"><span className="chat-dot"></span>Up to date</span>}
+                          <button className="icon-btn" onClick={markChatSeen}>Mark Chat Seen</button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="chat-panel-body">
+                      {currentChatRecipient ? (
+                        <>
+                          <VirtualizedChatList
+                            messages={currentConversationMessages}
+                            currentProfileId={profile.id}
+                            canDeleteForMe={true}
+                            onDeleteForMe={handleHideChatMessageForCurrentUser}
+                            canPermanentDelete={false}
+                            onPermanentDelete={() => {}}
+                          />
+                          <div className="chat-compose">
+                            <div className="emoji-row">
+                              {['😀','😊','👍','🙏','🎉','❤️','😂','😮','😢','😡','✅','❗','✨','📚','💬'].map((emoji) => <button key={emoji} className="emoji-btn" onClick={() => insertEmojiIntoChat(emoji)}>{emoji}</button>)}
+                            </div>
+                            <div className="chat-modern-field">
+                              <label>Message</label>
+                              <textarea rows="5" value={chatForm.message_text} onChange={(event) => setChatForm({ ...chatForm, message_text: event.target.value })} placeholder="Type your message here. Emojis and symbols are supported." />
+                            </div>
+                            <div className="chat-compose-actions">
+                              <button className="btn" onClick={handleSendSystemChatMessage}>Send Message</button>
+                              <button className="btn secondary" onClick={() => setChatForm((current) => ({ ...current, message_text: '' }))}>Clear</button>
+                            </div>
+                            <div className="chat-section-note">Messages remain stored in the system unless a user deletes them for self. School admin retains permanent delete control for student to student chat.</div>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="chat-empty-state">Choose a contact to open the conversation.</div>
+                      )}
+                    </div>
                   </div>
                 )}
 
                 {(role === ROLE.ADMIN || role === ROLE.TEACHER) ? (
-                  <div className="card chat-monitor-panel">
-                    <h3 style={{ marginTop:0 }}>{role === ROLE.ADMIN ? 'Student Chat Monitor' : 'Student Chat Monitor and Teacher Reply'}</h3>
-                    <p className="subtle">Filter by class and review student to student messages. Teachers can quick reply to students. School admins can allow or disallow students and permanently delete student to student messages.</p>
-                    <div className="toolbar">
-                      <div className="field-inline">
-                        <label>Class Filter</label>
-                        <select value={chatMonitorClassId} onChange={(event) => setChatMonitorClassId(event.target.value)}>
-                          {chatMonitorClassOptions.map((option) => <option key={option.value || 'all-classes'} value={option.value}>{option.label}</option>)}
-                        </select>
-                      </div>
-                      <div className="field-inline">
-                        <label>Search Messages</label>
-                        <input className="chat-search-input" value={chatMonitorSearch} onChange={(event) => setChatMonitorSearch(event.target.value)} placeholder="Search by student or message text" />
+                  <div className="chat-monitor-panel">
+                    <div className="chat-panel-head">
+                      <div className="chat-panel-title-row">
+                        <div>
+                          <h3 className="chat-panel-title" style={{ fontSize: 22 }}>{role === ROLE.ADMIN ? 'Student Chat Monitor' : 'Student Chat Monitor and Teacher Reply'}</h3>
+                          <p className="chat-panel-subtitle">Filter by class and review student to student messages. Teachers can quick reply. School admins can allow, disallow, and permanently delete student chat.</p>
+                        </div>
+                        <span className="chat-header-status"><span className="chat-dot"></span>Realtime</span>
                       </div>
                     </div>
-                    <div className="chat-monitor-list">
-                      {monitoredStudentChatMessages.length === 0 ? <div className="empty">No monitored student chats found for the selected class.</div> : monitoredStudentChatMessages.map((message) => {
-                        const senderPermission = chatPermissionByStudentProfileId.get(String(message.sender_profile_id || '').trim());
-                        const recipientPermission = chatPermissionByStudentProfileId.get(String(message.recipient_profile_id || '').trim());
-                        const senderAllowed = senderPermission ? senderPermission.is_allowed !== false : true;
-                        const recipientAllowed = recipientPermission ? recipientPermission.is_allowed !== false : true;
-                        return (
-                          <div key={message.id} className="chat-monitor-item">
-                            <div className="chat-monitor-item-head">
-                              <div>
-                                <strong>{message.sender_name}</strong>
-                                <div className="subtle">to {message.recipient_name}</div>
-                                <div className="subtle">{message.class_name || '-'} | {new Date(message.created_at).toLocaleString()}</div>
-                              </div>
-                              <span className="chat-contact-role">{chatTypeLabel(message.chat_type)}</span>
-                            </div>
-                            <div className="chat-monitor-message">{message.message_text}</div>
-                            <div className="chat-monitor-actions">
-                              {role === ROLE.TEACHER && <button className="icon-btn" onClick={() => quickReplyToChatStudent(message.sender_profile_id)}>Reply to Sender</button>}
-                              {role === ROLE.TEACHER && <button className="icon-btn" onClick={() => quickReplyToChatStudent(message.recipient_profile_id)}>Reply to Recipient</button>}
-                              {role === ROLE.ADMIN && <button className={classNames('icon-btn', senderAllowed ? 'warning' : '')} onClick={() => handleToggleStudentChatPermission(message.sender_profile_id, !senderAllowed)}>{senderAllowed ? 'Disallow Sender' : 'Allow Sender'}</button>}
-                              {role === ROLE.ADMIN && <button className={classNames('icon-btn', recipientAllowed ? 'warning' : '')} onClick={() => handleToggleStudentChatPermission(message.recipient_profile_id, !recipientAllowed)}>{recipientAllowed ? 'Disallow Recipient' : 'Allow Recipient'}</button>}
-                              {role === ROLE.ADMIN && <button className="icon-btn danger" onClick={() => handlePermanentDeleteChatMessage(message)}>Delete Permanently</button>}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {role === ROLE.ADMIN && (
-                      <div style={{ marginTop:16 }}>
-                        <h4 style={{ margin:'0 0 10px' }}>Student Chat Status</h4>
-                        <div className="chat-rule-list">
-                          {monitoredStudentParticipants.length === 0 ? <div className="empty">No students to manage in this filter.</div> : monitoredStudentParticipants.map((student) => {
-                            const permission = chatPermissionByStudentProfileId.get(String(student.profile_id || '').trim());
-                            const isAllowed = permission ? permission.is_allowed !== false : true;
-                            return (
-                              <div key={student.profile_id} className="chat-rule-item">
-                                <div style={{ display:'flex', justifyContent:'space-between', gap:10, flexWrap:'wrap' }}>
-                                  <div>
-                                    <strong>{student.full_name}</strong>
-                                    <div className="subtle">{student.class_name || '-'}</div>
-                                  </div>
-                                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                                    <span className={classNames('chip', isAllowed ? 'success' : 'danger')}>{isAllowed ? 'Allowed' : 'Disallowed'}</span>
-                                    <button className={classNames('icon-btn', isAllowed ? 'warning' : '')} onClick={() => handleToggleStudentChatPermission(student.profile_id, !isAllowed)}>{isAllowed ? 'Disallow' : 'Allow'}</button>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
+                    <div className="chat-panel-body">
+                      <div className="chat-toolbar-grid">
+                        <div className="chat-modern-field">
+                          <label>Class Filter</label>
+                          <select value={chatMonitorClassId} onChange={(event) => setChatMonitorClassId(event.target.value)}>
+                            {chatMonitorClassOptions.map((option) => <option key={option.value || 'all-classes'} value={option.value}>{option.label}</option>)}
+                          </select>
+                        </div>
+                        <div className="chat-modern-field">
+                          <label>Search Messages</label>
+                          <input className="chat-search-input" value={chatMonitorSearch} onChange={(event) => setChatMonitorSearch(event.target.value)} placeholder="Search by student or message text" />
                         </div>
                       </div>
-                    )}
+                      <div className="chat-monitor-list" style={{ marginTop: 16 }}>
+                        {monitoredStudentChatMessages.length === 0 ? <div className="chat-contact-empty">No monitored student chats found for the selected class.</div> : monitoredStudentChatMessages.map((message) => {
+                          const senderPermission = chatPermissionByStudentProfileId.get(String(message.sender_profile_id || '').trim());
+                          const recipientPermission = chatPermissionByStudentProfileId.get(String(message.recipient_profile_id || '').trim());
+                          const senderAllowed = senderPermission ? senderPermission.is_allowed !== false : true;
+                          const recipientAllowed = recipientPermission ? recipientPermission.is_allowed !== false : true;
+                          return (
+                            <div key={message.id} className="chat-monitor-item">
+                              <div className="chat-monitor-item-head">
+                                <div className="chat-contact-row">
+                                  <div className="chat-avatar" style={{ background: getAvatarTone(message.sender_name || message.recipient_name || message.id) }}>{getInitials(message.sender_name || '?')}</div>
+                                  <div>
+                                    <strong>{message.sender_name}</strong>
+                                    <div className="subtle">to {message.recipient_name}</div>
+                                    <div className="subtle">{message.class_name || '-'} • {new Date(message.created_at).toLocaleString()}</div>
+                                  </div>
+                                </div>
+                                <span className="chat-contact-role">{chatTypeLabel(message.chat_type)}</span>
+                              </div>
+                              <div className="chat-monitor-message">{message.message_text}</div>
+                              <div className="chat-monitor-actions">
+                                {role === ROLE.TEACHER && <button className="icon-btn" onClick={() => quickReplyToChatStudent(message.sender_profile_id)}>Reply to Sender</button>}
+                                {role === ROLE.TEACHER && <button className="icon-btn" onClick={() => quickReplyToChatStudent(message.recipient_profile_id)}>Reply to Recipient</button>}
+                                {role === ROLE.ADMIN && <button className={classNames('icon-btn', senderAllowed ? 'warning' : '')} onClick={() => handleToggleStudentChatPermission(message.sender_profile_id, !senderAllowed)}>{senderAllowed ? 'Disallow Sender' : 'Allow Sender'}</button>}
+                                {role === ROLE.ADMIN && <button className={classNames('icon-btn', recipientAllowed ? 'warning' : '')} onClick={() => handleToggleStudentChatPermission(message.recipient_profile_id, !recipientAllowed)}>{recipientAllowed ? 'Disallow Recipient' : 'Allow Recipient'}</button>}
+                                {role === ROLE.ADMIN && <button className="icon-btn danger" onClick={() => handlePermanentDeleteChatMessage(message)}>Delete Permanently</button>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {role === ROLE.ADMIN && (
+                        <div style={{ marginTop:16 }}>
+                          <h4 style={{ margin:'0 0 10px', color:'#312e81' }}>Student Chat Status</h4>
+                          <div className="chat-rule-list">
+                            {monitoredStudentParticipants.length === 0 ? <div className="chat-contact-empty">No students to manage in this filter.</div> : monitoredStudentParticipants.map((student) => {
+                              const permission = chatPermissionByStudentProfileId.get(String(student.profile_id || '').trim());
+                              const isAllowed = permission ? permission.is_allowed !== false : true;
+                              return (
+                                <div key={student.profile_id} className="chat-rule-item">
+                                  <div style={{ display:'flex', justifyContent:'space-between', gap:10, flexWrap:'wrap' }}>
+                                    <div className="chat-contact-row">
+                                      <div className="chat-avatar" style={{ background: getAvatarTone(student.full_name || student.profile_id) }}>{getInitials(student.full_name || '?')}</div>
+                                      <div>
+                                        <strong>{student.full_name}</strong>
+                                        <div className="subtle">{student.class_name || '-'}</div>
+                                      </div>
+                                    </div>
+                                    <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                                      <span className={classNames('chip', isAllowed ? 'success' : 'danger')}>{isAllowed ? 'Allowed' : 'Disallowed'}</span>
+                                      <button className={classNames('icon-btn', isAllowed ? 'warning' : '')} onClick={() => handleToggleStudentChatPermission(student.profile_id, !isAllowed)}>{isAllowed ? 'Disallow' : 'Allow'}</button>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ) : (
                   role !== ROLE.ADMIN && (
-                    <div className="card chat-monitor-panel">
-                      <h3 style={{ marginTop:0 }}>Chat Rules and Notifications</h3>
-                      <div className="chat-rule-list">
-                        <div className="chat-rule-item">Unread messages show as blue badges beside the System Chat tab and beside each contact name.</div>
-                        <div className="chat-rule-item">Messages stay stored in the system unless a user chooses Delete for Me. Student to student messages can be permanently deleted only by the school admin.</div>
-                        <div className="chat-rule-item">Student to student chat is restricted to JHS students in the same class. Student to teacher, parent to teacher, and principal to teacher chats follow their role permissions automatically.</div>
+                    <div className="chat-monitor-panel">
+                      <div className="chat-panel-head">
+                        <div className="chat-panel-title-row">
+                          <div>
+                            <h3 className="chat-panel-title" style={{ fontSize: 22 }}>Chat Rules and Notifications</h3>
+                            <p className="chat-panel-subtitle">Quick guide to unread badges, stored messages, and role permissions.</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="chat-panel-body">
+                        <div className="chat-rule-list">
+                          <div className="chat-rule-item">Unread messages show as blue badges beside the System Chat tab and beside each contact name.</div>
+                          <div className="chat-rule-item">Messages stay stored in the system unless a user chooses Delete for Me. Student to student messages can be permanently deleted only by the school admin.</div>
+                          <div className="chat-rule-item">Student to student chat is restricted to JHS students in the same class. Student to teacher, parent to teacher, and principal to teacher chats follow their role permissions automatically.</div>
+                        </div>
                       </div>
                     </div>
                   )
