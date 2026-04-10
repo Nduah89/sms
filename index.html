@@ -3365,28 +3365,90 @@
       }, [page, role, currentConversationMessages.length, chatForm.recipient_profile_id]);
 
       const canCurrentUserMonitorStudentChat = role === ROLE.ADMIN || role === ROLE.TEACHER;
-      const chatMonitorClassOptions = useMemo(() => {
-        if (!canCurrentUserMonitorStudentChat) return [{ value: '', label: 'All Classes' }];
-        if (role === ROLE.TEACHER) {
-          return [{ value: '', label: 'All Assigned Classes' }, ...teacherAssignedClassIds.map((classId) => ({ value: classId, label: classNameMap[classId] || classId }))];
+      const teacherJhsMonitorClassIds = useMemo(() => {
+        if (role !== ROLE.TEACHER) return [];
+        const resolvedIds = new Set();
+        const addId = (value) => {
+          const id = String(value || '').trim();
+          if (!id) return;
+          const row = orderedClassRows.find((item) => String(item.id || '').trim() === id) || null;
+          const label = String(buildClassDisplay(row) || classNameMap[id] || '').trim();
+          if (label && isJhsClassLabel(label)) {
+            resolvedIds.add(id);
+          }
+        };
+        const addName = (value) => {
+          const normalizedName = normalizeTeacherMainClassName(value);
+          if (!normalizedName) return;
+          const row = orderedClassRows.find((item) => normalizeTeacherMainClassName(item.class_name || item.name || '') === normalizedName) || null;
+          if (row?.id) addId(row.id);
+        };
+
+        (teacherAssignedClassIds || []).forEach(addId);
+        (Array.isArray(teacherEntityRow?.assigned_class_ids) ? teacherEntityRow.assigned_class_ids : []).forEach(addId);
+        addId(teacherEntityRow?.class_id);
+        addName(teacherEntityRow?.teacher_main_class_name);
+        addName(teacherEntityRow?.assigned_class);
+
+        if (!resolvedIds.size) {
+          (teacherRestrictedStudentRows || []).forEach((student) => {
+            const classId = String(student.class_id || '').trim();
+            const classLabel = String(student.student_main_class_name || student.class_name || classNameMap[classId] || '').trim();
+            if (classId && isJhsClassLabel(classLabel)) {
+              resolvedIds.add(classId);
+            }
+          });
         }
-        return [{ value: '', label: 'All Classes' }, ...orderedClassRows.map((row) => ({ value: row.id, label: buildClassDisplay(row) || row.name }))];
-      }, [canCurrentUserMonitorStudentChat, role, teacherAssignedClassIds, orderedClassRows, classNameMap]);
+
+        return Array.from(resolvedIds);
+      }, [role, teacherAssignedClassIds, teacherEntityRow, orderedClassRows, classNameMap, teacherRestrictedStudentRows]);
+
+      const jhsChatMonitorClassOptions = useMemo(() => {
+        if (role === ROLE.TEACHER) {
+          return teacherJhsMonitorClassIds
+            .map((classId) => {
+              const linkedClassRow = orderedClassRows.find((row) => String(row.id || '').trim() === String(classId || '').trim()) || null;
+              const label = String(buildClassDisplay(linkedClassRow) || classNameMap[classId] || classId).trim();
+              return { value: classId, label };
+            })
+            .filter((option) => isJhsClassLabel(option.label));
+        }
+        return orderedClassRows
+          .map((row) => ({ value: row.id, label: buildClassDisplay(row) || row.name }))
+          .filter((option) => isJhsClassLabel(option.label));
+      }, [role, teacherJhsMonitorClassIds, orderedClassRows, classNameMap]);
+
+      const chatMonitorClassOptions = useMemo(() => {
+        if (!canCurrentUserMonitorStudentChat) return [{ value: '', label: 'All JHS Classes' }];
+        const baseLabel = role === ROLE.TEACHER ? 'All Assigned JHS Classes' : 'All JHS Classes';
+        return [{ value: '', label: baseLabel }, ...jhsChatMonitorClassOptions];
+      }, [canCurrentUserMonitorStudentChat, role, jhsChatMonitorClassOptions]);
+
+      useEffect(() => {
+        if (!canCurrentUserMonitorStudentChat) return;
+        const allowedIds = new Set(jhsChatMonitorClassOptions.map((option) => String(option.value || '').trim()).filter(Boolean));
+        const selected = String(chatMonitorClassId || '').trim();
+        if (selected && !allowedIds.has(selected)) {
+          setChatMonitorClassId('');
+        }
+      }, [canCurrentUserMonitorStudentChat, jhsChatMonitorClassOptions, chatMonitorClassId]);
 
       const monitoredStudentChatMessages = useMemo(() => {
         if (!canCurrentUserMonitorStudentChat) return [];
         const selectedClassId = String(chatMonitorClassId || '').trim();
         const searchText = String(chatMonitorSearch || '').trim().toLowerCase();
-        const allowedClassIds = role === ROLE.TEACHER ? new Set(teacherAssignedClassIds.map((value) => String(value || '').trim()).filter(Boolean)) : null;
+        const allowedClassIds = new Set(jhsChatMonitorClassOptions.map((option) => String(option.value || '').trim()).filter(Boolean));
         return visibleChatMessages.filter((message) => {
           if (message.chat_type !== 'student_student') return false;
           const classId = String(message.class_id || '').trim();
+          const classLabel = String(message.class_name || classNameMap[classId] || '').trim();
+          if (!isJhsClassLabel(classLabel)) return false;
           if (selectedClassId && classId !== selectedClassId) return false;
-          if (allowedClassIds && allowedClassIds.size && classId && !allowedClassIds.has(classId)) return false;
+          if (allowedClassIds.size && classId && !allowedClassIds.has(classId)) return false;
           if (!searchText) return true;
           return [message.sender_name, message.recipient_name, message.message_text, message.class_name].some((value) => String(value || '').toLowerCase().includes(searchText));
         }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      }, [canCurrentUserMonitorStudentChat, visibleChatMessages, chatMonitorClassId, chatMonitorSearch, role, teacherAssignedClassIds]);
+      }, [canCurrentUserMonitorStudentChat, visibleChatMessages, chatMonitorClassId, chatMonitorSearch, jhsChatMonitorClassOptions, classNameMap]);
 
       const monitoredStudentParticipants = useMemo(() => {
         const ids = new Map();
