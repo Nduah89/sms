@@ -3228,36 +3228,28 @@
         const matchedAssignment = (teacherAssignments || []).find((assignment) => String(assignment.class_id || '').trim() === selectedClassId) || null;
         const payload = {
           id: attendanceForm.id || undefined,
+          school_id: school?.id || profile?.school_id || null,
           student_id: attendanceForm.student_id,
           class_id: selectedClassId,
           attendance_date: attendanceForm.attendance_date,
           status: attendanceForm.status,
           remarks: attendanceForm.remarks || null,
           marked_by_profile_id: profile.id,
-          teacher_assignment_id: matchedAssignment?.id || null,
-          subject_name: matchedAssignment?.subject_name || null
+          teacher_assignment_id: matchedAssignment?.id || null
         };
         try {
           setNotice({ type: '', text: '' });
-          let query = payload.id
+          const query = payload.id
             ? supabaseClient.from('attendance').update(payload).eq('id', payload.id)
             : supabaseClient.from('attendance').insert(payload);
-          let res = await query;
-          if (res?.error && matchedAssignment) {
-            const fallbackPayload = { ...payload };
-            delete fallbackPayload.subject_name;
-            query = payload.id
-              ? supabaseClient.from('attendance').update(fallbackPayload).eq('id', payload.id)
-              : supabaseClient.from('attendance').insert(fallbackPayload);
-            res = await query;
-          }
+          const res = await query;
           if (res?.error) {
             setNotice({ type: 'danger', text: res.error.message || 'Failed to save attendance.' });
             return;
           }
           setAttendanceForm({ id:'', student_id:'', class_id:'', teacher_assignment_id:'', subject_name:'', attendance_date: todayISO(), status: 'Present', remarks: '' });
           await refreshAll();
-          setNotice({ type: 'success', text: 'attendance saved successfully' });
+          setNotice({ type: 'success', text: 'Attendance saved successfully.' });
         } catch (error) {
           setNotice({ type: 'danger', text: error?.message || 'Failed to save attendance.' });
         }
@@ -3286,8 +3278,9 @@
         const midTermA = clampScore(gradeForm.mid_term_a_score, 0, 50);
         const endTermRaw = clampScore(gradeForm.end_of_term_raw_score, 0, 100);
         const endTermB = Number((endTermRaw / 2).toFixed(2));
-        const payload = {
+        const basePayload = {
           id: gradeForm.id || undefined,
+          school_id: school?.id || profile?.school_id || null,
           student_id: gradeForm.student_id,
           class_id: resolvedClassId,
           subject_id: gradeForm.subject_id,
@@ -3300,24 +3293,27 @@
         };
         try {
           setNotice({ type: '', text: '' });
-          let query = payload.id
-            ? supabaseClient.from('grades').update(payload).eq('id', payload.id)
-            : supabaseClient.from('grades').insert(payload);
-          let res = await query;
-          if (res?.error && /academic_year/i.test(String(res.error.message || '')) && String(payload.academic_year || '').includes('/')) {
-            const fallbackPayload = { ...payload, academic_year: String(payload.academic_year || '').split('/')[0] || String(new Date().getFullYear()) };
-            query = payload.id
-              ? supabaseClient.from('grades').update(fallbackPayload).eq('id', payload.id)
-              : supabaseClient.from('grades').insert(fallbackPayload);
-            res = await query;
+          const payloadVariants = [basePayload];
+          if (String(basePayload.academic_year || '').includes('/')) {
+            payloadVariants.push({ ...basePayload, academic_year: String(basePayload.academic_year || '').split('/')[0] || String(new Date().getFullYear()) });
           }
-          if (res?.error) {
-            setNotice({ type: 'danger', text: res.error.message || 'Failed to save grade.' });
-            return;
+
+          let lastError = null;
+          for (const candidate of payloadVariants) {
+            const query = candidate.id
+              ? supabaseClient.from('grades').update(candidate).eq('id', candidate.id)
+              : supabaseClient.from('grades').insert(candidate);
+            const res = await query;
+            if (!res?.error) {
+              resetTeacherGradeForm();
+              await refreshAll();
+              setNotice({ type: 'success', text: 'Grades saved successfully.' });
+              return;
+            }
+            lastError = res.error;
           }
-          resetTeacherGradeForm();
-          await refreshAll();
-          setNotice({ type: 'success', text: 'grades saved successfully' });
+
+          setNotice({ type: 'danger', text: lastError?.message || 'Failed to save grade.' });
         } catch (error) {
           setNotice({ type: 'danger', text: error?.message || 'Failed to save grade.' });
         }
