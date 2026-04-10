@@ -554,26 +554,55 @@
       return `${number}th`;
     }
 
-    function getBeceGradeDetails(percentScore) {
-      const percent = clampScore(percentScore, 0, 100);
-      if (percent >= 90) return { bece_grade: 1, remark: 'A+', interpretation: 'Highest' };
-      if (percent >= 80) return { bece_grade: 2, remark: 'A1', interpretation: 'Excellent' };
-      if (percent >= 70) return { bece_grade: 3, remark: 'B2', interpretation: 'Very Good' };
-      if (percent >= 65) return { bece_grade: 4, remark: 'B3', interpretation: 'Good' };
-      if (percent >= 60) return { bece_grade: 5, remark: 'C4', interpretation: 'Credit' };
-      if (percent >= 55) return { bece_grade: 6, remark: 'C5', interpretation: 'Credit' };
-      if (percent >= 50) return { bece_grade: 7, remark: 'C6', interpretation: 'Pass' };
-      if (percent >= 40) return { bece_grade: 8, remark: 'D7', interpretation: 'Weak Pass' };
-      return { bece_grade: 9, remark: 'E8/F9', interpretation: 'Fail' };
+    function normalizeSchoolCategory(value) {
+      const normalized = String(value || '').trim().toUpperCase();
+      if (normalized === 'SHS') return 'SHS';
+      if (normalized === 'JHS') return 'JHS';
+      return '';
     }
 
-    function buildDisplayGradeRows(rows = [], studentClassLookup = new Map()) {
+    function resolveSchoolCategory(value) {
+      return normalizeSchoolCategory(value) || 'JHS';
+    }
+
+    function getSchoolGradingSystem(schoolCategory) {
+      return resolveSchoolCategory(schoolCategory) === 'SHS' ? 'WASSCE GRADE SYSTEM' : 'BECE GRADE SYSTEM';
+    }
+
+    function getWaecGradeDetails(percentScore, schoolCategory = 'JHS') {
+      const percent = clampScore(percentScore, 0, 100);
+      const category = resolveSchoolCategory(schoolCategory);
+
+      if (category === 'SHS') {
+        if (percent >= 75) return { grading_system: 'WASSCE GRADE SYSTEM', grade_label: 'A1', remark: 'A1', interpretation: 'Excellent' };
+        if (percent >= 70) return { grading_system: 'WASSCE GRADE SYSTEM', grade_label: 'B2', remark: 'B2', interpretation: 'Very Good' };
+        if (percent >= 65) return { grading_system: 'WASSCE GRADE SYSTEM', grade_label: 'B3', remark: 'B3', interpretation: 'Good' };
+        if (percent >= 60) return { grading_system: 'WASSCE GRADE SYSTEM', grade_label: 'C4', remark: 'C4', interpretation: 'Credit' };
+        if (percent >= 55) return { grading_system: 'WASSCE GRADE SYSTEM', grade_label: 'C5', remark: 'C5', interpretation: 'Credit' };
+        if (percent >= 50) return { grading_system: 'WASSCE GRADE SYSTEM', grade_label: 'C6', remark: 'C6', interpretation: 'Credit' };
+        if (percent >= 45) return { grading_system: 'WASSCE GRADE SYSTEM', grade_label: 'D7', remark: 'D7', interpretation: 'Pass' };
+        if (percent >= 40) return { grading_system: 'WASSCE GRADE SYSTEM', grade_label: 'E8', remark: 'E8', interpretation: 'Pass' };
+        return { grading_system: 'WASSCE GRADE SYSTEM', grade_label: 'F9', remark: 'F9', interpretation: 'Fail' };
+      }
+
+      if (percent >= 90) return { grading_system: 'BECE GRADE SYSTEM', grade_label: '1', remark: 'Grade 1', interpretation: '90–100% (Highest)' };
+      if (percent >= 80) return { grading_system: 'BECE GRADE SYSTEM', grade_label: '2', remark: 'Grade 2', interpretation: '80–89%' };
+      if (percent >= 70) return { grading_system: 'BECE GRADE SYSTEM', grade_label: '3', remark: 'Grade 3', interpretation: '70–79%' };
+      if (percent >= 60) return { grading_system: 'BECE GRADE SYSTEM', grade_label: '4', remark: 'Grade 4', interpretation: '60–69%' };
+      if (percent >= 55) return { grading_system: 'BECE GRADE SYSTEM', grade_label: '5', remark: 'Grade 5', interpretation: '55–59%' };
+      if (percent >= 50) return { grading_system: 'BECE GRADE SYSTEM', grade_label: '6', remark: 'Grade 6', interpretation: '50–54%' };
+      if (percent >= 40) return { grading_system: 'BECE GRADE SYSTEM', grade_label: '7', remark: 'Grade 7', interpretation: '40–49%' };
+      if (percent >= 35) return { grading_system: 'BECE GRADE SYSTEM', grade_label: '8', remark: 'Grade 8', interpretation: '35–39%' };
+      return { grading_system: 'BECE GRADE SYSTEM', grade_label: '9', remark: 'Grade 9', interpretation: '0–34% (Lowest)' };
+    }
+
+    function buildDisplayGradeRows(rows = [], studentClassLookup = new Map(), schoolCategory = 'JHS') {
       const normalized = (rows || []).map((row) => {
         const midTermA = clampScore(row.assignment_score, 0, 50);
         const endTermB = clampScore(row.exam_score, 0, 50);
         const total = clampScore(row.total_score || (midTermA + endTermB), 0, 100);
         const percent = total;
-        const gradeMeta = getBeceGradeDetails(percent);
+        const gradeMeta = getWaecGradeDetails(percent, schoolCategory);
         const className = String(row.class_name || studentClassLookup.get(String(row.student_id || '').trim()) || row.student_main_class_name || '-').trim() || '-';
         return {
           ...row,
@@ -582,7 +611,9 @@
           end_of_term_b_score: endTermB,
           total_ab_score: total,
           percent_score: percent,
-          bece_grade: gradeMeta.bece_grade,
+          grade_label: gradeMeta.grade_label,
+          bece_grade: gradeMeta.grade_label,
+          grading_system: row.grading_system || gradeMeta.grading_system,
           remark_label: gradeMeta.remark,
           interpretation_label: gradeMeta.interpretation,
           position_label: '-'
@@ -800,7 +831,7 @@
       const [status, setStatus] = useState({ type: "", text: "" });
       const [loginForm, setLoginForm] = useState({ email: "", password: "" });
       const [registerForm, setRegisterForm] = useState({
-        school_name: "", school_address: "", school_contact: "", municipality: "", school_code: "", years_requested: 1,
+        school_name: "", school_address: "", school_contact: "", municipality: "", school_code: "", school_category: "JHS", years_requested: 1,
         admin_full_name: "", admin_email: "", admin_phone: "", password: ""
       });
       const [superForm, setSuperForm] = useState({ email: "", password: "" });
@@ -896,6 +927,7 @@
           school_contact: registerForm.school_contact,
           municipality: registerForm.municipality,
           school_code: resolvedSchoolCode,
+          school_category: registerForm.school_category,
           years_requested: Number(registerForm.years_requested),
           admin_full_name: registerForm.admin_full_name,
           admin_email: registerForm.admin_email,
@@ -904,12 +936,21 @@
         };
         const { data, error } = await supabaseClient.rpc("public_register_school_admin", { payload });
         if (error) return setStatus({ type: "danger", text: getFriendlyErrorMessage(error) });
+        if (data) {
+          const { error: categoryError } = await supabaseClient.rpc("public_set_school_registration_category", {
+            p_registration_id: data,
+            p_school_category: registerForm.school_category
+          });
+          if (categoryError) {
+            return setStatus({ type: "danger", text: `Registration submitted, but the school category could not be saved automatically. ${getFriendlyErrorMessage(categoryError)}` });
+          }
+        }
         const file = logoRef.current?.files?.[0];
         if (file && data) {
           await uploadFile(`school-registrations/${data}/${Date.now()}-${file.name}`, file);
         }
         setRegisterForm((prev) => ({ ...prev, school_code: resolvedSchoolCode }));
-        setStatus({ type: "success", text: `Registration submitted. School code: ${resolvedSchoolCode}. Await Super Admin approval.` });
+        setStatus({ type: "success", text: `Registration submitted for ${registerForm.school_category}. School code: ${resolvedSchoolCode}. Await Super Admin approval.` });
         setTab("login");
       };
 
@@ -922,7 +963,7 @@
               <div className="grid cards-2" style={{marginTop: 26}}>
                 <div className="card" style={{background:'rgba(255,255,255,0.06)', color:'white', borderColor:'rgba(255,255,255,0.1)'}}>
                   <strong>Schools</strong>
-                  <div className="subtle" style={{color:'#cbd5e1', marginTop: 8}}>Nursery to JHS 3, one platform, isolated data per school.</div>
+                  <div className="subtle" style={{color:'#cbd5e1', marginTop: 8}}>JHS and SHS, one platform, isolated data per school.</div>
                 </div>
                 <div className="card" style={{background:'rgba(255,255,255,0.06)', color:'white', borderColor:'rgba(255,255,255,0.1)'}}>
                   <strong>Scalable</strong>
@@ -963,6 +1004,7 @@
                     <div className="field"><label>School Contact</label><input value={registerForm.school_contact} onChange={(e) => setRegisterForm({...registerForm, school_contact: e.target.value})} required /></div>
                     <div className="field"><label>Municipality</label><input value={registerForm.municipality} onChange={(e) => setRegisterForm({...registerForm, municipality: e.target.value})} required /></div>
                     <div className="field"><label>School Address</label><input value={registerForm.school_address} onChange={(e) => setRegisterForm({...registerForm, school_address: e.target.value})} required /></div>
+                    <div className="field"><label>School Category</label><select value={registerForm.school_category} onChange={(e) => setRegisterForm({...registerForm, school_category: e.target.value})} required><option value="JHS">JHS</option><option value="SHS">SHS</option></select></div>
                     <div className="field"><label>Years Requested</label><select value={registerForm.years_requested} onChange={(e) => setRegisterForm({...registerForm, years_requested: e.target.value})}>{Array.from({length:100}, (_,i)=>i+1).map(v => <option key={v} value={v}>{v} Year{v>1?'s':''}</option>)}</select></div>
                     <div className="field"><label>Admin Full Name</label><input value={registerForm.admin_full_name} onChange={(e) => setRegisterForm({...registerForm, admin_full_name: e.target.value})} required /></div>
                     <div className="field"><label>Admin Email</label><input value={registerForm.admin_email} onChange={(e) => setRegisterForm({...registerForm, admin_email: e.target.value})} required /></div>
@@ -4442,6 +4484,19 @@
       };
 
       const schoolAdminRefMap = useMemo(() => Object.fromEntries((schoolAdminRefsHook.rows || []).map(r => [r.school_id, r])), [schoolAdminRefsHook.rows]);
+      const registrationByCreatedSchoolId = useMemo(() => (
+        Object.fromEntries((registrationsHook.rows || []).filter((row) => row?.created_school_id).map((row) => [String(row.created_school_id), row]))
+      ), [registrationsHook.rows]);
+      const registrationBySchoolCode = useMemo(() => (
+        Object.fromEntries((registrationsHook.rows || []).filter((row) => row?.school_code).map((row) => [String(row.school_code).toUpperCase(), row]))
+      ), [registrationsHook.rows]);
+      const currentSchoolCategory = useMemo(() => {
+        const directCategory = normalizeSchoolCategory(school?.school_category || school?.category);
+        if (directCategory) return directCategory;
+        const linkedRegistration = registrationByCreatedSchoolId[String(school?.id || '')] || registrationBySchoolCode[String(school?.school_code || '').toUpperCase()] || null;
+        return resolveSchoolCategory(linkedRegistration?.school_category || linkedRegistration?.category);
+      }, [school?.school_category, school?.category, school?.id, school?.school_code, registrationByCreatedSchoolId, registrationBySchoolCode]);
+      const currentSchoolGradingSystem = useMemo(() => getSchoolGradingSystem(currentSchoolCategory), [currentSchoolCategory]);
       const managedUserRefMap = useMemo(() => Object.fromEntries((userLoginRefsHook.rows || []).map(r => [r.profile_id, r])), [userLoginRefsHook.rows]);
       const managedPresenceMap = useMemo(() => Object.fromEntries((profilesPresenceHook.rows || []).map(r => [r.id, r])), [profilesPresenceHook.rows]);
       const getManagedPresence = (row) => managedPresenceMap[row?.profile_id || row?.id] || null;
@@ -4704,12 +4759,12 @@
           if (gradeForm.academic_year && String(row.academic_year || '') !== gradeForm.academic_year) return false;
           return true;
         });
-        return buildDisplayGradeRows(filteredRows, principalStudentClassLookup);
-      }, [teacherGradeRows, gradeForm.filter_class_name, gradeForm.term_name, gradeForm.academic_year, principalStudentClassLookup, mergedStudentsRows]);
+        return buildDisplayGradeRows(filteredRows, principalStudentClassLookup, currentSchoolCategory);
+      }, [teacherGradeRows, gradeForm.filter_class_name, gradeForm.term_name, gradeForm.academic_year, principalStudentClassLookup, mergedStudentsRows, currentSchoolCategory]);
 
       const principalDisplayPerformanceRows = useMemo(() => (
-        buildDisplayGradeRows(principalPerformanceRows, principalStudentClassLookup)
-      ), [principalPerformanceRows, principalStudentClassLookup]);
+        buildDisplayGradeRows(principalPerformanceRows, principalStudentClassLookup, currentSchoolCategory)
+      ), [principalPerformanceRows, principalStudentClassLookup, currentSchoolCategory]);
 
       const resetTeacherGradeForm = () => {
         setGradeForm({ id: '', student_id: '', class_id: '', subject_id: '', term_name: 'Term 1', academic_year: getAcademicYearLabel(), filter_class_name: '', mid_term_a_score: '', end_of_term_raw_score: '' });
@@ -4809,6 +4864,7 @@
           subject_id: gradeForm.subject_id,
           term_name: gradeForm.term_name,
           academic_year: gradeForm.academic_year,
+          grading_system: currentSchoolGradingSystem,
           assignment_score: midTermA,
           test_score: 0,
           exam_score: endTermB,
@@ -4936,7 +4992,7 @@
               <div className="page-title">
                 <div className="actions"><button className="btn secondary mobile-nav-toggle" onClick={() => setMobileOpen(!mobileOpen)}>Menu</button></div>
                 <h2>{getPageLabel(page, role) || "Dashboard"}</h2>
-                <div className="subtle">{school?.name || 'System Administration'}</div>
+                <div className="subtle">{school?.name ? `${school.name} (${currentSchoolCategory} • ${currentSchoolGradingSystem})` : 'System Administration'}</div>
               </div>
               <div className="actions">
                 <button className="btn secondary" onClick={goBackPage} disabled={!pageBackStack.length}>Back</button>
@@ -4959,8 +5015,8 @@
                 <div className="split">
                   <div className="card">
                     <h3>Schools Overview</h3>
-                    <div className="table-wrap"><table><thead><tr><th>School</th><th>Code</th><th>Status</th><th>License</th><th>End Date</th><th>Admin Login Reference</th><th>Actions</th></tr></thead><tbody>
-                      {schoolsHook.rows.map(s => { const ref = schoolAdminRefMap[s.id]; return <tr key={s.id}><td>{s.name}</td><td>{s.school_code}</td><td><span className={classNames('chip', s.approval_status==='approved' ? 'success' : s.approval_status==='pending' ? 'warning' : 'danger')}>{s.approval_status}</span></td><td>{s.license_state}</td><td>{formatDate(s.license_end_date)}</td><td>{ref ? <div className="subtle"><div><strong>{ref.admin_email}</strong></div><div>Temp: {ref.temporary_password}</div><div>Issued: {formatDate(ref.issued_at)}</div><div style={{marginTop:6}}><button className="btn secondary" onClick={()=>copyText(buildSchoolAdminReferenceText(s), 'School admin credentials copied to clipboard')}>Copy</button></div></div> : <span className="subtle">No credentials saved yet</span>}</td><td><div style={{display:'flex', gap:8, flexWrap:'wrap'}}>{s.approval_status === 'approved' && <button className="btn" onClick={()=>handleProvisionSchoolAdmin(s.id)}>{ref ? 'Reset Admin Login' : 'Create Admin Login'}</button>}<button className="btn secondary" onClick={()=>handleLicenseUpdate(s.id, 1, true)}>1 Month Trial</button><button className="btn success" onClick={()=>handleLicenseUpdate(s.id, 1, false)}>+1 Year</button><button className="btn warning" onClick={()=>handleSchoolLock(s.id, true, false)}>Usage Lock</button><button className="btn danger" onClick={()=>handleSchoolLock(s.id, true, true)}>Full Lock</button></div></td></tr>})}
+                    <div className="table-wrap"><table><thead><tr><th>Category</th><th>School</th><th>Code</th><th>Status</th><th>License</th><th>End Date</th><th>Admin Login Reference</th><th>Actions</th></tr></thead><tbody>
+                      {schoolsHook.rows.map(s => { const ref = schoolAdminRefMap[s.id]; const linkedRegistration = registrationByCreatedSchoolId[String(s.id || '')] || registrationBySchoolCode[String(s.school_code || '').toUpperCase()] || null; const schoolCategoryLabel = resolveSchoolCategory(s.school_category || linkedRegistration?.school_category); return <tr key={s.id}><td>{schoolCategoryLabel}</td><td>{s.name}</td><td>{s.school_code}</td><td><span className={classNames('chip', s.approval_status==='approved' ? 'success' : s.approval_status==='pending' ? 'warning' : 'danger')}>{s.approval_status}</span></td><td>{s.license_state}</td><td>{formatDate(s.license_end_date)}</td><td>{ref ? <div className="subtle"><div><strong>{ref.admin_email}</strong></div><div>Temp: {ref.temporary_password}</div><div>Issued: {formatDate(ref.issued_at)}</div><div style={{marginTop:6}}><button className="btn secondary" onClick={()=>copyText(buildSchoolAdminReferenceText(s), 'School admin credentials copied to clipboard')}>Copy</button></div></div> : <span className="subtle">No credentials saved yet</span>}</td><td><div style={{display:'flex', gap:8, flexWrap:'wrap'}}>{s.approval_status === 'approved' && <button className="btn" onClick={()=>handleProvisionSchoolAdmin(s.id)}>{ref ? 'Reset Admin Login' : 'Create Admin Login'}</button>}<button className="btn secondary" onClick={()=>handleLicenseUpdate(s.id, 1, true)}>1 Month Trial</button><button className="btn success" onClick={()=>handleLicenseUpdate(s.id, 1, false)}>+1 Year</button><button className="btn warning" onClick={()=>handleSchoolLock(s.id, true, false)}>Usage Lock</button><button className="btn danger" onClick={()=>handleSchoolLock(s.id, true, true)}>Full Lock</button></div></td></tr>})}
                     </tbody></table></div>
                   </div>
                   <div className="card">
@@ -4977,10 +5033,13 @@
               <div className="card">
                 <h3>Registered Schools</h3>
                 <p className="subtle">Latest school admin credential references are kept here for Super Admin review. Resetting credentials overwrites the previous reference with the newest login details.</p>
-                <div className="table-wrap"><table><thead><tr><th>School</th><th>Code</th><th>Status</th><th>License</th><th>End Date</th><th>Admin Name</th><th>Admin Email</th><th>Latest Temporary Password</th><th>Issued</th><th>Reference</th><th>Actions</th></tr></thead><tbody>
+                <div className="table-wrap"><table><thead><tr><th>Category</th><th>School</th><th>Code</th><th>Status</th><th>License</th><th>End Date</th><th>Admin Name</th><th>Admin Email</th><th>Latest Temporary Password</th><th>Issued</th><th>Reference</th><th>Actions</th></tr></thead><tbody>
                   {schoolsHook.rows.map(s => {
                     const ref = schoolAdminRefMap[s.id];
+                    const linkedRegistration = registrationByCreatedSchoolId[String(s.id || '')] || registrationBySchoolCode[String(s.school_code || '').toUpperCase()] || null;
+                    const schoolCategoryLabel = resolveSchoolCategory(s.school_category || linkedRegistration?.school_category);
                     return <tr key={s.id}>
+                      <td>{schoolCategoryLabel}</td>
                       <td>{s.name}</td>
                       <td>{s.school_code}</td>
                       <td><span className={classNames('chip', s.approval_status==='approved' ? 'success' : s.approval_status==='pending' ? 'warning' : 'danger')}>{s.approval_status}</span></td>
@@ -5003,8 +5062,8 @@
                 <h3>School Registration Approval Records</h3>
                 <p className="subtle">Super Admin can approve, deny, or permanently delete pending and approved registration records. Deleting an approved record also removes the linked school and related data.</p>
                 {!isSuperAdmin && <div className="banner danger">Only the Super Admin can use Approve, Deny, and Permanent Delete in School Approvals.</div>}
-                <div className="table-wrap"><table><thead><tr><th>School</th><th>Code</th><th>Years</th><th>Admin</th><th>Email</th><th>Status</th><th>Created School</th><th>Actions</th></tr></thead><tbody>
-                  {registrationsHook.rows.map(r => <tr key={r.id}><td>{r.school_name}</td><td>{r.school_code}</td><td>{r.years_requested}</td><td>{r.admin_full_name}</td><td>{r.admin_email}</td><td><span className={classNames('chip', r.status==='approved' ? 'success' : r.status==='pending' ? 'warning' : 'danger')}>{r.status}</span></td><td>{r.created_school_id ? 'Yes' : 'No'}</td><td><div style={{display:'flex', gap:8, flexWrap:'wrap'}}>{r.status !== 'approved' && <button className="btn success" disabled={!isSuperAdmin} onClick={()=>handleSchoolApproval(r.id, 'approved')}>Approve</button>}{r.status !== 'denied' && <button className="btn secondary" disabled={!isSuperAdmin} onClick={()=>handleSchoolApproval(r.id, 'denied')}>Deny</button>}<button className="btn danger" disabled={!isSuperAdmin} onClick={()=>handlePermanentDeleteRegistration(r.id, r.school_name, r.status)}>Permanent Delete</button></div></td></tr>)}
+                <div className="table-wrap"><table><thead><tr><th>Category</th><th>School</th><th>Code</th><th>Years</th><th>Admin</th><th>Email</th><th>Status</th><th>Created School</th><th>Actions</th></tr></thead><tbody>
+                  {registrationsHook.rows.map(r => <tr key={r.id}><td>{resolveSchoolCategory(r.school_category || r.category)}</td><td>{r.school_name}</td><td>{r.school_code}</td><td>{r.years_requested}</td><td>{r.admin_full_name}</td><td>{r.admin_email}</td><td><span className={classNames('chip', r.status==='approved' ? 'success' : r.status==='pending' ? 'warning' : 'danger')}>{r.status}</span></td><td>{r.created_school_id ? 'Yes' : 'No'}</td><td><div style={{display:'flex', gap:8, flexWrap:'wrap'}}>{r.status !== 'approved' && <button className="btn success" disabled={!isSuperAdmin} onClick={()=>handleSchoolApproval(r.id, 'approved')}>Approve</button>}{r.status !== 'denied' && <button className="btn secondary" disabled={!isSuperAdmin} onClick={()=>handleSchoolApproval(r.id, 'denied')}>Deny</button>}<button className="btn danger" disabled={!isSuperAdmin} onClick={()=>handlePermanentDeleteRegistration(r.id, r.school_name, r.status)}>Permanent Delete</button></div></td></tr>)}
                 </tbody></table></div>
               </div>
             )}
@@ -5031,7 +5090,15 @@
                   { label: 'Attendance Summary', value: attendanceHook.rows.length },
                   { label: 'Recently Created Accounts', value: dashboardMetrics.recentAccounts }
                 ]} />
-                <div className="grid cards-3">
+                <div className="grid cards-4">
+                  <div className="card">
+                    <h3>School Category</h3>
+                    <div style={{display:'grid', gap:10}}>
+                      <div><strong>Category:</strong> {currentSchoolCategory}</div>
+                      <div><strong>Grading System:</strong> {currentSchoolGradingSystem}</div>
+                      <div className="subtle">This school is locked to the matching WAEC grading scale automatically.</div>
+                    </div>
+                  </div>
                   <div className="card">
                     <h3>Class Summary</h3>
                     {classesHook.rows.length === 0 ? <div className="empty">No classes added yet</div> : classesHook.rows.slice(0, 10).map(cls => <div key={cls.id} style={{padding:'10px 0', borderBottom:'1px solid #e2e8f0'}}><strong>{buildClassDisplay(cls) || cls.class_name || cls.name}</strong><div className="subtle">Capacity: {cls.capacity || '-'}</div></div>)}
@@ -5760,6 +5827,7 @@
                     <div className="field"><label>Filter by Class</label><select value={gradeForm.filter_class_name} onChange={(e)=>setGradeForm(prev => ({...prev, filter_class_name:e.target.value, class_id:e.target.value, student_id:''}))}>{teacherGradeClassOptions.map(option => <option key={option.value || 'all-teacher-classes'} value={option.value}>{option.label}</option>)}</select></div>
                     <div className="field"><label>Term</label><select value={gradeForm.term_name} onChange={(e)=>setGradeForm({...gradeForm, term_name:e.target.value})}>{termOptions.map(x => <option key={x}>{x}</option>)}</select></div>
                     <div className="field"><label>Academic Year</label><select value={gradeForm.academic_year} onChange={(e)=>setGradeForm({...gradeForm, academic_year:e.target.value})}>{teacherAcademicYearOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></div>
+                    <div className="field"><label>Grading System</label><select value={currentSchoolGradingSystem} disabled><option value={currentSchoolGradingSystem}>{currentSchoolGradingSystem}</option></select></div>
                   </div>
                 </div>
                 {showGradeEditor && (
@@ -5771,6 +5839,7 @@
                       <div className="field"><label>Subject Name</label><select value={gradeForm.subject_id} onChange={(e)=>setGradeForm((prev)=>({...prev, subject_id:e.target.value}))}>{teacherGradeSubjectOptions.map(option => <option key={option.value || 'select-subject'} value={option.value}>{option.label}</option>)}</select></div>
                       <div className="field"><label>Term</label><select value={gradeForm.term_name} onChange={(e)=>setGradeForm({...gradeForm, term_name:e.target.value})}>{termOptions.map(x => <option key={x}>{x}</option>)}</select></div>
                       <div className="field"><label>Academic Year</label><select value={gradeForm.academic_year} onChange={(e)=>setGradeForm({...gradeForm, academic_year:e.target.value})}>{teacherAcademicYearOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></div>
+                      <div className="field"><label>Grading System</label><select value={currentSchoolGradingSystem} disabled><option value={currentSchoolGradingSystem}>{currentSchoolGradingSystem}</option></select></div>
                       <div className="field"><label>Mid Term Exams A (50)</label><input type="number" min="0" max="50" value={gradeForm.mid_term_a_score} onChange={(e)=>setGradeForm({...gradeForm, mid_term_a_score:e.target.value})} /></div>
                       <div className="field"><label>End of Term Exams B Raw Score (100)</label><input type="number" min="0" max="100" value={gradeForm.end_of_term_raw_score} onChange={(e)=>setGradeForm({...gradeForm, end_of_term_raw_score:e.target.value})} /></div>
                       <div className="field"><label>Total A+B (100 Marks)</label><input value={(clampScore(gradeForm.mid_term_a_score, 0, 50) + clampScore(gradeForm.end_of_term_raw_score, 0, 100) / 2).toFixed(1)} readOnly /></div>
@@ -5779,11 +5848,11 @@
                       <button type="button" className="btn" disabled={loginLogoutOnly || !gradeForm.student_id || !gradeForm.subject_id} onClick={saveTeacherGrade}>{gradeForm.id ? 'Update Grade' : 'Save Grade'}</button>
                       <button className="btn secondary" onClick={resetTeacherGradeForm}>Cancel</button>
                     </div>
-                    <div className="footer-note">The teacher form now records Mid Term Exams A out of 50 and End of Term Exams B as a raw score out of 100. The saved total is normalized to 100 marks, and those saved rows reflect immediately in the principal academic performance table. WAEC BECE uses a nine point scale, Grade 1 as highest and Grade 9 as lowest. This screen applies that interpretation to the saved 100 mark total.</div>
+                    <div className="footer-note">The teacher form now records Mid Term Exams A out of 50 and End of Term Exams B as a raw score out of 100. The saved total is normalized to 100 marks, and those saved rows reflect immediately in the principal academic performance table. This school is registered as {currentSchoolCategory}, so only {currentSchoolGradingSystem} is applied automatically across the system.</div>
                   </div>
                 )}
                 <div className="card">
-                  <div className="table-wrap"><table><thead><tr><th>Student</th><th>Class</th><th>Subject</th><th>Term</th><th>Mid Term A (50)</th><th>End of Term B (50)</th><th>Total A+B</th><th>%</th><th>Grade</th><th>Remark</th><th>Interpretation</th><th>Position</th><th>Actions</th></tr></thead><tbody>{teacherDisplayGradeRows.length === 0 ? <tr><td colSpan="13"><div className="empty">No grade records found</div></td></tr> : teacherDisplayGradeRows.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name}</td><td>{r.term_name}</td><td>{r.mid_term_a_score}</td><td>{r.end_of_term_b_score}</td><td><strong>{r.total_ab_score}</strong></td><td>{r.percent_score}%</td><td><strong>{r.bece_grade}</strong></td><td><strong>{r.remark_label}</strong></td><td>{r.interpretation_label}</td><td><strong>{r.position_label}</strong></td><td><div style={{display:'flex', gap:8}}><button className="btn secondary" onClick={()=>openTeacherGradeEditor(r)}>Edit</button><button className="btn danger" onClick={()=>deleteEntity('grades', r.id)}>Delete</button></div></td></tr>)}</tbody></table></div>
+                  <div className="table-wrap"><table><thead><tr><th>Student</th><th>Class</th><th>Subject</th><th>Term</th><th>Mid Term A (50)</th><th>End of Term B (50)</th><th>Total A+B</th><th>%</th><th>Grade</th><th>Remark</th><th>Interpretation</th><th>Position</th><th>Actions</th></tr></thead><tbody>{teacherDisplayGradeRows.length === 0 ? <tr><td colSpan="13"><div className="empty">No grade records found</div></td></tr> : teacherDisplayGradeRows.map(r => <tr key={r.id}><td>{r.student_name}</td><td>{r.class_name}</td><td>{r.subject_name}</td><td>{r.term_name}</td><td>{r.mid_term_a_score}</td><td>{r.end_of_term_b_score}</td><td><strong>{r.total_ab_score}</strong></td><td>{r.percent_score}%</td><td><strong>{r.grade_label}</strong></td><td><strong>{r.remark_label}</strong></td><td>{r.interpretation_label}</td><td><strong>{r.position_label}</strong></td><td><div style={{display:'flex', gap:8}}><button className="btn secondary" onClick={()=>openTeacherGradeEditor(r)}>Edit</button><button className="btn danger" onClick={()=>deleteEntity('grades', r.id)}>Delete</button></div></td></tr>)}</tbody></table></div>
                 </div>
               </div>
             )}
@@ -5799,7 +5868,7 @@
                       <div className="field"><label>Term</label><select value={principalPerformanceFilter.term_name} onChange={(e)=>setPrincipalPerformanceFilter(prev => ({ ...prev, term_name: e.target.value }))}>{['All Terms', ...termOptions].map((option) => <option key={option} value={option}>{option}</option>)}</select></div>
                       <div className="field"><label>Academic Year</label><select value={principalPerformanceFilter.academic_year} onChange={(e)=>setPrincipalPerformanceFilter(prev => ({ ...prev, academic_year: e.target.value }))}>{principalAcademicYearOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></div>
                     </div>
-                    <p className="subtle" style={{marginTop: 16}}>Main Class now comes directly from the class values assigned in the student records. After you choose a main class, only students in that same class appear in the student dropdown. Academic Year defaults to the current school year and updates automatically as the calendar changes.</p>
+                    <p className="subtle" style={{marginTop: 16}}>Main Class now comes directly from the class values assigned in the student records. After you choose a main class, only students in that same class appear in the student dropdown. Academic Year defaults to the current school year and updates automatically as the calendar changes. This school is registered as {currentSchoolCategory}, so only {currentSchoolGradingSystem} is used for grade interpretation.</p>
                   </div>
                   <div className="card">
                     <div className="table-wrap">
@@ -5809,7 +5878,7 @@
                           {principalDisplayPerformanceRows.length === 0 && <tr><td colSpan="13"><div className="empty">No grade records found for the selected filters</div></td></tr>}
                           {principalDisplayPerformanceRows.map((row) => {
                             const resolvedClassName = row.class_name || principalStudentClassLookup.get(String(row.student_id || '').trim()) || '-';
-                            return <tr key={row.id}><td>{row.student_name}</td><td>{resolvedClassName}</td><td>{row.subject_name}</td><td>{row.term_name}</td><td>{row.mid_term_a_score}</td><td>{row.end_of_term_b_score}</td><td><strong>{row.total_ab_score}</strong></td><td>{row.percent_score}%</td><td><strong>{row.bece_grade}</strong></td><td><strong>{row.remark_label}</strong></td><td>{row.interpretation_label}</td><td><strong>{row.position_label}</strong></td><td>{row.academic_year}</td></tr>;
+                            return <tr key={row.id}><td>{row.student_name}</td><td>{resolvedClassName}</td><td>{row.subject_name}</td><td>{row.term_name}</td><td>{row.mid_term_a_score}</td><td>{row.end_of_term_b_score}</td><td><strong>{row.total_ab_score}</strong></td><td>{row.percent_score}%</td><td><strong>{row.grade_label}</strong></td><td><strong>{row.remark_label}</strong></td><td>{row.interpretation_label}</td><td><strong>{row.position_label}</strong></td><td>{row.academic_year}</td></tr>;
                           })}
                         </tbody>
                       </table>
