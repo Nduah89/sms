@@ -1713,7 +1713,7 @@
               <div>
                 <p><strong>Role:</strong> {roleLabelMap[welcomeContext.role_name] || welcomeContext.role_name}</p>
                 <p><strong>School:</strong> {welcomeContext.school_name || '-'}</p>
-                <p><strong>Live Status:</strong> <span className={classNames('chip', currentLiveStatus === 'online' ? 'info' : 'danger')}>{currentLiveStatus === 'online' ? 'Online' : 'Offline'}</span></p>
+                <p><strong>Live Status:</strong> <span className={classNames('chip', currentLiveStatus === 'online' ? 'success' : 'danger')}>{currentLiveStatus === 'online' ? 'Online' : 'Offline'}</span></p>
                 {!hideAdminAuditLines && <p><strong>Created by Admin:</strong> {welcomeContext.created_by_name || 'Not recorded'}</p>}
                 {!hideAdminAuditLines && <p><strong>Created on:</strong> {welcomeContext.created_at ? formatDate(welcomeContext.created_at) : '-'}</p>}
                 {!hideAdminAuditLines && <p><strong>Last edited by Admin:</strong> {welcomeContext.last_updated_by_name || welcomeContext.created_by_name || 'Not recorded'}</p>}
@@ -5613,7 +5613,7 @@
               <div className="grid">
                 <div className="card">
                   <h3>User Accounts & Credentials</h3>
-                  <p className="subtle">The school admin can choose a role, load names that already exist under Student Management, Principal Management, Teachers Management, Parents Management, and Account Office Staff Management, then generate username and password credentials, control force password change, and reset passwords in real time. Live Status now shows Online in blue when a user is inside the system and Offline in deep red when they are out of the system.</p>
+                  <p className="subtle">The school admin can choose a role, load names that already exist under Student Management, Principal Management, Teachers Management, Parents Management, and Account Office Staff Management, then generate username and password credentials, control force password change, and reset passwords in real time. Live Status now shows Online in green when a user is inside the system and Offline in deep red when they are out of the system.</p>
                   <div className="form-grid-3">
                     <div className="field"><label>Select Role</label><select value={userForm.role_name} onChange={(e)=>setUserForm(buildManagedForm(e.target.value))}>{managedRoleOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
                     <div className="field"><label>Select Existing Name</label><select value={userForm.profile_id} onChange={(e)=>handleCredentialSelection(e.target.value)}><option value="">Select User</option>{roleScopedManagedUsers.map(row => <option key={row.profile_id} value={row.profile_id}>{row.full_name}{row.class_name ? `, ${row.class_name}` : ''}</option>)}</select></div>
@@ -5636,7 +5636,7 @@
                     <div className="grid cards-4">
                       <div><strong>Name</strong><div className="subtle">{selectedManagedUser.full_name || '-'}</div></div>
                       <div><strong>Role</strong><div className="subtle">{selectedManagedUser.role_name || '-'}</div></div>
-                      <div><strong>Live Status</strong><div><span className={classNames('chip', getManagedLiveStatus(selectedManagedUser) === 'online' ? 'info' : 'danger')}>{getManagedLiveStatus(selectedManagedUser) === 'online' ? 'Online' : 'Offline'}</span></div></div>
+                      <div><strong>Live Status</strong><div><span className={classNames('chip', getManagedLiveStatus(selectedManagedUser) === 'online' ? 'success' : 'danger')}>{getManagedLiveStatus(selectedManagedUser) === 'online' ? 'Online' : 'Offline'}</span></div></div>
                       <div><strong>Last Seen</strong><div className="subtle">{getManagedPresence(selectedManagedUser)?.last_seen_at ? formatDate(getManagedPresence(selectedManagedUser).last_seen_at) : '-'}</div></div>
                       <div><strong>Username</strong><div className="subtle">{userForm.username || '-'}</div></div>
                       <div><strong>Account Access</strong><div><span className={classNames('chip', normalizeAccountStatus(userForm.account_status || selectedManagedUser.account_status) === 'active' ? 'success' : normalizeAccountStatus(userForm.account_status || selectedManagedUser.account_status) === 'archived' ? 'warning' : 'danger')}>{normalizeAccountStatus(userForm.account_status || selectedManagedUser.account_status || '-')}</span></div></div>
@@ -5657,7 +5657,7 @@
                         <td>{r.full_name}</td>
                         <td>{r.role_name}</td>
                         <td>{r.username || generateManagedUsername(r)}</td>
-                        <td><span className={classNames('chip', liveStatus === 'online' ? 'info' : 'danger')}>{liveStatus === 'online' ? 'Online' : 'Offline'}</span></td>
+                        <td><span className={classNames('chip', liveStatus === 'online' ? 'success' : 'danger')}>{liveStatus === 'online' ? 'Online' : 'Offline'}</span></td>
                         <td><span className={classNames('chip', accessStatus === 'active' ? 'success' : accessStatus === 'archived' ? 'warning' : 'danger')}>{accessStatus}</span></td>
                         <td>{String(r.force_password_change ?? true) === 'true' ? 'Yes' : 'No'}</td>
                         <td>{ref?.temporary_password || '-'}</td>
