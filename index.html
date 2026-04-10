@@ -143,6 +143,44 @@
     .empty { padding: 30px; text-align: center; color: var(--text-soft); }
     .printable { background: var(--card); padding: 24px; border-radius: 18px; border: 1px solid var(--line); }
     .chat-box { height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 16px; padding: 12px; background: var(--app-bg); }
+    .nav-btn-inner { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; }
+    .nav-badge { min-width:22px; height:22px; padding:0 7px; border-radius:999px; background:#ef4444; color:#fff; font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
+    .chat-layout { display:grid; gap:16px; grid-template-columns: 300px minmax(0,1fr) 360px; align-items:start; }
+    .chat-layout.no-monitor { grid-template-columns: 300px minmax(0,1fr); }
+    .chat-layout.monitor-only { grid-template-columns: 1fr; }
+    .chat-sidebar, .chat-thread-panel, .chat-monitor-panel { min-width:0; }
+    .chat-contacts { display:flex; flex-direction:column; gap:8px; max-height:640px; overflow:auto; }
+    .chat-contact-btn { width:100%; border:1px solid var(--line); background:var(--card); border-radius:14px; padding:12px; text-align:left; cursor:pointer; }
+    .chat-contact-btn.active { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.08); }
+    .chat-contact-title { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+    .chat-contact-role { display:inline-flex; align-items:center; padding:3px 8px; border-radius:999px; background:#e2e8f0; color:#334155; font-size:11px; font-weight:700; text-transform:capitalize; }
+    .chat-contact-meta { font-size:12px; color:var(--text-soft); line-height:1.45; }
+    .chat-thread-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+    .chat-thread-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .chat-empty-state { min-height:420px; display:grid; place-items:center; color:var(--text-soft); border:1px dashed var(--line); border-radius:18px; background:rgba(148,163,184,0.08); padding:20px; text-align:center; }
+    .virtual-chat-box { height: 420px; padding: 0; position: relative; }
+    .virtual-chat-inner { position: relative; }
+    .virtual-chat-stack { position: absolute; inset-inline: 0; }
+    .chat-message-shell { padding: 10px 12px; }
+    .chat-message-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+    .icon-btn { border:1px solid var(--line); background:#fff; border-radius:12px; padding:7px 10px; cursor:pointer; font-size:12px; font-weight:600; }
+    .icon-btn.danger { color:#b91c1c; border-color:#fecaca; background:#fff5f5; }
+    .icon-btn.warning { color:#92400e; border-color:#fde68a; background:#fffbeb; }
+    .chat-compose { display:grid; gap:10px; margin-top:14px; }
+    .emoji-row { display:flex; gap:8px; flex-wrap:wrap; }
+    .emoji-btn { border:1px solid var(--line); background:#fff; border-radius:12px; padding:7px 10px; cursor:pointer; font-size:18px; line-height:1; }
+    .chat-monitor-list { display:flex; flex-direction:column; gap:10px; max-height:640px; overflow:auto; }
+    .chat-monitor-item { border:1px solid var(--line); border-radius:16px; padding:14px; background:var(--card); }
+    .chat-monitor-item-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+    .chat-monitor-message { margin:10px 0; padding:12px; border-radius:14px; background:rgba(148,163,184,0.08); white-space:pre-wrap; word-break:break-word; }
+    .chat-monitor-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .chat-rule-list { display:grid; gap:10px; }
+    .chat-rule-item { padding:12px 14px; border:1px solid var(--line); border-radius:14px; background:rgba(148,163,184,0.06); }
+    .chat-search-input { width:100%; border:1px solid var(--line); padding:12px 14px; border-radius:14px; background:var(--card); }
+    .chat-unread-pill { display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px; padding:0 8px; border-radius:999px; background:#2563eb; color:#fff; font-size:12px; font-weight:700; }
+    @media (max-width: 1180px) {
+      .chat-layout, .chat-layout.no-monitor { grid-template-columns: 1fr; }
+    }
     .msg { margin-bottom: 10px; }
     .msg.mine { text-align: right; }
     .msg .bubble { display: inline-block; max-width: 78%; padding: 10px 14px; border-radius: 16px; background: var(--card); border: 1px solid var(--line); }
@@ -223,8 +261,8 @@
     const NAV_BY_ROLE = {
       [ROLE.SUPER_ADMIN]: ["super-dashboard", "schools", "approvals", "licenses", "system-control", "audit-log"],
       [ROLE.ADMIN]: ["users", "school-logo", "students", "teachers", "parents", "accounts-staff", "principals", "classes", "subjects", "chat", "audit-log"],
-      [ROLE.PRINCIPAL]: ["principal-dashboard", "students", "teachers", "attendance-summary", "performance-summary", "timetable", "notifications"],
-      [ROLE.TEACHER]: ["teacher-dashboard", "attendance", "grades", "timetable", "students", "notifications"],
+      [ROLE.PRINCIPAL]: ["principal-dashboard", "students", "teachers", "attendance-summary", "performance-summary", "timetable", "chat", "notifications"],
+      [ROLE.TEACHER]: ["teacher-dashboard", "attendance", "grades", "timetable", "students", "chat", "notifications"],
       [ROLE.STUDENT]: ["student-dashboard", "my-grades", "my-attendance", "my-fees", "timetable", "chat", "notifications"],
       [ROLE.PARENT]: ["parent-dashboard", "children", "my-grades", "my-attendance", "my-fees", "chat", "notifications"],
       [ROLE.ACCOUNTS]: ["accounts-dashboard", "fees", "fee-statements", "students", "notifications"]
@@ -252,7 +290,7 @@
       timetable: "Timetable",
       fees: "Fees",
       reports: "Reports",
-      chat: "Chat",
+      chat: "System Chat",
       notifications: "Notifications",
       "principal-dashboard": "Principal Dashboard",
       "attendance-summary": "Attendance Summary",
@@ -581,6 +619,99 @@
 
     function getPageAccess(role, key) { return (NAV_BY_ROLE[role] || []).includes(key); }
 
+    function isJhsClassLabel(label) {
+      return /^jhs\s*[123]?/i.test(String(label || '').trim());
+    }
+
+    function deriveChatTypeFromRoles(senderRole, recipientRole) {
+      const sender = String(senderRole || '').trim().toLowerCase();
+      const recipient = String(recipientRole || '').trim().toLowerCase();
+      if (sender === 'student' && recipient === 'student') return 'student_student';
+      if ((sender === 'student' && recipient === 'teacher') || (sender === 'teacher' && recipient === 'student')) return 'student_teacher';
+      if ((sender === 'parent' && recipient === 'teacher') || (sender === 'teacher' && recipient === 'parent')) return 'parent_teacher';
+      if ((sender === 'principal' && recipient === 'teacher') || (sender === 'teacher' && recipient === 'principal')) return 'principal_teacher';
+      return 'direct';
+    }
+
+    function chatTypeLabel(value) {
+      const key = String(value || '').trim();
+      if (key === 'student_student') return 'Student to Student';
+      if (key === 'student_teacher') return 'Student to Teacher';
+      if (key === 'parent_teacher') return 'Parent to Teacher';
+      if (key === 'principal_teacher') return 'Principal to Teacher';
+      return 'Direct Chat';
+    }
+
+    function chatRuleDescription(role) {
+      if (role === ROLE.STUDENT) return 'Students can chat with JHS classmates in the same class and with their teachers.';
+      if (role === ROLE.PARENT) return 'Parents can chat with teachers connected to their child or children.';
+      if (role === ROLE.TEACHER) return 'Teachers can chat directly with their principal, students, and parents, and can monitor student to student chats in assigned classes.';
+      if (role === ROLE.PRINCIPAL) return 'Principals can chat directly with teachers only.';
+      if (role === ROLE.ADMIN) return 'School admins can monitor student to student chats, filter by class, allow or disallow students, and permanently delete student to student messages.';
+      return 'System chat is available for permitted school roles.';
+    }
+
+    function VirtualizedChatList({ messages, currentProfileId, canDeleteForMe, onDeleteForMe, canPermanentDelete, onPermanentDelete }) {
+      const containerRef = useRef(null);
+      const [scrollTop, setScrollTop] = useState(0);
+      const rowHeight = 120;
+      const viewportHeight = 420;
+      const overscan = 4;
+      const totalHeight = Math.max(messages.length * rowHeight, viewportHeight);
+      const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan);
+      const endIndex = Math.min(messages.length, Math.ceil((scrollTop + viewportHeight) / rowHeight) + overscan);
+      const visibleMessages = messages.slice(startIndex, endIndex);
+
+      useEffect(() => {
+        const node = containerRef.current;
+        if (!node) return;
+        node.scrollTop = node.scrollHeight;
+      }, [messages.length]);
+
+      if (!messages.length) {
+        return <div className="chat-empty-state">No messages in this conversation yet.</div>;
+      }
+
+      return (
+        <div ref={containerRef} className="chat-box virtual-chat-box" onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
+          <div className="virtual-chat-inner" style={{ height: totalHeight }}>
+            <div className="virtual-chat-stack" style={{ top: startIndex * rowHeight }}>
+              {visibleMessages.map((message) => {
+                const isMine = String(message.sender_profile_id || '') === String(currentProfileId || '');
+                return (
+                  <div key={message.id} className="chat-message-shell" style={{ minHeight: rowHeight }}>
+                    <div className={classNames('msg', isMine && 'mine')}>
+                      <div className="bubble">
+                        <div style={{ display:'flex', justifyContent:'space-between', gap:10, alignItems:'flex-start', flexWrap:'wrap' }}>
+                          <strong>{message.sender_name || 'Unknown User'}</strong>
+                          <span className="chat-contact-role">{chatTypeLabel(message.chat_type)}</span>
+                        </div>
+                        <div style={{ marginTop:8, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{message.message_text}</div>
+                        <div className="subtle" style={{ fontSize:12, marginTop:8 }}>
+                          {message.class_name ? `Class: ${message.class_name} | ` : ''}
+                          {new Date(message.created_at).toLocaleString()}
+                        </div>
+                        {(canDeleteForMe || canPermanentDelete) && (
+                          <div className="chat-message-actions">
+                            {canDeleteForMe && (
+                              <button className="icon-btn" onClick={() => onDeleteForMe(message)}>Delete for Me</button>
+                            )}
+                            {canPermanentDelete && message.chat_type === 'student_student' && (
+                              <button className="icon-btn danger" onClick={() => onPermanentDelete(message)}>Delete Permanently</button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function useSupabaseTable(table, select = "*") {
       const [rows, setRows] = useState([]);
       const [loading, setLoading] = useState(false);
@@ -848,7 +979,7 @@
       );
     }
 
-    function Sidebar({ role, page, setPage, user, school, onLogout, mobileOpen, setMobileOpen }) {
+    function Sidebar({ role, page, setPage, user, school, onLogout, mobileOpen, setMobileOpen, chatUnreadCount = 0 }) {
       const entries = NAV_BY_ROLE[role] || [];
       const adminSectionEntries = role === ROLE.ADMIN
         ? ADMIN_SECTION_ENTRIES.filter((key) => entries.includes(key))
@@ -859,7 +990,10 @@
 
       const renderNavButton = (key) => (
         <button key={key} className={classNames("nav-btn", page === key && "active")} onClick={() => { setPage(key); setMobileOpen(false); }}>
-          {getPageLabel(key, role)}
+          <span className="nav-btn-inner">
+            <span>{getPageLabel(key, role)}</span>
+            {key === 'chat' && chatUnreadCount > 0 ? <span className="nav-badge">{chatUnreadCount}</span> : null}
+          </span>
         </button>
       );
 
@@ -1078,7 +1212,9 @@
       const auditHook = useSupabaseTable("audit_logs", "*");
       const notificationsHook = useSupabaseTable("notifications", "*");
       const timetableHook = useSupabaseTable("v_timetables_full", "*");
-      const chatHook = useSupabaseTable("v_chat_messages_full", "*");
+      const chatHook = useSupabaseTable("chat_messages", "*");
+      const chatPermissionsHook = useSupabaseTable("chat_permissions", "*");
+      const chatMessageHidesHook = useSupabaseTable("chat_message_hides", "*");
       const profilesPresenceHook = useSupabaseTable("profiles", "id, username, is_online, last_seen_at");
 
       const buildManagedForm = (roleName = 'student') => ({
@@ -1103,9 +1239,12 @@
       const [showGradeEditor, setShowGradeEditor] = useState(false);
       const [notificationForm, setNotificationForm] = useState({ id: "", title: "", message: "", audience_role: "all" });
       const [chatForm, setChatForm] = useState({ recipient_profile_id: "", message_text: "" });
+      const [chatMonitorClassId, setChatMonitorClassId] = useState('');
+      const [chatMonitorSearch, setChatMonitorSearch] = useState('');
+      const [chatLastSeenAt, setChatLastSeenAt] = useState(0);
       useEffect(() => {
         if (role !== ROLE.PRINCIPAL) return;
-        if (['classes', 'chat', 'reports'].includes(page)) {
+        if (['classes', 'reports'].includes(page)) {
           goToPage('performance-summary', { skipHistory: true });
         }
       }, [role, page]);
@@ -1427,7 +1566,10 @@
           classesHook.fetchRows(), subjectsHook.fetchRows((q)=>q.order('subject_name')), subjectAssignmentsHook.fetchRows(), attendanceHook.fetchRows(), gradesHook.fetchRows(), feesHook.fetchRows(),
           schoolsHook.fetchRows((q)=>q.order('created_at', { ascending:false })), schoolAdminRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), userLoginRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), managedUsersHook.fetchRows((q)=>q.order('full_name')), registrationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
           auditHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(100)), notificationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
-          timetableHook.fetchRows((q)=>q.order('day_of_week')), chatHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(200)),
+          timetableHook.fetchRows((q)=>q.order('day_of_week')),
+          (profile?.school_id ? chatHook.fetchRows((q)=>q.eq('school_id', profile.school_id).order('created_at', { ascending:false }).limit(1000)) : chatHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(1000))),
+          (profile?.school_id ? chatPermissionsHook.fetchRows((q)=>q.eq('school_id', profile.school_id).order('updated_at', { ascending:false })) : chatPermissionsHook.fetchRows((q)=>q.order('updated_at', { ascending:false }))),
+          chatMessageHidesHook.fetchRows((q)=>q.eq('profile_id', profile.id).order('created_at', { ascending:false })),
           profilesPresenceHook.fetchRows()
         ]);
         if (profile?.school_id) {
@@ -1741,7 +1883,9 @@
           supabaseClient.channel('fees-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'fee_payments' }, refreshAll).subscribe(),
           supabaseClient.channel('notifications-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, refreshAll).subscribe(),
           supabaseClient.channel('timetable-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'timetable' }, refreshAll).subscribe(),
-          supabaseClient.channel('chat-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, refreshAll).subscribe()
+          supabaseClient.channel('chat-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, refreshAll).subscribe(),
+          supabaseClient.channel('chat-permissions-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'chat_permissions' }, refreshAll).subscribe(),
+          supabaseClient.channel('chat-hides-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'chat_message_hides' }, refreshAll).subscribe()
         ];
         return () => channels.forEach(ch => supabaseClient.removeChannel(ch));
       }, [profile?.id, role]);
@@ -2895,6 +3039,535 @@
       const teacherAssignableStudents = useMemo(() => teacherRestrictedStudentRows, [teacherRestrictedStudentRows]);
 
 
+
+      const chatLastSeenKey = useMemo(() => profile?.id ? `sms_chat_last_seen_${profile.id}` : '', [profile?.id]);
+
+      useEffect(() => {
+        if (!chatLastSeenKey) {
+          setChatLastSeenAt(0);
+          return;
+        }
+        setChatLastSeenAt(Number(getBrowserValue(chatLastSeenKey) || 0));
+      }, [chatLastSeenKey]);
+
+      const teacherRowById = useMemo(() => Object.fromEntries((mergedTeachersRows || []).map((row) => [String(row.id || '').trim(), row])), [mergedTeachersRows]);
+      const teacherProfileToClassIds = useMemo(() => {
+        const map = new Map();
+        (subjectAssignmentsHook.rows || []).forEach((assignment) => {
+          const teacherProfileId = String(assignment.teacher_profile_id || teacherRowById[String(assignment.teacher_id || '').trim()]?.profile_id || '').trim();
+          const classId = String(assignment.class_id || '').trim();
+          if (!teacherProfileId || !classId) return;
+          if (!map.has(teacherProfileId)) map.set(teacherProfileId, new Set());
+          map.get(teacherProfileId).add(classId);
+        });
+        return map;
+      }, [subjectAssignmentsHook.rows, teacherRowById]);
+
+      const parentProfileToLinkedClassIds = useMemo(() => {
+        const parentProfileMap = new Map((parentsHook.rows || []).map((row) => [String(row.id || '').trim(), String(row.profile_id || '').trim()]));
+        const map = new Map();
+        (parentLinksRows || []).forEach((link) => {
+          const parentProfileId = parentProfileMap.get(String(link.parent_id || '').trim()) || '';
+          const student = studentLookup[String(link.student_id || '').trim()] || null;
+          const classId = String(student?.class_id || '').trim();
+          if (!parentProfileId || !classId) return;
+          if (!map.has(parentProfileId)) map.set(parentProfileId, new Set());
+          map.get(parentProfileId).add(classId);
+        });
+        return map;
+      }, [parentsHook.rows, parentLinksRows, studentLookup]);
+
+      const chatPermissionByStudentProfileId = useMemo(() => {
+        const map = new Map();
+        (chatPermissionsHook.rows || []).forEach((row) => {
+          const key = String(row.student_profile_id || '').trim();
+          if (!key) return;
+          map.set(key, row);
+        });
+        return map;
+      }, [chatPermissionsHook.rows]);
+
+      const hiddenChatMessageIds = useMemo(() => {
+        const profileId = String(profile?.id || '').trim();
+        return new Set((chatMessageHidesHook.rows || [])
+          .filter((row) => String(row.profile_id || '').trim() === profileId)
+          .map((row) => String(row.message_id || '').trim())
+          .filter(Boolean));
+      }, [chatMessageHidesHook.rows, profile?.id]);
+
+      const chatDirectoryMap = useMemo(() => {
+        const map = new Map();
+        (studentRecordsRows || []).forEach((row) => {
+          const key = String(row.profile_id || '').trim();
+          if (!key) return;
+          const classLabel = String(teacherAssignedClassDisplay(row) || row.class_name || '').trim();
+          map.set(key, {
+            profile_id: key,
+            full_name: row.full_name || 'Student',
+            role_name: 'student',
+            class_id: row.class_id || null,
+            class_name: classLabel,
+            student_no: row.student_no || '',
+            parent_full_name: row.parent_full_name || '',
+            parent_contact: row.parent_contact || ''
+          });
+        });
+        (mergedTeachersRows || []).forEach((row) => {
+          const key = String(row.profile_id || '').trim();
+          if (!key) return;
+          const assignedClassLabels = Array.from(teacherProfileToClassIds.get(key) || []).map((classId) => String(classNameMap[classId] || '').trim()).filter(Boolean);
+          map.set(key, {
+            profile_id: key,
+            full_name: row.full_name || 'Teacher',
+            role_name: 'teacher',
+            class_id: assignedClassLabels[0] ? (Array.from(teacherProfileToClassIds.get(key) || [])[0] || null) : null,
+            class_name: assignedClassLabels.join(', '),
+            qualification: row.qualification || ''
+          });
+        });
+        (parentsHook.rows || []).forEach((row) => {
+          const key = String(row.profile_id || '').trim();
+          if (!key) return;
+          const linkedClassLabels = Array.from(parentProfileToLinkedClassIds.get(key) || []).map((classId) => String(classNameMap[classId] || '').trim()).filter(Boolean);
+          map.set(key, {
+            profile_id: key,
+            full_name: row.full_name || 'Parent',
+            role_name: 'parent',
+            class_id: linkedClassLabels[0] ? (Array.from(parentProfileToLinkedClassIds.get(key) || [])[0] || null) : null,
+            class_name: linkedClassLabels.join(', '),
+            phone: row.phone || row.email || ''
+          });
+        });
+        (principalsHook.rows || []).forEach((row) => {
+          const key = String(row.profile_id || '').trim();
+          if (!key) return;
+          map.set(key, {
+            profile_id: key,
+            full_name: row.full_name || 'Principal',
+            role_name: 'principal',
+            class_id: null,
+            class_name: ''
+          });
+        });
+        return map;
+      }, [studentRecordsRows, mergedTeachersRows, parentsHook.rows, principalsHook.rows, teacherProfileToClassIds, classNameMap, parentProfileToLinkedClassIds]);
+
+      const studentSelfClassLabel = teacherAssignedClassDisplay(currentStudentDashboardRecord || {});
+      const currentStudentIsJhs = useMemo(() => isJhsClassLabel(studentSelfClassLabel), [studentSelfClassLabel]);
+      const currentStudentClassId = String(currentStudentDashboardRecord?.class_id || '').trim();
+
+      const chatContactOptions = useMemo(() => {
+        if (!profile?.id) return [];
+        const optionsMap = new Map();
+        const addContact = (entry, note = '') => {
+          if (!entry?.profile_id || String(entry.profile_id).trim() === String(profile.id || '').trim()) return;
+          const existing = optionsMap.get(String(entry.profile_id).trim()) || {};
+          optionsMap.set(String(entry.profile_id).trim(), {
+            ...entry,
+            note: existing.note || note || entry.note || ''
+          });
+        };
+
+        if (role === ROLE.STUDENT) {
+          if (currentStudentIsJhs && currentStudentClassId) {
+            (studentRecordsRows || []).forEach((student) => {
+              if (String(student.class_id || '').trim() !== currentStudentClassId) return;
+              const permission = chatPermissionByStudentProfileId.get(String(student.profile_id || '').trim());
+              const isAllowed = permission ? permission.is_allowed !== false : true;
+              if (!isAllowed) return;
+              addContact({
+                profile_id: String(student.profile_id || '').trim(),
+                full_name: student.full_name || 'Student',
+                role_name: 'student',
+                class_name: teacherAssignedClassDisplay(student),
+                note: 'Same class JHS student'
+              }, 'Same class JHS student');
+            });
+          }
+          (mergedTeachersRows || []).forEach((teacher) => {
+            const teacherProfileId = String(teacher.profile_id || '').trim();
+            const classIds = teacherProfileToClassIds.get(teacherProfileId) || new Set();
+            if (!currentStudentClassId || !classIds.has(currentStudentClassId)) return;
+            addContact({
+              profile_id: teacherProfileId,
+              full_name: teacher.full_name || 'Teacher',
+              role_name: 'teacher',
+              class_name: Array.from(classIds).map((classId) => classNameMap[classId]).filter(Boolean).join(', '),
+              note: 'Assigned teacher for your class'
+            }, 'Assigned teacher for your class');
+          });
+        }
+
+        if (role === ROLE.PARENT) {
+          const linkedClassIds = new Set(Array.from(parentProfileToLinkedClassIds.get(String(profile.id || '').trim()) || []));
+          (mergedTeachersRows || []).forEach((teacher) => {
+            const teacherProfileId = String(teacher.profile_id || '').trim();
+            const classIds = teacherProfileToClassIds.get(teacherProfileId) || new Set();
+            const matches = Array.from(classIds).some((classId) => linkedClassIds.has(classId));
+            if (!matches) return;
+            addContact({
+              profile_id: teacherProfileId,
+              full_name: teacher.full_name || 'Teacher',
+              role_name: 'teacher',
+              class_name: Array.from(classIds).map((classId) => classNameMap[classId]).filter(Boolean).join(', '),
+              note: 'Teacher for linked child class'
+            }, 'Teacher for linked child class');
+          });
+        }
+
+        if (role === ROLE.PRINCIPAL) {
+          (mergedTeachersRows || []).forEach((teacher) => addContact({
+            profile_id: String(teacher.profile_id || '').trim(),
+            full_name: teacher.full_name || 'Teacher',
+            role_name: 'teacher',
+            class_name: teacher.subject_specialty || '',
+            note: 'Teacher in your school'
+          }, 'Teacher in your school'));
+        }
+
+        if (role === ROLE.TEACHER) {
+          (principalsHook.rows || []).forEach((principalRow) => addContact({
+            profile_id: String(principalRow.profile_id || '').trim(),
+            full_name: principalRow.full_name || 'Principal',
+            role_name: 'principal',
+            note: 'Principal direct chat'
+          }, 'Principal direct chat'));
+
+          (teacherRestrictedStudentRows || []).forEach((student) => addContact({
+            profile_id: String(student.profile_id || '').trim(),
+            full_name: student.full_name || 'Student',
+            role_name: 'student',
+            class_name: teacherAssignedClassDisplay(student),
+            note: 'Student in your assigned class'
+          }, 'Student in your assigned class'));
+
+          (parentsHook.rows || []).forEach((parentRow) => {
+            const parentProfileId = String(parentRow.profile_id || '').trim();
+            const linkedClassIds = parentProfileToLinkedClassIds.get(parentProfileId) || new Set();
+            const matches = Array.from(linkedClassIds).some((classId) => teacherAssignedClassIds.includes(classId));
+            if (!matches) return;
+            addContact({
+              profile_id: parentProfileId,
+              full_name: parentRow.full_name || 'Parent',
+              role_name: 'parent',
+              class_name: Array.from(linkedClassIds).map((classId) => classNameMap[classId]).filter(Boolean).join(', '),
+              note: 'Parent linked to your class'
+            }, 'Parent linked to your class');
+          });
+        }
+
+        return Array.from(optionsMap.values()).sort((a, b) => {
+          const roleOrder = { principal: 1, teacher: 2, student: 3, parent: 4 };
+          const aRole = roleOrder[String(a.role_name || '').toLowerCase()] || 9;
+          const bRole = roleOrder[String(b.role_name || '').toLowerCase()] || 9;
+          if (aRole !== bRole) return aRole - bRole;
+          return String(a.full_name || '').localeCompare(String(b.full_name || ''));
+        });
+      }, [profile?.id, role, currentStudentIsJhs, currentStudentClassId, studentRecordsRows, mergedTeachersRows, principalsHook.rows, teacherRestrictedStudentRows, teacherAssignedClassIds, classNameMap, parentProfileToLinkedClassIds, chatPermissionByStudentProfileId]);
+
+      useEffect(() => {
+        if (role === ROLE.ADMIN) return;
+        const validIds = new Set(chatContactOptions.map((contact) => String(contact.profile_id || '').trim()));
+        const currentRecipientId = String(chatForm.recipient_profile_id || '').trim();
+        if (currentRecipientId && validIds.has(currentRecipientId)) return;
+        const fallbackRecipientId = String(chatContactOptions[0]?.profile_id || '').trim();
+        if (!fallbackRecipientId) return;
+        setChatForm((current) => ({ ...current, recipient_profile_id: fallbackRecipientId }));
+      }, [chatContactOptions, chatForm.recipient_profile_id, role]);
+
+      const visibleChatMessages = useMemo(() => {
+        return [...(chatHook.rows || [])]
+          .map((row) => {
+            const senderProfileId = String(row.sender_profile_id || '').trim();
+            const recipientProfileId = String(row.recipient_profile_id || '').trim();
+            const senderEntry = chatDirectoryMap.get(senderProfileId) || {};
+            const recipientEntry = chatDirectoryMap.get(recipientProfileId) || {};
+            const derivedClassId = String(row.class_id || senderEntry.class_id || recipientEntry.class_id || '').trim();
+            return {
+              ...row,
+              sender_profile_id: senderProfileId,
+              recipient_profile_id: recipientProfileId,
+              sender_name: row.sender_name || senderEntry.full_name || 'Unknown User',
+              recipient_name: row.recipient_name || recipientEntry.full_name || 'Unknown User',
+              sender_role_name: row.sender_role_name || senderEntry.role_name || '',
+              recipient_role_name: row.recipient_role_name || recipientEntry.role_name || '',
+              chat_type: row.chat_type || deriveChatTypeFromRoles(senderEntry.role_name || row.sender_role_name, recipientEntry.role_name || row.recipient_role_name),
+              class_id: derivedClassId || null,
+              class_name: row.class_name || classNameMap[derivedClassId] || senderEntry.class_name || recipientEntry.class_name || ''
+            };
+          })
+          .filter((row) => !hiddenChatMessageIds.has(String(row.id || '').trim()))
+          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      }, [chatHook.rows, chatDirectoryMap, hiddenChatMessageIds, classNameMap]);
+
+      const directVisibleChatMessages = useMemo(() => {
+        const currentProfileId = String(profile?.id || '').trim();
+        if (!currentProfileId || role === ROLE.ADMIN) return [];
+        return visibleChatMessages.filter((message) => {
+          const participantIds = [String(message.sender_profile_id || '').trim(), String(message.recipient_profile_id || '').trim()];
+          if (!participantIds.includes(currentProfileId)) return false;
+          const senderRole = String(message.sender_role_name || '').trim().toLowerCase();
+          const recipientRole = String(message.recipient_role_name || '').trim().toLowerCase();
+          const messageType = message.chat_type || deriveChatTypeFromRoles(senderRole, recipientRole);
+          if (role === ROLE.PRINCIPAL) return messageType === 'principal_teacher';
+          if (role === ROLE.TEACHER) return ['principal_teacher', 'student_teacher', 'parent_teacher', 'direct'].includes(messageType);
+          if (role === ROLE.STUDENT) return ['student_student', 'student_teacher', 'direct'].includes(messageType);
+          if (role === ROLE.PARENT) return ['parent_teacher', 'direct'].includes(messageType);
+          return false;
+        });
+      }, [visibleChatMessages, profile?.id, role]);
+
+      const currentChatRecipient = useMemo(() => {
+        const recipientId = String(chatForm.recipient_profile_id || '').trim();
+        return chatContactOptions.find((contact) => String(contact.profile_id || '').trim() === recipientId) || null;
+      }, [chatContactOptions, chatForm.recipient_profile_id]);
+
+      const currentConversationMessages = useMemo(() => {
+        const currentProfileId = String(profile?.id || '').trim();
+        const recipientId = String(chatForm.recipient_profile_id || '').trim();
+        if (!currentProfileId || !recipientId) return [];
+        return directVisibleChatMessages.filter((message) => {
+          const senderId = String(message.sender_profile_id || '').trim();
+          const recipientProfileId = String(message.recipient_profile_id || '').trim();
+          return (senderId === currentProfileId && recipientProfileId === recipientId) || (senderId === recipientId && recipientProfileId === currentProfileId);
+        });
+      }, [directVisibleChatMessages, profile?.id, chatForm.recipient_profile_id]);
+
+      const unreadChatMessages = useMemo(() => {
+        const currentProfileId = String(profile?.id || '').trim();
+        return directVisibleChatMessages.filter((message) => String(message.sender_profile_id || '').trim() !== currentProfileId && new Date(message.created_at).getTime() > Number(chatLastSeenAt || 0));
+      }, [directVisibleChatMessages, profile?.id, chatLastSeenAt]);
+
+      const chatUnreadByContact = useMemo(() => {
+        const currentProfileId = String(profile?.id || '').trim();
+        const counts = {};
+        unreadChatMessages.forEach((message) => {
+          const otherId = String(message.sender_profile_id || '').trim() === currentProfileId ? String(message.recipient_profile_id || '').trim() : String(message.sender_profile_id || '').trim();
+          if (!otherId) return;
+          counts[otherId] = (counts[otherId] || 0) + 1;
+        });
+        return counts;
+      }, [unreadChatMessages, profile?.id]);
+
+      const chatUnreadCount = useMemo(() => unreadChatMessages.length, [unreadChatMessages]);
+
+      const markChatSeen = () => {
+        if (!chatLastSeenKey) return;
+        const stamp = Date.now();
+        setBrowserValue(chatLastSeenKey, stamp);
+        setChatLastSeenAt(stamp);
+      };
+
+      useEffect(() => {
+        if (page !== 'chat' || role === ROLE.ADMIN) return;
+        const timer = window.setTimeout(() => markChatSeen(), 240);
+        return () => window.clearTimeout(timer);
+      }, [page, role, currentConversationMessages.length, chatForm.recipient_profile_id]);
+
+      const canCurrentUserMonitorStudentChat = role === ROLE.ADMIN || role === ROLE.TEACHER;
+      const chatMonitorClassOptions = useMemo(() => {
+        if (!canCurrentUserMonitorStudentChat) return [{ value: '', label: 'All Classes' }];
+        if (role === ROLE.TEACHER) {
+          return [{ value: '', label: 'All Assigned Classes' }, ...teacherAssignedClassIds.map((classId) => ({ value: classId, label: classNameMap[classId] || classId }))];
+        }
+        return [{ value: '', label: 'All Classes' }, ...orderedClassRows.map((row) => ({ value: row.id, label: buildClassDisplay(row) || row.name }))];
+      }, [canCurrentUserMonitorStudentChat, role, teacherAssignedClassIds, orderedClassRows, classNameMap]);
+
+      const monitoredStudentChatMessages = useMemo(() => {
+        if (!canCurrentUserMonitorStudentChat) return [];
+        const selectedClassId = String(chatMonitorClassId || '').trim();
+        const searchText = String(chatMonitorSearch || '').trim().toLowerCase();
+        const allowedClassIds = role === ROLE.TEACHER ? new Set(teacherAssignedClassIds.map((value) => String(value || '').trim()).filter(Boolean)) : null;
+        return visibleChatMessages.filter((message) => {
+          if (message.chat_type !== 'student_student') return false;
+          const classId = String(message.class_id || '').trim();
+          if (selectedClassId && classId !== selectedClassId) return false;
+          if (allowedClassIds && allowedClassIds.size && classId && !allowedClassIds.has(classId)) return false;
+          if (!searchText) return true;
+          return [message.sender_name, message.recipient_name, message.message_text, message.class_name].some((value) => String(value || '').toLowerCase().includes(searchText));
+        }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      }, [canCurrentUserMonitorStudentChat, visibleChatMessages, chatMonitorClassId, chatMonitorSearch, role, teacherAssignedClassIds]);
+
+      const monitoredStudentParticipants = useMemo(() => {
+        const ids = new Map();
+        monitoredStudentChatMessages.forEach((message) => {
+          [message.sender_profile_id, message.recipient_profile_id].forEach((profileId) => {
+            const directoryEntry = chatDirectoryMap.get(String(profileId || '').trim());
+            if (!directoryEntry || directoryEntry.role_name !== 'student') return;
+            ids.set(String(profileId || '').trim(), directoryEntry);
+          });
+        });
+        return Array.from(ids.values()).sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
+      }, [monitoredStudentChatMessages, chatDirectoryMap]);
+
+      const insertEmojiIntoChat = (emoji) => {
+        setChatForm((current) => ({ ...current, message_text: `${current.message_text || ''}${emoji}` }));
+      };
+
+      const handleHideChatMessageForCurrentUser = async (message) => {
+        if (!message?.id || !profile?.id) return;
+        setNotice({ type: '', text: '' });
+        const { error } = await supabaseClient.from('chat_message_hides').upsert({ message_id: message.id, profile_id: profile.id });
+        if (error) {
+          setNotice({ type: 'danger', text: error.message });
+          return;
+        }
+        await refreshAll();
+      };
+
+      const handlePermanentDeleteChatMessage = async (message) => {
+        if (role !== ROLE.ADMIN || !message?.id) return;
+        if (message.chat_type !== 'student_student') {
+          setNotice({ type: 'danger', text: 'Only student to student messages can be permanently deleted by the school admin.' });
+          return;
+        }
+        setNotice({ type: '', text: '' });
+        const { error } = await supabaseClient.from('chat_messages').delete().eq('id', message.id);
+        if (error) {
+          setNotice({ type: 'danger', text: error.message });
+          return;
+        }
+        setNotice({ type: 'success', text: 'Student chat message permanently deleted.' });
+        await refreshAll();
+      };
+
+      const handleToggleStudentChatPermission = async (studentProfileId, nextAllowed) => {
+        if (role !== ROLE.ADMIN || !profile?.school_id || !studentProfileId) return;
+        setNotice({ type: '', text: '' });
+        const payload = {
+          school_id: profile.school_id,
+          student_profile_id: studentProfileId,
+          is_allowed: !!nextAllowed,
+          blocked_reason: nextAllowed ? null : 'Disabled by School Admin from the chat monitor',
+          updated_by_profile_id: profile.id
+        };
+        const { error } = await supabaseClient.from('chat_permissions').upsert(payload, { onConflict: 'school_id,student_profile_id' });
+        if (error) {
+          setNotice({ type: 'danger', text: error.message });
+          return;
+        }
+        setNotice({ type: 'success', text: nextAllowed ? 'Student chat access allowed.' : 'Student chat access disallowed.' });
+        await refreshAll();
+      };
+
+      const handleSendSystemChatMessage = async () => {
+        const recipientId = String(chatForm.recipient_profile_id || '').trim();
+        const messageText = String(chatForm.message_text || '').trim();
+        if (!recipientId) {
+          setNotice({ type: 'danger', text: 'Select who you want to chat with first.' });
+          return;
+        }
+        if (!messageText) {
+          setNotice({ type: 'danger', text: 'Enter a message before sending.' });
+          return;
+        }
+        const recipient = chatContactOptions.find((entry) => String(entry.profile_id || '').trim() === recipientId) || chatDirectoryMap.get(recipientId) || null;
+        if (!recipient) {
+          setNotice({ type: 'danger', text: 'The selected chat contact is no longer available.' });
+          return;
+        }
+
+        let chatType = deriveChatTypeFromRoles(role, recipient.role_name);
+        let sharedClassId = null;
+
+        if (role === ROLE.STUDENT && recipient.role_name === 'student') {
+          if (!currentStudentClassId || !currentStudentIsJhs) {
+            setNotice({ type: 'danger', text: 'Student to student chat is limited to JHS students in the same class.' });
+            return;
+          }
+          const recipientStudent = studentRecordsRows.find((row) => String(row.profile_id || '').trim() === recipientId) || null;
+          const recipientClassId = String(recipientStudent?.class_id || '').trim();
+          const senderPermission = chatPermissionByStudentProfileId.get(String(profile.id || '').trim());
+          const recipientPermission = chatPermissionByStudentProfileId.get(recipientId);
+          if ((senderPermission && senderPermission.is_allowed === false) || (recipientPermission && recipientPermission.is_allowed === false)) {
+            setNotice({ type: 'danger', text: 'A school admin has currently disallowed one of the selected students from student chat.' });
+            return;
+          }
+          if (!recipientStudent || recipientClassId !== currentStudentClassId) {
+            setNotice({ type: 'danger', text: 'Student to student chat is allowed only for students in the same JHS class.' });
+            return;
+          }
+          chatType = 'student_student';
+          sharedClassId = currentStudentClassId;
+        }
+
+        if (role === ROLE.STUDENT && recipient.role_name === 'teacher') {
+          const teacherClassIds = teacherProfileToClassIds.get(recipientId) || new Set();
+          if (!currentStudentClassId || !teacherClassIds.has(currentStudentClassId)) {
+            setNotice({ type: 'danger', text: 'You can chat only with teachers assigned to your class.' });
+            return;
+          }
+          chatType = 'student_teacher';
+          sharedClassId = currentStudentClassId;
+        }
+
+        if (role === ROLE.PARENT && recipient.role_name === 'teacher') {
+          const linkedClassIds = new Set(Array.from(parentProfileToLinkedClassIds.get(String(profile.id || '').trim()) || []));
+          const teacherClassIds = teacherProfileToClassIds.get(recipientId) || new Set();
+          sharedClassId = Array.from(teacherClassIds).find((classId) => linkedClassIds.has(classId)) || null;
+          if (!sharedClassId) {
+            setNotice({ type: 'danger', text: 'You can chat only with teachers connected to your linked child or children.' });
+            return;
+          }
+          chatType = 'parent_teacher';
+        }
+
+        if (role === ROLE.PRINCIPAL && recipient.role_name === 'teacher') {
+          chatType = 'principal_teacher';
+        }
+
+        if (role === ROLE.TEACHER && recipient.role_name === 'student') {
+          const studentRow = studentRecordsRows.find((row) => String(row.profile_id || '').trim() === recipientId) || null;
+          const recipientClassId = String(studentRow?.class_id || '').trim();
+          if (!recipientClassId || !teacherAssignedClassIds.includes(recipientClassId)) {
+            setNotice({ type: 'danger', text: 'You can reply only to students in your assigned classes.' });
+            return;
+          }
+          chatType = 'student_teacher';
+          sharedClassId = recipientClassId;
+        }
+
+        if (role === ROLE.TEACHER && recipient.role_name === 'parent') {
+          const linkedClassIds = new Set(Array.from(parentProfileToLinkedClassIds.get(recipientId) || []));
+          sharedClassId = teacherAssignedClassIds.find((classId) => linkedClassIds.has(classId)) || null;
+          if (!sharedClassId) {
+            setNotice({ type: 'danger', text: 'You can chat only with parents linked to students in your assigned classes.' });
+            return;
+          }
+          chatType = 'parent_teacher';
+        }
+
+        if (role === ROLE.TEACHER && recipient.role_name === 'principal') {
+          chatType = 'principal_teacher';
+        }
+
+        setNotice({ type: '', text: '' });
+        const payload = {
+          sender_profile_id: profile.id,
+          recipient_profile_id: recipientId,
+          message_text: messageText,
+          school_id: profile.school_id || null,
+          class_id: sharedClassId || null,
+          chat_type: chatType
+        };
+        const { error } = await supabaseClient.from('chat_messages').insert(payload);
+        if (error) {
+          setNotice({ type: 'danger', text: error.message });
+          return;
+        }
+        setChatForm((current) => ({ ...current, message_text: '' }));
+        setNotice({ type: 'success', text: 'Message sent.' });
+        await refreshAll();
+        markChatSeen();
+      };
+
+      const quickReplyToChatStudent = (targetProfileId) => {
+        if (![ROLE.TEACHER, ROLE.ADMIN].includes(role) || !targetProfileId) return;
+        if (role === ROLE.TEACHER) {
+          setChatForm((current) => ({ ...current, recipient_profile_id: String(targetProfileId || '').trim() }));
+        }
+      };
+
       const attendanceRowsToday = useMemo(() => (
         (attendanceHook.rows || []).filter((row) => row.attendance_date === todayISO())
       ), [attendanceHook.rows]);
@@ -3949,7 +4622,7 @@
 
       return (
         <div className="app-shell">
-          <Sidebar role={role} page={page} setPage={setPage} user={profile} school={school} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onLogout={async()=>{await signOut(); setProfile(null); setWelcomeContext(null);}} />
+          <Sidebar role={role} page={page} setPage={setPage} user={profile} school={school} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} chatUnreadCount={chatUnreadCount} onLogout={async()=>{await signOut(); setProfile(null); setWelcomeContext(null);}} />
           <main className="main">
             <div className="topbar">
               <div className="page-title">
@@ -4909,22 +5582,158 @@
             {page === 'reports' && <ReportsView school={school} selectedReport={selectedReport} gradeRows={gradesHook.rows.filter(r => !currentStudent || r.student_id === currentStudent.student_id)} feeRows={feesHook.rows.filter(r => !currentStudent || r.student_id === currentStudent.student_id)} currentStudent={currentStudent} />}
 
             {page === 'chat' && (
-              <div className="grid cards-2">
-                <div className="card">
-                  <h3>Chat</h3>
-                  <div className="chat-box">
-                    {chatHook.rows.slice().reverse().map(m => <div key={m.id} className={classNames('msg', m.sender_profile_id === profile.id && 'mine')}><div className="bubble"><strong>{m.sender_name}</strong><div>{m.message_text}</div><div className="subtle" style={{fontSize:12, marginTop:4}}>{new Date(m.created_at).toLocaleString()}</div></div></div>)}
+              <div className={classNames('chat-layout', role === ROLE.ADMIN && 'monitor-only', role !== ROLE.ADMIN && role !== ROLE.TEACHER && 'no-monitor')}>
+                {role !== ROLE.ADMIN && (
+                  <div className="card chat-sidebar">
+                    <h3 style={{ marginTop:0 }}>System Chat</h3>
+                    <p className="subtle">{chatRuleDescription(role)}</p>
+                    <div className="chat-contacts">
+                      {chatContactOptions.length === 0 ? <div className="empty">No chat contacts are available for this account yet.</div> : chatContactOptions.map((contact) => {
+                        const contactId = String(contact.profile_id || '').trim();
+                        const unread = chatUnreadByContact[contactId] || 0;
+                        return (
+                          <button key={contactId} className={classNames('chat-contact-btn', String(chatForm.recipient_profile_id || '').trim() === contactId && 'active')} onClick={() => setChatForm((current) => ({ ...current, recipient_profile_id: contactId }))}>
+                            <div className="chat-contact-title">
+                              <strong>{contact.full_name || '-'}</strong>
+                              {unread > 0 ? <span className="chat-unread-pill">{unread}</span> : <span className="chat-contact-role">{contact.role_name}</span>}
+                            </div>
+                            <div className="chat-contact-meta">{contact.note || chatTypeLabel(deriveChatTypeFromRoles(role, contact.role_name))}</div>
+                            {contact.class_name ? <div className="chat-contact-meta">{contact.class_name}</div> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-                <div className="card">
-                  <h3>Send Message</h3>
-                  <div className="field"><label>Recipient Profile ID</label><input value={chatForm.recipient_profile_id} onChange={(e)=>setChatForm({...chatForm, recipient_profile_id:e.target.value})} /></div>
-                  <div className="field"><label>Message</label><textarea rows="6" value={chatForm.message_text} onChange={(e)=>setChatForm({...chatForm, message_text:e.target.value})}></textarea></div>
-                  <div style={{marginTop:16}}><button className="btn" onClick={()=>saveEntity('chat_messages', chatForm, ()=>setChatForm({ recipient_profile_id:'', message_text:'' }), { sender_profile_id: profile.id })}>Send</button></div>
-                  <p className="footer-note">Monitoring rules are enforced in SQL policies and views. Student to student chat is restricted to JHS same class. Admin monitors all. Teachers monitor assigned classes. Principal has no chat monitoring access.</p>
-                </div>
+                )}
+
+                {role !== ROLE.ADMIN && (
+                  <div className="card chat-thread-panel">
+                    <div className="chat-thread-header">
+                      <div>
+                        <h3 style={{ margin:'0 0 4px' }}>{currentChatRecipient ? currentChatRecipient.full_name : 'Select a contact'}</h3>
+                        <div className="subtle">{currentChatRecipient ? `${currentChatRecipient.role_name}${currentChatRecipient.class_name ? ` | ${currentChatRecipient.class_name}` : ''}` : 'Choose a teacher, student, parent, or principal based on your role permissions.'}</div>
+                      </div>
+                      <div className="chat-thread-actions">
+                        {chatUnreadCount > 0 ? <span className="chip info">{chatUnreadCount} unread</span> : <span className="chip success">Up to date</span>}
+                        <button className="btn secondary" onClick={markChatSeen}>Mark Chat Seen</button>
+                      </div>
+                    </div>
+
+                    {currentChatRecipient ? (
+                      <>
+                        <VirtualizedChatList
+                          messages={currentConversationMessages}
+                          currentProfileId={profile.id}
+                          canDeleteForMe={true}
+                          onDeleteForMe={handleHideChatMessageForCurrentUser}
+                          canPermanentDelete={false}
+                          onPermanentDelete={() => {}}
+                        />
+                        <div className="chat-compose">
+                          <div className="emoji-row">
+                            {['😀','😊','👍','🙏','🎉','❤️','😂','😮','😢','😡','✅','❗'].map((emoji) => <button key={emoji} className="emoji-btn" onClick={() => insertEmojiIntoChat(emoji)}>{emoji}</button>)}
+                          </div>
+                          <div className="field">
+                            <label>Message</label>
+                            <textarea rows="5" value={chatForm.message_text} onChange={(event) => setChatForm({ ...chatForm, message_text: event.target.value })} placeholder="Type your message here. Emojis and symbols are supported." />
+                          </div>
+                          <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+                            <button className="btn" onClick={handleSendSystemChatMessage}>Send Message</button>
+                            <button className="btn secondary" onClick={() => setChatForm((current) => ({ ...current, message_text: '' }))}>Clear</button>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="chat-empty-state">Choose a contact to open the conversation.</div>
+                    )}
+                  </div>
+                )}
+
+                {(role === ROLE.ADMIN || role === ROLE.TEACHER) ? (
+                  <div className="card chat-monitor-panel">
+                    <h3 style={{ marginTop:0 }}>{role === ROLE.ADMIN ? 'Student Chat Monitor' : 'Student Chat Monitor and Teacher Reply'}</h3>
+                    <p className="subtle">Filter by class and review student to student messages. Teachers can quick reply to students. School admins can allow or disallow students and permanently delete student to student messages.</p>
+                    <div className="toolbar">
+                      <div className="field-inline">
+                        <label>Class Filter</label>
+                        <select value={chatMonitorClassId} onChange={(event) => setChatMonitorClassId(event.target.value)}>
+                          {chatMonitorClassOptions.map((option) => <option key={option.value || 'all-classes'} value={option.value}>{option.label}</option>)}
+                        </select>
+                      </div>
+                      <div className="field-inline">
+                        <label>Search Messages</label>
+                        <input className="chat-search-input" value={chatMonitorSearch} onChange={(event) => setChatMonitorSearch(event.target.value)} placeholder="Search by student or message text" />
+                      </div>
+                    </div>
+                    <div className="chat-monitor-list">
+                      {monitoredStudentChatMessages.length === 0 ? <div className="empty">No monitored student chats found for the selected class.</div> : monitoredStudentChatMessages.map((message) => {
+                        const senderPermission = chatPermissionByStudentProfileId.get(String(message.sender_profile_id || '').trim());
+                        const recipientPermission = chatPermissionByStudentProfileId.get(String(message.recipient_profile_id || '').trim());
+                        const senderAllowed = senderPermission ? senderPermission.is_allowed !== false : true;
+                        const recipientAllowed = recipientPermission ? recipientPermission.is_allowed !== false : true;
+                        return (
+                          <div key={message.id} className="chat-monitor-item">
+                            <div className="chat-monitor-item-head">
+                              <div>
+                                <strong>{message.sender_name}</strong>
+                                <div className="subtle">to {message.recipient_name}</div>
+                                <div className="subtle">{message.class_name || '-'} | {new Date(message.created_at).toLocaleString()}</div>
+                              </div>
+                              <span className="chat-contact-role">{chatTypeLabel(message.chat_type)}</span>
+                            </div>
+                            <div className="chat-monitor-message">{message.message_text}</div>
+                            <div className="chat-monitor-actions">
+                              {role === ROLE.TEACHER && <button className="icon-btn" onClick={() => quickReplyToChatStudent(message.sender_profile_id)}>Reply to Sender</button>}
+                              {role === ROLE.TEACHER && <button className="icon-btn" onClick={() => quickReplyToChatStudent(message.recipient_profile_id)}>Reply to Recipient</button>}
+                              {role === ROLE.ADMIN && <button className={classNames('icon-btn', senderAllowed ? 'warning' : '')} onClick={() => handleToggleStudentChatPermission(message.sender_profile_id, !senderAllowed)}>{senderAllowed ? 'Disallow Sender' : 'Allow Sender'}</button>}
+                              {role === ROLE.ADMIN && <button className={classNames('icon-btn', recipientAllowed ? 'warning' : '')} onClick={() => handleToggleStudentChatPermission(message.recipient_profile_id, !recipientAllowed)}>{recipientAllowed ? 'Disallow Recipient' : 'Allow Recipient'}</button>}
+                              {role === ROLE.ADMIN && <button className="icon-btn danger" onClick={() => handlePermanentDeleteChatMessage(message)}>Delete Permanently</button>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {role === ROLE.ADMIN && (
+                      <div style={{ marginTop:16 }}>
+                        <h4 style={{ margin:'0 0 10px' }}>Student Chat Status</h4>
+                        <div className="chat-rule-list">
+                          {monitoredStudentParticipants.length === 0 ? <div className="empty">No students to manage in this filter.</div> : monitoredStudentParticipants.map((student) => {
+                            const permission = chatPermissionByStudentProfileId.get(String(student.profile_id || '').trim());
+                            const isAllowed = permission ? permission.is_allowed !== false : true;
+                            return (
+                              <div key={student.profile_id} className="chat-rule-item">
+                                <div style={{ display:'flex', justifyContent:'space-between', gap:10, flexWrap:'wrap' }}>
+                                  <div>
+                                    <strong>{student.full_name}</strong>
+                                    <div className="subtle">{student.class_name || '-'}</div>
+                                  </div>
+                                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                                    <span className={classNames('chip', isAllowed ? 'success' : 'danger')}>{isAllowed ? 'Allowed' : 'Disallowed'}</span>
+                                    <button className={classNames('icon-btn', isAllowed ? 'warning' : '')} onClick={() => handleToggleStudentChatPermission(student.profile_id, !isAllowed)}>{isAllowed ? 'Disallow' : 'Allow'}</button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  role !== ROLE.ADMIN && (
+                    <div className="card chat-monitor-panel">
+                      <h3 style={{ marginTop:0 }}>Chat Rules and Notifications</h3>
+                      <div className="chat-rule-list">
+                        <div className="chat-rule-item">Unread messages show as blue badges beside the System Chat tab and beside each contact name.</div>
+                        <div className="chat-rule-item">Messages stay stored in the system unless a user chooses Delete for Me. Student to student messages can be permanently deleted only by the school admin.</div>
+                        <div className="chat-rule-item">Student to student chat is restricted to JHS students in the same class. Student to teacher, parent to teacher, and principal to teacher chats follow their role permissions automatically.</div>
+                      </div>
+                    </div>
+                  )
+                )}
               </div>
             )}
+
 
             {page === 'notifications' && (
               <div className="grid cards-2">
