@@ -1052,7 +1052,7 @@
       const [classForm, setClassForm] = useState({ id: '', class_name: '', capacity: '' });
       const [subjectForm, setSubjectForm] = useState({ id: "", subject_name: "", subject_code: "" });
       const [principalForm, setPrincipalForm] = useState(buildManagedForm('principal'));
-      const [attendanceForm, setAttendanceForm] = useState({ id: "", student_id: "", class_id: "", teacher_assignment_id: "", subject_name: "", attendance_date: todayISO(), status: "Present", remarks: "" });
+      const [attendanceForm, setAttendanceForm] = useState({ id: "", student_id: "", class_id: "", attendance_date: todayISO(), status: "Present", remarks: "" });
       const [gradeForm, setGradeForm] = useState({ id: '', student_id: '', class_id: '', subject_id: '', term_name: 'Term 1', academic_year: getAcademicYearLabel(), filter_class_name: '', mid_term_a_score: '', end_of_term_raw_score: '' });
       const [feeForm, setFeeForm] = useState({ id: "", student_id: "", term_name: "Term 1", academic_year: getAcademicYearLabel(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
       const [showGradeEditor, setShowGradeEditor] = useState(false);
@@ -3225,7 +3225,6 @@
           setNotice({ type: 'danger', text: 'Please select a student from the selected class.' });
           return;
         }
-        const matchedAssignment = (teacherAssignments || []).find((assignment) => String(assignment.class_id || '').trim() === selectedClassId) || null;
         const payload = {
           id: attendanceForm.id || undefined,
           school_id: school?.id || profile?.school_id || null,
@@ -3234,8 +3233,7 @@
           attendance_date: attendanceForm.attendance_date,
           status: attendanceForm.status,
           remarks: attendanceForm.remarks || null,
-          marked_by_profile_id: profile.id,
-          teacher_assignment_id: matchedAssignment?.id || null
+          marked_by_profile_id: profile.id
         };
         try {
           setNotice({ type: '', text: '' });
@@ -3247,7 +3245,7 @@
             setNotice({ type: 'danger', text: res.error.message || 'Failed to save attendance.' });
             return;
           }
-          setAttendanceForm({ id:'', student_id:'', class_id:'', teacher_assignment_id:'', subject_name:'', attendance_date: todayISO(), status: 'Present', remarks: '' });
+          setAttendanceForm({ id:'', student_id:'', class_id:'', attendance_date: todayISO(), status: 'Present', remarks: '' });
           await refreshAll();
           setNotice({ type: 'success', text: 'Attendance saved successfully.' });
         } catch (error) {
@@ -4115,7 +4113,7 @@
                       <div className="form-grid-3">
                         <div className="field">
                           <label>Main Class</label>
-                          <select value={attendanceForm.class_id} onChange={(e)=>setAttendanceForm((prev)=>({ ...prev, class_id:e.target.value, student_id:'', teacher_assignment_id:'', subject_name:'' }))}>
+                          <select value={attendanceForm.class_id} onChange={(e)=>setAttendanceForm((prev)=>({ ...prev, class_id:e.target.value, student_id:'' }))}>
                             {teacherAttendanceClassOptions.map(option => <option key={option.value || 'empty'} value={option.value}>{option.label}</option>)}
                           </select>
                         </div>
