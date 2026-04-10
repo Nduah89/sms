@@ -834,7 +834,15 @@
       return (
         <aside className={classNames("sidebar", mobileOpen && "open")}>
           <div className="brand">
-            <div className="brand-badge">SMS</div>
+            <div className="brand-badge" style={{ overflow:'hidden', padding:0 }}>
+              {user?.profile_photo_url ? (
+                <img
+                  src={user.profile_photo_url}
+                  alt={user?.full_name || 'Profile'}
+                  style={{ width:'100%', height:'100%', objectFit:'cover' }}
+                />
+              ) : 'SMS'}
+            </div>
             <div>
               <h1>{school?.name || "School System"}</h1>
               <div className="muted">{user?.full_name || "User"}</div>
@@ -1056,6 +1064,7 @@
       const [gradeForm, setGradeForm] = useState({ id: '', student_id: '', class_id: '', subject_id: '', term_name: 'Term 1', academic_year: getAcademicYearLabel(), filter_class_name: '', mid_term_a_score: '', end_of_term_raw_score: '' });
       const [teacherStudentRecordsFilterClassId, setTeacherStudentRecordsFilterClassId] = useState('');
       const [principalStudentRecordsFilterClassId, setPrincipalStudentRecordsFilterClassId] = useState('');
+      const [principalAttendanceFilterClassId, setPrincipalAttendanceFilterClassId] = useState('');
       const [feeForm, setFeeForm] = useState({ id: "", student_id: "", term_name: "Term 1", academic_year: getAcademicYearLabel(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
       const [showGradeEditor, setShowGradeEditor] = useState(false);
       const [notificationForm, setNotificationForm] = useState({ id: "", title: "", message: "", audience_role: "all" });
@@ -1068,7 +1077,9 @@
       }, [role, page]);
       const [importStatus, setImportStatus] = useState("");
       const [accountControlDrafts, setAccountControlDrafts] = useState({});
+      const [selfProfilePhotoUploading, setSelfProfilePhotoUploading] = useState(false);
       const schoolLogoRef = useRef(null);
+      const selfProfilePhotoRef = useRef(null);
       const bootingRef = useRef(false);
 
       const role = profile?.role_name;
@@ -1218,6 +1229,23 @@
         return (Date.now() - lastSeen) <= 120000;
       };
 
+      const syncCurrentProfilePhoto = async (profileId) => {
+        if (!profileId) return null;
+        try {
+          const { data, error } = await supabaseClient
+            .from('profiles')
+            .select('id, profile_photo_url')
+            .eq('id', profileId)
+            .maybeSingle();
+          if (error) return null;
+          const nextUrl = data?.profile_photo_url || null;
+          setProfile((prev) => prev && prev.id === profileId ? ({ ...prev, profile_photo_url: nextUrl }) : prev);
+          return nextUrl;
+        } catch {
+          return null;
+        }
+      };
+
       const loadCore = async (authUserOverride = null) => {
         if (bootingRef.current) return;
         bootingRef.current = true;
@@ -1226,6 +1254,9 @@
           const data = await getCurrentProfile(authUserOverride);
           const p = data?.profile || null;
           setProfile(p);
+          if (p?.id) {
+            await syncCurrentProfilePhoto(p.id);
+          }
 
           if (!p) {
             setSchool(null);
@@ -1315,6 +1346,7 @@
           if (schoolData) setSchool(schoolData);
         }
         await loadWelcomeContext();
+        await syncCurrentProfilePhoto(profile?.id);
       };
 
 
@@ -1399,6 +1431,41 @@
                     <p><strong>Email:</strong> {info.email || welcomeContext.email || 'Not set'}</p>
                   </>
                 )}
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      const renderSelfProfilePhotoCard = () => {
+        if (![ROLE.TEACHER, ROLE.PRINCIPAL, ROLE.ACCOUNTS].includes(role)) return null;
+        const photoUrl = profile?.profile_photo_url || null;
+        const roleLabel = role === ROLE.TEACHER ? 'Teacher' : role === ROLE.PRINCIPAL ? 'Principal' : 'Accounts Office Staff';
+        return (
+          <div className="card">
+            <h3>My Profile Picture</h3>
+            <p className="subtle">{roleLabel}s can upload or change their own profile picture here. The latest picture is saved to the system and shown on the dashboard immediately.</p>
+            <div style={{ display:'flex', gap:20, alignItems:'flex-start', flexWrap:'wrap' }}>
+              <div style={{ width:140, height:140, borderRadius:24, overflow:'hidden', border:'1px solid #dbe4f0', background:'#f8fafc', display:'grid', placeItems:'center' }}>
+                {photoUrl ? (
+                  <img src={photoUrl} alt={profile?.full_name || `${roleLabel} profile`} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                ) : (
+                  <div className="subtle" style={{ padding:16, textAlign:'center' }}>No profile picture uploaded yet</div>
+                )}
+              </div>
+              <div style={{ flex:'1 1 280px', minWidth:260 }}>
+                <div className="field">
+                  <label>{photoUrl ? 'Change Profile Picture' : 'Upload Profile Picture'}</label>
+                  <input type="file" ref={selfProfilePhotoRef} accept="image/*" />
+                </div>
+                <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginTop:12 }}>
+                  <button className="btn" onClick={handleSelfProfilePhotoUpload} disabled={selfProfilePhotoUploading}>
+                    {selfProfilePhotoUploading ? 'Saving...' : (photoUrl ? 'Change Picture' : 'Upload Picture')}
+                  </button>
+                </div>
+                <div className="footer-note" style={{ marginTop:12 }}>
+                  Use a clear image file. After saving, the updated profile picture appears on the dashboard and sidebar.
+                </div>
               </div>
             </div>
           </div>
@@ -2494,6 +2561,43 @@
         return studentRecordsRows.filter((student) => String(student.class_id || '').trim() === selectedClassId);
       }, [studentRecordsRows, principalStudentRecordsFilterClassId]);
 
+      const principalAttendanceClassOptions = useMemo(() => {
+        const options = [{ value: '', label: 'All Classes' }];
+        const seen = new Set();
+        (classesHook.rows || []).forEach((row) => {
+          const classId = String(row?.id || '').trim();
+          const label = String(row?.name || row?.class_name || '').trim();
+          if (!classId || !label || seen.has(classId)) return;
+          seen.add(classId);
+          options.push({ value: classId, label });
+        });
+        (attendanceHook.rows || []).forEach((row) => {
+          const classId = String(row?.class_id || '').trim();
+          const label = String(row?.class_name || classNameMap[classId] || '').trim();
+          if (!classId || !label || seen.has(classId)) return;
+          seen.add(classId);
+          options.push({ value: classId, label });
+        });
+        return options;
+      }, [classesHook.rows, attendanceHook.rows, classNameMap]);
+
+      const principalVisibleAttendanceRows = useMemo(() => {
+        const selectedClassId = String(principalAttendanceFilterClassId || '').trim();
+        const rows = attendanceHook.rows || [];
+        if (!selectedClassId) return rows;
+        return rows.filter((row) => String(row.class_id || '').trim() === selectedClassId);
+      }, [attendanceHook.rows, principalAttendanceFilterClassId]);
+
+      const principalFilteredAttendanceOverview = useMemo(() => {
+        const rows = principalVisibleAttendanceRows || [];
+        return {
+          total: rows.length,
+          present: rows.filter((row) => String(row.status || '').toLowerCase() === 'present').length,
+          absent: rows.filter((row) => String(row.status || '').toLowerCase() === 'absent').length,
+          late: rows.filter((row) => String(row.status || '').toLowerCase() === 'late').length
+        };
+      }, [principalVisibleAttendanceRows]);
+
       const teacherAttendanceStudents = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
         const targetClassId = String(attendanceForm.class_id || '').trim();
@@ -2998,6 +3102,44 @@
         setNotice({ type: 'success', text: 'School logo updated successfully.' });
         if (schoolLogoRef.current) schoolLogoRef.current.value = '';
         await refreshAll();
+      };
+
+      const handleSelfProfilePhotoUpload = async () => {
+        if (![ROLE.TEACHER, ROLE.PRINCIPAL, ROLE.ACCOUNTS].includes(role)) {
+          return setNotice({ type: 'danger', text: 'Only teachers, principals, and accounts office staff can update this profile picture here.' });
+        }
+        if (!profile?.id || !profile?.school_id) return setNotice({ type: 'danger', text: 'Your profile is not fully loaded yet.' });
+        const file = selfProfilePhotoRef.current?.files?.[0];
+        if (!file) return setNotice({ type: 'danger', text: 'Choose a profile picture image first.' });
+        if (!String(file.type || '').toLowerCase().startsWith('image/')) {
+          return setNotice({ type: 'danger', text: 'Only image files are allowed for profile pictures.' });
+        }
+        const ext = (file.name.split('.').pop() || 'jpg').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'jpg';
+        const roleSlug = role === ROLE.TEACHER ? 'teacher' : role === ROLE.PRINCIPAL ? 'principal' : 'accounts-office';
+        const path = `${profile.school_id}/${roleSlug}-profile-${profile.id}-${Date.now()}.${ext}`;
+        setSelfProfilePhotoUploading(true);
+        try {
+          const { error: uploadError } = await uploadFile(path, file);
+          if (uploadError) {
+            setNotice({ type: 'danger', text: uploadError.message || 'Failed to upload profile picture.' });
+            return;
+          }
+          const { data: publicData } = supabaseClient.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+          const publicUrl = publicData?.publicUrl ? `${publicData.publicUrl}?t=${Date.now()}` : null;
+          const { error: updateError } = await supabaseClient
+            .from('profiles')
+            .update({ profile_photo_url: publicUrl })
+            .eq('id', profile.id);
+          if (updateError) {
+            setNotice({ type: 'danger', text: updateError.message || 'Failed to update your profile picture record.' });
+            return;
+          }
+          setProfile((prev) => prev ? ({ ...prev, profile_photo_url: publicUrl }) : prev);
+          if (selfProfilePhotoRef.current) selfProfilePhotoRef.current.value = '';
+          setNotice({ type: 'success', text: 'Profile picture updated successfully.' });
+        } finally {
+          setSelfProfilePhotoUploading(false);
+        }
       };
 
       const schoolAdminRefMap = useMemo(() => Object.fromEntries((schoolAdminRefsHook.rows || []).map(r => [r.school_id, r])), [schoolAdminRefsHook.rows]);
@@ -3610,6 +3752,7 @@
             {page === 'principal-dashboard' && (
               <div className="grid">
                 {renderWelcomeCard()}
+                {renderSelfProfilePhotoCard()}
                 <MetricCards items={[
                   { label: 'Total Students', value: mergedStudentsRows.length },
                   { label: 'Total Teachers', value: mergedTeachersRows.length },
@@ -3708,6 +3851,7 @@
             {page === 'teacher-dashboard' && (
               <div className="grid">
                 {renderWelcomeCard()}
+                {renderSelfProfilePhotoCard()}
                 <MetricCards items={[
                   { label: 'Assigned Classes', value: teacherAssignedClassIds.length },
                   { label: 'Assigned Subjects', value: [...new Set(teacherAssignments.map(x=>x.subject_name).filter(Boolean))].length },
@@ -3760,6 +3904,7 @@
             {page === 'accounts-dashboard' && (
               <>
                 {renderWelcomeCard()}
+                {renderSelfProfilePhotoCard()}
                 <MetricCards items={[
                   { label: 'Total Collections', value: formatCurrency(feesHook.rows.reduce((s,r)=>s+Number(r.amount_paid||0),0)) },
                   { label: 'Recent Payments', value: feesHook.rows.filter(r=>r.payment_date===todayISO()).length },
@@ -4244,31 +4389,19 @@
                 <div className="grid">
                   <div className="card">
                     <h3>Attendance Summary</h3>
-                    <div className="grid cards-4">
-                      <div className="card"><strong>Total Records</strong><div className="metric">{principalAttendanceOverview.total}</div></div>
-                      <div className="card"><strong>Present</strong><div className="metric">{principalAttendanceOverview.present}</div></div>
-                      <div className="card"><strong>Absent</strong><div className="metric">{principalAttendanceOverview.absent}</div></div>
-                      <div className="card"><strong>Late</strong><div className="metric">{principalAttendanceOverview.late}</div></div>
+                    <div className="form-grid" style={{marginBottom: 16}}>
+                      <div className="field">
+                        <label>Filter by Class</label>
+                        <select value={principalAttendanceFilterClassId} onChange={(e) => setPrincipalAttendanceFilterClassId(e.target.value)}>
+                          {principalAttendanceClassOptions.map((option) => <option key={option.value || 'all-attendance-classes'} value={option.value}>{option.label}</option>)}
+                        </select>
+                      </div>
                     </div>
-                  </div>
-                  <div className="card">
-                    <h3>Teacher Presence Summary</h3>
-                    <div className="table-wrap">
-                      <table>
-                        <thead><tr><th>Teacher</th><th>Assigned Class</th><th>Primary Subject</th><th>Status</th><th>Last Update</th></tr></thead>
-                        <tbody>
-                          {principalTeacherPresenceRows.length === 0 && <tr><td colSpan="5"><div className="empty">No teacher attendance activity found</div></td></tr>}
-                          {principalTeacherPresenceRows.map((row) => (
-                            <tr key={row.id}>
-                              <td>{row.teacher_name}</td>
-                              <td>{row.class_name}</td>
-                              <td>{row.subject_name}</td>
-                              <td><span className={classNames('chip', row.status === 'Present' ? 'success' : 'danger')}>{row.status}</span></td>
-                              <td>{row.marked_at ? formatDate(row.marked_at) : 'Not yet recorded'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                    <div className="grid cards-4">
+                      <div className="card"><strong>Total Records</strong><div className="metric">{principalFilteredAttendanceOverview.total}</div></div>
+                      <div className="card"><strong>Present</strong><div className="metric">{principalFilteredAttendanceOverview.present}</div></div>
+                      <div className="card"><strong>Absent</strong><div className="metric">{principalFilteredAttendanceOverview.absent}</div></div>
+                      <div className="card"><strong>Late</strong><div className="metric">{principalFilteredAttendanceOverview.late}</div></div>
                     </div>
                   </div>
                   <div className="card">
@@ -4276,7 +4409,10 @@
                     <div className="table-wrap">
                       <table>
                         <thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead>
-                        <tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name || classNameMap[r.class_id] || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}</tbody>
+                        <tbody>
+                          {principalVisibleAttendanceRows.length === 0 && <tr><td colSpan="6"><div className="empty">No attendance records found for the selected class</div></td></tr>}
+                          {principalVisibleAttendanceRows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name || classNameMap[r.class_id] || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}
+                        </tbody>
                       </table>
                     </div>
                   </div>
