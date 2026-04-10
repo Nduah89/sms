@@ -1257,7 +1257,7 @@
       const chatHook = useSupabaseTable("chat_messages", "*");
       const chatPermissionsHook = useSupabaseTable("chat_permissions", "*");
       const chatMessageHidesHook = useSupabaseTable("chat_message_hides", "*");
-      const profilesPresenceHook = useSupabaseTable("profiles", "id, username, is_online, last_seen_at");
+      const profilesPresenceHook = useSupabaseTable("profiles", "id, school_id, auth_user_id, username, is_online, last_seen_at");
 
       const buildManagedForm = (roleName = 'student') => ({
         profile_id: "", role_name: roleName, full_name: "", email: "", username: "", phone: "", account_status: "active", force_password_change: 'true', temporary_password: "",
@@ -1613,7 +1613,7 @@
           (profile?.school_id ? chatHook.fetchRows((q)=>q.eq('school_id', profile.school_id).order('created_at', { ascending:false }).limit(1000)) : chatHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(1000))),
           (profile?.school_id ? chatPermissionsHook.fetchRows((q)=>q.eq('school_id', profile.school_id).order('updated_at', { ascending:false })) : chatPermissionsHook.fetchRows((q)=>q.order('updated_at', { ascending:false }))),
           chatMessageHidesHook.fetchRows((q)=>q.eq('profile_id', profile.id).order('created_at', { ascending:false })),
-          profilesPresenceHook.fetchRows()
+          (profile?.school_id ? profilesPresenceHook.fetchRows((q)=>q.eq('school_id', profile.school_id)) : profilesPresenceHook.fetchRows())
         ]);
         if (profile?.school_id) {
           const { data: schoolData } = await supabaseClient
@@ -1681,6 +1681,7 @@
               <div>
                 <p><strong>Role:</strong> {roleLabelMap[welcomeContext.role_name] || welcomeContext.role_name}</p>
                 <p><strong>School:</strong> {welcomeContext.school_name || '-'}</p>
+                <p><strong>Live Status:</strong> <span className={classNames('chip', currentLiveStatus === 'online' ? 'info' : 'danger')}>{currentLiveStatus === 'online' ? 'Online' : 'Offline'}</span></p>
                 {!hideAdminAuditLines && <p><strong>Created by Admin:</strong> {welcomeContext.created_by_name || 'Not recorded'}</p>}
                 {!hideAdminAuditLines && <p><strong>Created on:</strong> {welcomeContext.created_at ? formatDate(welcomeContext.created_at) : '-'}</p>}
                 {!hideAdminAuditLines && <p><strong>Last edited by Admin:</strong> {welcomeContext.last_updated_by_name || welcomeContext.created_by_name || 'Not recorded'}</p>}
@@ -1924,8 +1925,21 @@
       useEffect(() => {
         if (!profile) return undefined;
 
+        const handleProfilesRealtime = async (payload) => {
+          const nextRow = payload?.new || {};
+          const prevRow = payload?.old || {};
+          const keys = Array.from(new Set([...Object.keys(nextRow), ...Object.keys(prevRow)]));
+          const presenceKeys = ['is_online', 'last_seen_at'];
+          const hasNonPresenceChange = payload?.eventType !== 'UPDATE' || keys.some((key) => !presenceKeys.includes(key) && JSON.stringify(nextRow[key]) !== JSON.stringify(prevRow[key]));
+          if (hasNonPresenceChange) {
+            await refreshAll();
+            return;
+          }
+          await (profile?.school_id ? profilesPresenceHook.fetchRows((q)=>q.eq('school_id', profile.school_id)) : profilesPresenceHook.fetchRows());
+        };
+
         const channels = [
-          supabaseClient.channel('profiles-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, refreshAll).subscribe(),
+          supabaseClient.channel('profiles-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, handleProfilesRealtime).subscribe(),
           supabaseClient.channel('schools-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'schools' }, refreshAll).subscribe(),
           supabaseClient.channel('students-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, refreshAll).subscribe(),
           supabaseClient.channel('teachers-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'teachers' }, refreshAll).subscribe(),
@@ -1952,7 +1966,7 @@
         if (!profile?.id) return undefined;
         const pingPresence = async () => {
           await setCurrentPresence(true);
-          await profilesPresenceHook.fetchRows();
+          await (profile?.school_id ? profilesPresenceHook.fetchRows((q)=>q.eq('school_id', profile.school_id)) : profilesPresenceHook.fetchRows());
         };
         pingPresence();
         const timer = window.setInterval(pingPresence, 60000);
@@ -4500,7 +4514,10 @@
       const managedUserRefMap = useMemo(() => Object.fromEntries((userLoginRefsHook.rows || []).map(r => [r.profile_id, r])), [userLoginRefsHook.rows]);
       const managedPresenceMap = useMemo(() => Object.fromEntries((profilesPresenceHook.rows || []).map(r => [r.id, r])), [profilesPresenceHook.rows]);
       const getManagedPresence = (row) => managedPresenceMap[row?.profile_id || row?.id] || null;
-      const getManagedLiveStatus = (row) => isPresenceActive(getManagedPresence(row)) ? 'active' : 'inactive';
+      const getPresenceStateLabel = (presenceRow) => isPresenceActive(presenceRow) ? 'online' : 'offline';
+      const getManagedLiveStatus = (row) => getPresenceStateLabel(getManagedPresence(row));
+      const currentPresenceRow = profile?.id ? (managedPresenceMap[profile.id] || null) : null;
+      const currentLiveStatus = getPresenceStateLabel(currentPresenceRow);
 
       const copyText = async (text, successText = 'Copied to clipboard') => {
         try {
@@ -5549,7 +5566,7 @@
               <div className="grid">
                 <div className="card">
                   <h3>User Accounts & Credentials</h3>
-                  <p className="subtle">The school admin can choose a role, load names that already exist under Student Management, Principal Management, Teachers Management, Parents Management, and Account Office Staff Management, then generate username and password credentials, control force password change, and reset passwords in real time.</p>
+                  <p className="subtle">The school admin can choose a role, load names that already exist under Student Management, Principal Management, Teachers Management, Parents Management, and Account Office Staff Management, then generate username and password credentials, control force password change, and reset passwords in real time. Live Status now shows Online in blue when a user is inside the system and Offline in deep red when they are out of the system.</p>
                   <div className="form-grid-3">
                     <div className="field"><label>Select Role</label><select value={userForm.role_name} onChange={(e)=>setUserForm(buildManagedForm(e.target.value))}>{managedRoleOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
                     <div className="field"><label>Select Existing Name</label><select value={userForm.profile_id} onChange={(e)=>handleCredentialSelection(e.target.value)}><option value="">Select User</option>{roleScopedManagedUsers.map(row => <option key={row.profile_id} value={row.profile_id}>{row.full_name}{row.class_name ? `, ${row.class_name}` : ''}</option>)}</select></div>
@@ -5572,7 +5589,7 @@
                     <div className="grid cards-4">
                       <div><strong>Name</strong><div className="subtle">{selectedManagedUser.full_name || '-'}</div></div>
                       <div><strong>Role</strong><div className="subtle">{selectedManagedUser.role_name || '-'}</div></div>
-                      <div><strong>Live Status</strong><div><span className={classNames('chip', getManagedLiveStatus(selectedManagedUser) === 'active' ? 'success' : 'danger')}>{getManagedLiveStatus(selectedManagedUser) === 'active' ? 'Active' : 'Inactive'}</span></div></div>
+                      <div><strong>Live Status</strong><div><span className={classNames('chip', getManagedLiveStatus(selectedManagedUser) === 'online' ? 'info' : 'danger')}>{getManagedLiveStatus(selectedManagedUser) === 'online' ? 'Online' : 'Offline'}</span></div></div>
                       <div><strong>Last Seen</strong><div className="subtle">{getManagedPresence(selectedManagedUser)?.last_seen_at ? formatDate(getManagedPresence(selectedManagedUser).last_seen_at) : '-'}</div></div>
                       <div><strong>Username</strong><div className="subtle">{userForm.username || '-'}</div></div>
                       <div><strong>Account Access</strong><div><span className={classNames('chip', normalizeAccountStatus(userForm.account_status || selectedManagedUser.account_status) === 'active' ? 'success' : normalizeAccountStatus(userForm.account_status || selectedManagedUser.account_status) === 'archived' ? 'warning' : 'danger')}>{normalizeAccountStatus(userForm.account_status || selectedManagedUser.account_status || '-')}</span></div></div>
@@ -5593,7 +5610,7 @@
                         <td>{r.full_name}</td>
                         <td>{r.role_name}</td>
                         <td>{r.username || generateManagedUsername(r)}</td>
-                        <td><span className={classNames('chip', liveStatus === 'active' ? 'success' : 'danger')}>{liveStatus === 'active' ? 'Active' : 'Inactive'}</span></td>
+                        <td><span className={classNames('chip', liveStatus === 'online' ? 'info' : 'danger')}>{liveStatus === 'online' ? 'Online' : 'Offline'}</span></td>
                         <td><span className={classNames('chip', accessStatus === 'active' ? 'success' : accessStatus === 'archived' ? 'warning' : 'danger')}>{accessStatus}</span></td>
                         <td>{String(r.force_password_change ?? true) === 'true' ? 'Yes' : 'No'}</td>
                         <td>{ref?.temporary_password || '-'}</td>
