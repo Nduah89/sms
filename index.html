@@ -556,7 +556,7 @@
 
     function getBeceGradeDetails(percentScore) {
       const percent = clampScore(percentScore, 0, 100);
-      if (percent >= 90) return { bece_grade: 1, remark: 'AA+', interpretation: 'Highest' };
+      if (percent >= 90) return { bece_grade: 1, remark: 'A+', interpretation: 'Highest' };
       if (percent >= 80) return { bece_grade: 2, remark: 'A1', interpretation: 'Excellent' };
       if (percent >= 70) return { bece_grade: 3, remark: 'B2', interpretation: 'Very Good' };
       if (percent >= 65) return { bece_grade: 4, remark: 'B3', interpretation: 'Good' };
