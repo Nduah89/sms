@@ -1051,7 +1051,7 @@
         profile_id: "", role_name: roleName, full_name: "", email: "", username: "", phone: "", account_status: "active", force_password_change: 'true', temporary_password: "",
         class_id: "", student_main_class_name: "", student_class_section: "None", teacher_main_class_name: "", gender: "Male", date_of_birth: "", guardian_contact: "", address: "", student_no: "", staff_no: "",
         subject_specialty: "", qualification: "", assigned_subjects: [], assigned_class_ids: [], relationship_to_student: "",
-        parent_full_name: "", parent_contact: "", emis_code: "", ghana_card: "", trained_status: "Trained"
+        parent_full_name: "", parent_contact: "", emis_code: "", ghana_card: "", trained_status: "Trained", student_photo_url: ""
       });
       const [studentForm, setStudentForm] = useState(buildManagedForm('student'));
       const [teacherForm, setTeacherForm] = useState(buildManagedForm('teacher'));
@@ -1080,6 +1080,7 @@
       const [selfProfilePhotoUploading, setSelfProfilePhotoUploading] = useState(false);
       const schoolLogoRef = useRef(null);
       const selfProfilePhotoRef = useRef(null);
+      const studentPhotoRef = useRef(null);
       const bootingRef = useRef(false);
 
       const role = profile?.role_name;
@@ -1436,6 +1437,16 @@
           </div>
         );
       };
+
+      const renderRecordPhotoThumb = (photoUrl, altLabel = 'Photo', size = 56) => (
+        <div style={{ width:size, height:size, borderRadius:14, overflow:'hidden', border:'1px solid #dbe4f0', background:'#f8fafc', display:'grid', placeItems:'center' }}>
+          {photoUrl ? (
+            <img src={photoUrl} alt={altLabel} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+          ) : (
+            <span className="subtle" style={{ fontSize:11, textAlign:'center', padding:6 }}>No Photo</span>
+          )}
+        </div>
+      );
 
       const renderSelfProfilePhotoCard = () => {
         if (![ROLE.TEACHER, ROLE.PRINCIPAL, ROLE.ACCOUNTS].includes(role)) return null;
@@ -2338,7 +2349,8 @@
           student_no: row.student_no || '',
           parent_full_name: row.parent_full_name || '',
           parent_contact: row.parent_contact || '',
-          relationship_to_student: row.relationship_to_student || ''
+          relationship_to_student: row.relationship_to_student || '',
+          student_photo_url: row.student_photo_url || ''
         };
       };
 
@@ -2476,6 +2488,86 @@
           || null
         );
       }, [role, profile?.id, mergedTeachersRows, teachersRawHook.rows]);
+
+      const currentStudentDashboardRecord = useMemo(() => {
+        if (role !== ROLE.STUDENT || !profile?.id) return null;
+        return (
+          studentRecordsRows.find((row) => row.profile_id === profile.id)
+          || (studentsRawHook.rows || []).find((row) => row.profile_id === profile.id)
+          || null
+        );
+      }, [role, profile?.id, studentRecordsRows, studentsRawHook.rows]);
+
+      const parentEntityRow = useMemo(() => {
+        if (role !== ROLE.PARENT) return null;
+        const normalized = (value) => String(value || '').trim().toLowerCase();
+        const profilePhone = normalized(profile?.phone || profile?.profile_phone || '');
+        const profileEmail = normalized(profile?.email || '');
+        const profileName = normalized(profile?.full_name || welcomeContext?.full_name || '');
+        return (
+          (parentsHook.rows || []).find((row) => row.profile_id === profile?.id)
+          || (parentsHook.rows || []).find((row) => {
+            const rowName = normalized(row.full_name || '');
+            const rowPhone = normalized(row.phone || '');
+            const rowEmail = normalized(row.email || '');
+            return (profileName && rowName === profileName) || (profilePhone && rowPhone === profilePhone) || (profileEmail && rowEmail === profileEmail);
+          })
+          || null
+        );
+      }, [role, profile?.id, profile?.phone, profile?.profile_phone, profile?.email, profile?.full_name, parentsHook.rows, welcomeContext?.full_name]);
+
+      const parentLinkedStudentRows = useMemo(() => {
+        if (role !== ROLE.PARENT) return [];
+        const normalized = (value) => String(value || '').trim().toLowerCase();
+        const parentName = normalized(parentEntityRow?.full_name || profile?.full_name || welcomeContext?.full_name || '');
+        const contactValues = new Set([
+          normalized(parentEntityRow?.phone || ''),
+          normalized(parentEntityRow?.email || ''),
+          normalized(profile?.phone || profile?.profile_phone || ''),
+          normalized(profile?.email || '')
+        ].filter(Boolean));
+        const linkedStudentIds = new Set((parentLinksRows || [])
+          .filter((link) => parentEntityRow?.id && String(link.parent_id || '').trim() === String(parentEntityRow.id || '').trim())
+          .map((link) => String(link.student_id || '').trim())
+          .filter(Boolean));
+        const rows = (studentRecordsRows || []).filter((student) => {
+          const studentId = String(student.id || '').trim();
+          if (linkedStudentIds.has(studentId)) return true;
+          const studentParentName = normalized(student.parent_full_name || '');
+          const studentParentContact = normalized(student.parent_contact || '');
+          return (parentName && studentParentName === parentName) || (studentParentContact && contactValues.has(studentParentContact));
+        });
+        return [...new Map(rows.map((row) => [String(row.id || ''), row])).values()];
+      }, [role, parentEntityRow, parentLinksRows, profile?.full_name, profile?.phone, profile?.profile_phone, profile?.email, studentRecordsRows, welcomeContext?.full_name]);
+
+      const renderLinkedStudentPhotoCards = () => {
+        if (role !== ROLE.PARENT) return null;
+        return (
+          <div className="card">
+            <h3>Linked Student Pictures</h3>
+            <p className="subtle">Student pictures uploaded by the school admin appear here automatically for every linked child.</p>
+            {parentLinkedStudentRows.length === 0 ? (
+              <div className="empty">No linked student records with pictures were found yet.</div>
+            ) : (
+              <div className="grid cards-3">
+                {parentLinkedStudentRows.map((student) => (
+                  <div className="card" key={student.id}>
+                    <div style={{ display:'flex', gap:14, alignItems:'flex-start' }}>
+                      {renderRecordPhotoThumb(student.student_photo_url || null, student.full_name || 'Student Photo', 88)}
+                      <div style={{ minWidth:0 }}>
+                        <div style={{ fontWeight:700 }}>{student.full_name || '-'}</div>
+                        <div className="subtle">Student No: {student.student_no || '-'}</div>
+                        <div className="subtle">Class: {teacherAssignedClassDisplay(student)}</div>
+                        <div className="subtle">Parent Contact: {student.parent_contact || '-'}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      };
 
       const teacherAssignments = useMemo(() => {
         if (role !== ROLE.TEACHER || !profile?.id) return [];
@@ -3035,6 +3127,7 @@
         await refreshAll();
         setNotice({ type: syncError ? 'warning' : 'success', text: syncError ? `${roleName.replace('_',' ')} record saved, but some extended details could not be synced automatically. ${syncError.message || ''}` : `${roleName.replace('_',' ')} record saved successfully.` });
         resetManagedForm(setter, roleName);
+        if (roleName === 'student' && studentPhotoRef.current) studentPhotoRef.current.value = '';
       };
 
       const applyManagedUserControls = async (row) => {
@@ -3142,6 +3235,27 @@
         }
       };
 
+      const uploadStudentPhotoForRecord = async (studentRow, file) => {
+        if (!studentRow?.id || !school?.id) {
+          return { publicUrl: null, error: { message: 'Student record was not found for picture upload.' } };
+        }
+        if (!file) return { publicUrl: studentRow.student_photo_url || null, error: null };
+        if (!String(file.type || '').startsWith('image/')) {
+          return { publicUrl: null, error: { message: 'Only image files are allowed for student pictures.' } };
+        }
+        const ext = String(file.name || '').includes('.') ? String(file.name).split('.').pop().toLowerCase() : 'png';
+        const safeTail = String(studentRow.student_no || studentRow.id || Date.now()).replace(/[^a-z0-9_-]+/gi, '-').toLowerCase();
+        const path = `${school.id}/students/${safeTail}-${Date.now()}.${ext}`;
+        const { error: uploadError } = await uploadFile(path, file);
+        if (uploadError) return { publicUrl: null, error: uploadError };
+        const { data: publicData } = supabaseClient.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+        const publicUrl = publicData?.publicUrl ? `${publicData.publicUrl}?t=${Date.now()}` : null;
+        if (!publicUrl) {
+          return { publicUrl: null, error: { message: 'Failed to create a public URL for the student picture.' } };
+        }
+        return { publicUrl, error: null };
+      };
+
       const schoolAdminRefMap = useMemo(() => Object.fromEntries((schoolAdminRefsHook.rows || []).map(r => [r.school_id, r])), [schoolAdminRefsHook.rows]);
       const managedUserRefMap = useMemo(() => Object.fromEntries((userLoginRefsHook.rows || []).map(r => [r.profile_id, r])), [userLoginRefsHook.rows]);
       const managedPresenceMap = useMemo(() => Object.fromEntries((profilesPresenceHook.rows || []).map(r => [r.id, r])), [profilesPresenceHook.rows]);
@@ -3213,9 +3327,23 @@
           return studentUpdateError;
         }
 
+        const syncStudentPictureOnly = async () => {
+          const studentPhotoFile = studentPhotoRef.current?.files?.[0] || null;
+          if (!studentPhotoFile) return null;
+          const { publicUrl, error: studentPhotoError } = await uploadStudentPhotoForRecord(studentRow, studentPhotoFile);
+          if (studentPhotoError) return studentPhotoError;
+          const { error: photoUpdateError } = await supabaseClient
+            .from('students')
+            .update({ student_photo_url: publicUrl })
+            .eq('id', studentRow.id);
+          if (photoUpdateError) return photoUpdateError;
+          if (studentPhotoRef.current) studentPhotoRef.current.value = '';
+          return null;
+        };
+
         if (!form.parent_full_name && !form.parent_contact) {
           await supabaseClient.from('parent_student_links').delete().eq('student_id', studentRow.id);
-          return null;
+          return await syncStudentPictureOnly();
         }
 
         let parentRecord = null;
@@ -3270,7 +3398,8 @@
             await supabaseClient.from('parent_student_links').insert({ parent_id: parentRecord.id, student_id: studentRow.id });
           }
         }
-        return null;
+
+        return await syncStudentPictureOnly();
       };
 
       const setManagedUserStatus = async (row, nextStatus) => {
@@ -3880,6 +4009,18 @@
             {page === 'student-dashboard' && (
               <>
                 {renderWelcomeCard()}
+                <div className="card" style={{ marginBottom: 18 }}>
+                  <h3>Student Picture</h3>
+                  <p className="subtle">The picture uploaded by the school admin for this student appears here automatically.</p>
+                  <div style={{ display:'flex', gap:18, alignItems:'flex-start', flexWrap:'wrap' }}>
+                    {renderRecordPhotoThumb(currentStudentDashboardRecord?.student_photo_url || profile?.profile_photo_url || null, profile?.full_name || 'Student Picture', 132)}
+                    <div style={{ minWidth:220 }}>
+                      <div><strong>Full Name:</strong> {currentStudentDashboardRecord?.full_name || profile?.full_name || '-'}</div>
+                      <div><strong>Student No:</strong> {currentStudentDashboardRecord?.student_no || '-'}</div>
+                      <div><strong>Assigned Class:</strong> {currentStudentDashboardRecord ? teacherAssignedClassDisplay(currentStudentDashboardRecord) : '-'}</div>
+                    </div>
+                  </div>
+                </div>
                 <MetricCards items={[
                   { label: 'Timetable Entries', value: timetableHook.rows.length },
                   { label: 'Attendance Summary', value: attendanceHook.rows.length },
@@ -3892,6 +4033,7 @@
             {page === 'parent-dashboard' && (
               <>
                 {renderWelcomeCard()}
+                {renderLinkedStudentPhotoCards()}
                 <MetricCards items={[
                   { label: 'Linked Children', value: [...new Set(feesHook.rows.map(x=>x.student_id))].length },
                   { label: 'Attendance Records', value: attendanceHook.rows.length },
@@ -3951,13 +4093,14 @@
                     <table>
                       <thead>
                         <tr>
-                          <th>Full Name</th><th>Student No</th><th>Assigned Class</th><th>Gender</th><th>Date of Birth</th><th>Parent Full Name</th><th>Parent Contact</th><th>Account</th>
+                          {role === ROLE.PRINCIPAL && <th>Picture</th>}<th>Full Name</th><th>Student No</th><th>Assigned Class</th><th>Gender</th><th>Date of Birth</th><th>Parent Full Name</th><th>Parent Contact</th><th>Account</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {(role === ROLE.TEACHER ? teacherVisibleStudentRecordsRows : principalVisibleStudentRecordsRows).length === 0 && <tr><td colSpan="8"><div className="empty">No student records found for the selected class</div></td></tr>}
+                        {(role === ROLE.TEACHER ? teacherVisibleStudentRecordsRows : principalVisibleStudentRecordsRows).length === 0 && <tr><td colSpan={role === ROLE.PRINCIPAL ? 9 : 8}><div className="empty">No student records found for the selected class</div></td></tr>}
                         {(role === ROLE.TEACHER ? teacherVisibleStudentRecordsRows : principalVisibleStudentRecordsRows).map((row) => (
                           <tr key={row.id}>
+                            {role === ROLE.PRINCIPAL && <td>{renderRecordPhotoThumb(row.student_photo_url || null, row.full_name || 'Student Photo')}</td>}
                             <td>{row.full_name}</td>
                             <td>{row.student_no || '-'}</td>
                             <td>{teacherAssignedClassDisplay(row)}</td>
@@ -3977,6 +4120,7 @@
                 title="Student Management"
                 description="Add, edit, archive, and delete student records. Parent full name and parent contact captured here are synced into the Parents section. Student class now comes directly from the school admin Classes section."
                 columns={[
+                  { key: 'student_photo_url', label: 'Picture', render: v => renderRecordPhotoThumb(v, 'Student Photo') },
                   { key: 'full_name', label: 'Full Name' },
                   { key: 'student_no', label: 'Student No' },
                   { key: 'assigned_class', label: 'Assigned Class', render: (_, row) => teacherAssignedClassDisplay(row) },
@@ -4005,6 +4149,22 @@
                 onSave={() => saveManagedUserRecord(studentForm, setStudentForm, 'student')}
                 onDelete={(id, row) => handleDeleteManagedUser(row)}
                 onEdit={(row) => setStudentForm(buildStudentFormFromRow(row))}
+                children={
+                  <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid #e2e8f0' }}>
+                    <h4 style={{ marginTop:0, marginBottom:8 }}>Student Picture</h4>
+                    <p className="subtle" style={{ marginTop:0 }}>Upload a student picture when creating or updating the student account. The saved picture will reflect on the student dashboard, the principal student records view, and the linked parent dashboard.</p>
+                    <div style={{ display:'flex', gap:18, alignItems:'flex-start', flexWrap:'wrap' }}>
+                      {renderRecordPhotoThumb(studentForm.student_photo_url || null, studentForm.full_name || 'Student Picture', 120)}
+                      <div style={{ flex:'1 1 280px', minWidth:260 }}>
+                        <div className="field">
+                          <label>{studentForm.student_photo_url ? 'Change Student Picture' : 'Upload Student Picture'}</label>
+                          <input type="file" ref={studentPhotoRef} accept="image/*" />
+                        </div>
+                        <div className="footer-note" style={{ marginTop: 10 }}>Use a clear image file. Save the student record after choosing the picture.</div>
+                      </div>
+                    </div>
+                  </div>
+                }
                 rowActions={(row) => canSchoolAdminManageUsers ? <>
                   <button className="btn secondary" onClick={() => setManagedUserStatus(row, 'archived')}>Archive</button>
                   <button className="btn secondary" onClick={() => openManagedUserCredentials(row)}>User Accounts</button>
