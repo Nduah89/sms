@@ -195,6 +195,20 @@
     .chat-dot { width:8px; height:8px; border-radius:999px; background:#22c55e; box-shadow:0 0 0 4px rgba(34,197,94,0.12); }
     .chat-section-note { margin-top:10px; color:#6b7280; font-size:13px; }
     .chat-compose-actions { display:flex; gap:10px; flex-wrap:wrap; }
+    .chat-suggestion-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .chat-suggestion-label { font-size:12px; font-weight:700; color:#6d28d9; }
+    .chat-suggestion-chip { border:1px solid rgba(59,130,246,0.18); background:linear-gradient(135deg, rgba(96,165,250,0.12), rgba(129,140,248,0.12)); color:#1d4ed8; border-radius:999px; padding:7px 12px; cursor:pointer; font-size:12px; font-weight:700; }
+    .chat-suggestion-chip:hover { background:linear-gradient(135deg, rgba(96,165,250,0.22), rgba(129,140,248,0.22)); }
+    .chat-emoji-grid { display:grid; gap:12px; }
+    .chat-emoji-group { border:1px solid rgba(167,139,250,0.10); border-radius:18px; padding:12px; background:rgba(255,255,255,0.84); }
+    .chat-emoji-group-title { font-size:11px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#7c3aed; margin-bottom:8px; }
+    .chat-audio-toolbar { display:grid; gap:10px; }
+    .chat-record-btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:48px; }
+    .chat-record-btn.recording { background:linear-gradient(135deg, #ef4444, #db2777); color:#fff; border-color:transparent; box-shadow:0 10px 25px rgba(239,68,68,0.26); }
+    .chat-audio-preview { display:grid; gap:8px; padding:12px 14px; border:1px solid rgba(16,185,129,0.18); border-radius:18px; background:rgba(236,253,245,0.9); }
+    .chat-audio-preview-meta { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+    .chat-audio-pill { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:6px 10px; font-size:12px; font-weight:800; background:rgba(59,130,246,0.14); color:#1d4ed8; }
+    .chat-audio-player { width:100%; max-width:420px; }
     .chat-contact-empty { padding:22px; border:1px dashed rgba(167,139,250,0.24); border-radius:20px; background:rgba(255,255,255,0.9); text-align:center; color:#6b7280; }
     @media (max-width: 1180px) {
       .chat-layout, .chat-layout.no-monitor { grid-template-columns: 1fr; }
@@ -720,6 +734,69 @@
       return 'System chat is available for permitted school roles.';
     }
 
+    const CHAT_AUDIO_BUCKET = "chat-audio";
+    const CHAT_EMOJI_GROUPS = [
+      { label: 'Smileys', items: ['😀','😁','😂','🤣','😊','😍','😎','🙂','😉','🤗','🤔','😮','😢','😭','😡','😴'] },
+      { label: 'School', items: ['📚','📝','📖','🎒','🏫','🧠','✏️','📐','📌','✅','❗','📣','📆','⏰','🎓','💡'] },
+      { label: 'Care', items: ['🙏','❤️','💙','💚','💛','🤝','👏','🙌','🌟','✨','🎉','💯','👍','👌','🤞','🙏'] },
+      { label: 'Quick symbols', items: ['💬','📞','📍','➡️','⬅️','⬆️','⬇️','⚠️','🔔','🔒','🔊','🎙️','🎧','📎','🕒','📩'] }
+    ];
+    const CHAT_WORD_PREDICTIONS = [
+      'hello', 'hi', 'good morning', 'good afternoon', 'good evening', 'please', 'thank you',
+      'okay', 'noted', 'sorry', 'well done', 'assignment', 'attendance', 'class', 'subject',
+      'results', 'exam', 'homework', 'can you help me', 'please call me', 'I understand',
+      'I will check', 'see you soon', 'God bless you', 'congratulations'
+    ];
+
+    function getChatWordPredictions(messageText) {
+      const raw = String(messageText || '');
+      const trimmed = raw.trim();
+      const tokens = trimmed.split(/\s+/).filter(Boolean);
+      const lastToken = String(tokens[tokens.length - 1] || '').toLowerCase();
+      const matches = CHAT_WORD_PREDICTIONS.filter((phrase) => {
+        const lowered = phrase.toLowerCase();
+        if (!lastToken) return ['hello', 'please', 'thank you', 'okay', 'assignment', 'attendance'].includes(lowered);
+        return lowered.startsWith(lastToken) && lowered !== lastToken;
+      });
+      return matches.slice(0, 6);
+    }
+
+    function formatDurationSeconds(totalSeconds) {
+      const total = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+      const minutes = String(Math.floor(total / 60)).padStart(2, '0');
+      const seconds = String(total % 60).padStart(2, '0');
+      return `${minutes}:${seconds}`;
+    }
+
+    function playChatTone(kind) {
+      try {
+        const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextCtor) return;
+        const ctx = new AudioContextCtor();
+        const oscillator = ctx.createOscillator();
+        const gain = ctx.createGain();
+        oscillator.connect(gain);
+        gain.connect(ctx.destination);
+        const now = ctx.currentTime;
+        if (kind === 'receive') {
+          oscillator.frequency.setValueAtTime(660, now);
+          oscillator.frequency.linearRampToValueAtTime(880, now + 0.08);
+        } else {
+          oscillator.frequency.setValueAtTime(520, now);
+          oscillator.frequency.linearRampToValueAtTime(720, now + 0.06);
+        }
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.linearRampToValueAtTime(0.12, now + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+        oscillator.type = kind === 'receive' ? 'sine' : 'triangle';
+        oscillator.start(now);
+        oscillator.stop(now + 0.2);
+        oscillator.onended = () => {
+          try { ctx.close(); } catch {}
+        };
+      } catch {}
+    }
+
     function VirtualizedChatList({ messages, currentProfileId, canDeleteForMe, onDeleteForMe, canPermanentDelete, onPermanentDelete }) {
       const containerRef = useRef(null);
       const [scrollTop, setScrollTop] = useState(0);
@@ -755,7 +832,13 @@
                           <strong>{message.sender_name || 'Unknown User'}</strong>
                           <span className="chat-contact-role">{chatTypeLabel(message.chat_type)}</span>
                         </div>
-                        <div style={{ marginTop:8, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{message.message_text}</div>
+                        {(message.message_text && !(String(message.message_kind || '').trim() === 'audio' && String(message.message_text || '').trim() === '[Audio message]')) ? <div style={{ marginTop:8, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{message.message_text}</div> : null}
+                        {message.audio_url ? (
+                          <div style={{ marginTop:10 }}>
+                            <audio className="chat-audio-player" controls preload="metadata" src={message.audio_url}></audio>
+                            <div className="chat-audio-pill" style={{ marginTop:8 }}>🎙️ Audio {message.audio_duration_seconds ? formatDurationSeconds(message.audio_duration_seconds) : '00:00'}</div>
+                          </div>
+                        ) : null}
                         <div className="subtle" style={{ fontSize:12, marginTop:8 }}>
                           {message.class_name ? `Class: ${message.class_name} | ` : ''}
                           {new Date(message.created_at).toLocaleString()}
@@ -854,6 +937,10 @@
 
     async function uploadFile(path, file) {
       return supabaseClient.storage.from(STORAGE_BUCKET).upload(path, file, { upsert: true });
+    }
+
+    async function uploadFileToBucket(bucket, path, file) {
+      return supabaseClient.storage.from(bucket).upload(path, file, { upsert: true });
     }
 
     function getFriendlyErrorMessage(error) {
@@ -1319,6 +1406,9 @@
       const [showGradeEditor, setShowGradeEditor] = useState(false);
       const [notificationForm, setNotificationForm] = useState({ id: "", title: "", message: "", audience_role: "all" });
       const [chatForm, setChatForm] = useState({ recipient_profile_id: "", message_text: "" });
+      const [chatAudioDraft, setChatAudioDraft] = useState({ blob: null, url: '', durationSeconds: 0, mimeType: '' });
+      const [chatIsRecording, setChatIsRecording] = useState(false);
+      const [chatRecordingElapsedMs, setChatRecordingElapsedMs] = useState(0);
       const [studentChatClassId, setStudentChatClassId] = useState('');
       const [chatMonitorClassId, setChatMonitorClassId] = useState('');
       const [chatMonitorSearch, setChatMonitorSearch] = useState('');
@@ -1336,6 +1426,12 @@
       const schoolLogoRef = useRef(null);
       const selfProfilePhotoRef = useRef(null);
       const studentPhotoRef = useRef(null);
+      const mediaRecorderRef = useRef(null);
+      const chatAudioChunksRef = useRef([]);
+      const chatRecordStartAtRef = useRef(0);
+      const chatRecordTimeoutRef = useRef(null);
+      const chatRecordIntervalRef = useRef(null);
+      const chatLastIncomingMessageIdRef = useRef('');
       const bootingRef = useRef(false);
       const pageHistorySkipRef = useRef(false);
       const pageHistoryBootRef = useRef(false);
@@ -3706,6 +3802,21 @@
 
       const chatUnreadCount = useMemo(() => unreadChatMessages.length, [unreadChatMessages]);
 
+      useEffect(() => {
+        const currentProfileId = String(profile?.id || '').trim();
+        if (!currentProfileId || role === ROLE.ADMIN) return;
+        const latestIncoming = [...directVisibleChatMessages].filter((message) => String(message.sender_profile_id || '').trim() !== currentProfileId).slice(-1)[0] || null;
+        if (!latestIncoming) return;
+        const latestId = String(latestIncoming.id || '').trim();
+        if (!chatLastIncomingMessageIdRef.current) {
+          chatLastIncomingMessageIdRef.current = latestId;
+          return;
+        }
+        if (chatLastIncomingMessageIdRef.current === latestId) return;
+        chatLastIncomingMessageIdRef.current = latestId;
+        playChatTone('receive');
+      }, [directVisibleChatMessages, profile?.id, role]);
+
       const markChatSeen = () => {
         if (!chatLastSeenKey) return;
         const stamp = Date.now();
@@ -3821,6 +3932,114 @@
         setChatForm((current) => ({ ...current, message_text: `${current.message_text || ''}${emoji}` }));
       };
 
+      const chatWordPredictions = useMemo(() => getChatWordPredictions(chatForm.message_text), [chatForm.message_text]);
+
+      const applyChatPrediction = (prediction) => {
+        const nextPhrase = String(prediction || '').trim();
+        if (!nextPhrase) return;
+        setChatForm((current) => {
+          const base = String(current.message_text || '');
+          const trimmedBase = base.trimEnd();
+          const tokens = trimmedBase.split(/\s+/).filter(Boolean);
+          const lastToken = String(tokens[tokens.length - 1] || '').toLowerCase();
+          if (lastToken && nextPhrase.toLowerCase().startsWith(lastToken)) {
+            tokens[tokens.length - 1] = nextPhrase;
+            return { ...current, message_text: `${tokens.join(' ')} ` };
+          }
+          return { ...current, message_text: `${trimmedBase}${trimmedBase ? ' ' : ''}${nextPhrase} ` };
+        });
+      };
+
+      const clearChatAudioDraft = () => {
+        setChatAudioDraft((current) => {
+          if (current?.url) {
+            try { URL.revokeObjectURL(current.url); } catch {}
+          }
+          return { blob: null, url: '', durationSeconds: 0, mimeType: '' };
+        });
+        setChatRecordingElapsedMs(0);
+      };
+
+      const stopChatAudioRecording = () => {
+        if (chatRecordTimeoutRef.current) {
+          window.clearTimeout(chatRecordTimeoutRef.current);
+          chatRecordTimeoutRef.current = null;
+        }
+        if (chatRecordIntervalRef.current) {
+          window.clearInterval(chatRecordIntervalRef.current);
+          chatRecordIntervalRef.current = null;
+        }
+        const recorder = mediaRecorderRef.current;
+        if (recorder && recorder.state !== 'inactive') {
+          try { recorder.stop(); } catch {}
+        }
+      };
+
+      const startChatAudioRecording = async () => {
+        if (chatIsRecording) return;
+        if (!navigator.mediaDevices?.getUserMedia || typeof window.MediaRecorder === 'undefined') {
+          setNotice({ type: 'danger', text: 'Audio recording is not supported on this device or browser.' });
+          return;
+        }
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const preferredMime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : 'audio/webm');
+          const recorder = new MediaRecorder(stream, preferredMime ? { mimeType: preferredMime } : undefined);
+          chatAudioChunksRef.current = [];
+          mediaRecorderRef.current = recorder;
+          chatRecordStartAtRef.current = Date.now();
+          setChatIsRecording(true);
+          setChatRecordingElapsedMs(0);
+          setNotice({ type: '', text: '' });
+          recorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) {
+              chatAudioChunksRef.current.push(event.data);
+            }
+          };
+          recorder.onstop = () => {
+            const elapsedMs = Math.max(0, Date.now() - chatRecordStartAtRef.current);
+            const blob = new Blob(chatAudioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+            stream.getTracks().forEach((track) => track.stop());
+            setChatIsRecording(false);
+            if (!blob.size) {
+              setNotice({ type: 'danger', text: 'No audio was captured. Hold the button while speaking, then release to save.' });
+              return;
+            }
+            setChatAudioDraft((current) => {
+              if (current?.url) {
+                try { URL.revokeObjectURL(current.url); } catch {}
+              }
+              return {
+                blob,
+                url: URL.createObjectURL(blob),
+                durationSeconds: Math.min(300, Math.max(1, Math.round(elapsedMs / 1000))),
+                mimeType: recorder.mimeType || 'audio/webm'
+              };
+            });
+            setChatRecordingElapsedMs(elapsedMs);
+          };
+          recorder.start();
+          chatRecordIntervalRef.current = window.setInterval(() => {
+            const elapsedMs = Date.now() - chatRecordStartAtRef.current;
+            setChatRecordingElapsedMs(elapsedMs);
+            if (elapsedMs >= 300000) {
+              stopChatAudioRecording();
+            }
+          }, 250);
+          chatRecordTimeoutRef.current = window.setTimeout(() => stopChatAudioRecording(), 300000);
+        } catch (error) {
+          setChatIsRecording(false);
+          setNotice({ type: 'danger', text: error?.message || 'Microphone access was denied or unavailable.' });
+        }
+      };
+
+      useEffect(() => () => {
+        try {
+          stopChatAudioRecording();
+          clearChatAudioDraft();
+        } catch {}
+      }, []);
+
       const handleHideChatMessageForCurrentUser = async (message) => {
         if (!message?.id || !profile?.id) return;
         setNotice({ type: '', text: '' });
@@ -3870,12 +4089,13 @@
       const handleSendSystemChatMessage = async () => {
         const recipientId = String(chatForm.recipient_profile_id || '').trim();
         const messageText = String(chatForm.message_text || '').trim();
+        const hasAudioDraft = !!chatAudioDraft?.blob;
         if (!recipientId) {
           setNotice({ type: 'danger', text: 'Select who you want to chat with first.' });
           return;
         }
-        if (!messageText) {
-          setNotice({ type: 'danger', text: 'Enter a message before sending.' });
+        if (!messageText && !hasAudioDraft) {
+          setNotice({ type: 'danger', text: 'Enter a message or record an audio note before sending.' });
           return;
         }
         const recipient = chatContactOptions.find((entry) => String(entry.profile_id || '').trim() === recipientId) || chatDirectoryMap.get(recipientId) || null;
@@ -3959,13 +4179,34 @@
         }
 
         setNotice({ type: '', text: '' });
+        let uploadedAudioUrl = null;
+        let uploadedAudioDurationSeconds = null;
+        let messageKind = 'text';
+        if (hasAudioDraft) {
+          const mime = String(chatAudioDraft.mimeType || 'audio/webm').toLowerCase();
+          const ext = mime.includes('ogg') ? 'ogg' : (mime.includes('mp4') || mime.includes('aac') ? 'm4a' : 'webm');
+          const audioFile = new File([chatAudioDraft.blob], `chat-audio-${Date.now()}.${ext}`, { type: chatAudioDraft.mimeType || 'audio/webm' });
+          const audioPath = `${String(profile.school_id || 'school')}/chat-audio/${String(profile.id || 'profile')}-${Date.now()}.${ext}`;
+          const { error: uploadError } = await uploadFileToBucket(CHAT_AUDIO_BUCKET, audioPath, audioFile);
+          if (uploadError) {
+            setNotice({ type: 'danger', text: uploadError.message || 'Failed to upload the audio message.' });
+            return;
+          }
+          const { data: publicData } = supabaseClient.storage.from(CHAT_AUDIO_BUCKET).getPublicUrl(audioPath);
+          uploadedAudioUrl = publicData?.publicUrl ? `${publicData.publicUrl}?t=${Date.now()}` : null;
+          uploadedAudioDurationSeconds = Math.min(300, Math.max(1, Math.round(Number(chatAudioDraft.durationSeconds) || 0)));
+          messageKind = messageText ? 'mixed' : 'audio';
+        }
         const payload = {
           sender_profile_id: profile.id,
           recipient_profile_id: recipientId,
-          message_text: messageText,
+          message_text: messageText || (uploadedAudioUrl ? '[Audio message]' : ''),
           school_id: profile.school_id || null,
           class_id: sharedClassId || null,
-          chat_type: chatType
+          chat_type: chatType,
+          message_kind: messageKind,
+          audio_url: uploadedAudioUrl,
+          audio_duration_seconds: uploadedAudioDurationSeconds
         };
         const { error } = await supabaseClient.from('chat_messages').insert(payload);
         if (error) {
@@ -3973,6 +4214,14 @@
           return;
         }
         setChatForm((current) => ({ ...current, message_text: '' }));
+        clearChatAudioDraft();
+        playChatTone('send');
+        if (uploadedAudioUrl) {
+          try {
+            const sentAudio = new Audio(uploadedAudioUrl);
+            sentAudio.play().catch(() => {});
+          } catch {}
+        }
         setNotice({ type: 'success', text: 'Message sent.' });
         await refreshAll();
         markChatSeen();
@@ -6131,18 +6380,54 @@
                             onPermanentDelete={() => {}}
                           />
                           <div className="chat-compose">
-                            <div className="emoji-row">
-                              {['😀','😊','👍','🙏','🎉','❤️','😂','😮','😢','😡','✅','❗','✨','📚','💬'].map((emoji) => <button key={emoji} className="emoji-btn" onClick={() => insertEmojiIntoChat(emoji)}>{emoji}</button>)}
+                            <div className="chat-emoji-grid">
+                              {CHAT_EMOJI_GROUPS.map((group) => (
+                                <div key={group.label} className="chat-emoji-group">
+                                  <div className="chat-emoji-group-title">{group.label}</div>
+                                  <div className="emoji-row">
+                                    {group.items.map((emoji) => <button key={`${group.label}-${emoji}`} className="emoji-btn" onClick={() => insertEmojiIntoChat(emoji)}>{emoji}</button>)}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                             <div className="chat-modern-field">
                               <label>Message</label>
-                              <textarea rows="5" value={chatForm.message_text} onChange={(event) => setChatForm({ ...chatForm, message_text: event.target.value })} placeholder="Type your message here. Emojis and symbols are supported." />
+                              <textarea rows="5" value={chatForm.message_text} onChange={(event) => setChatForm({ ...chatForm, message_text: event.target.value })} placeholder="Type your message here. Emojis, symbols, and audio are supported." />
+                            </div>
+                            {chatWordPredictions.length ? (
+                              <div className="chat-suggestion-bar">
+                                <span className="chat-suggestion-label">Word predictions</span>
+                                {chatWordPredictions.map((prediction) => <button key={prediction} className="chat-suggestion-chip" onClick={() => applyChatPrediction(prediction)}>{prediction}</button>)}
+                              </div>
+                            ) : null}
+                            <div className="chat-audio-toolbar">
+                              <button
+                                className={classNames('btn secondary chat-record-btn', chatIsRecording && 'recording')}
+                                onMouseDown={startChatAudioRecording}
+                                onMouseUp={stopChatAudioRecording}
+                                onMouseLeave={stopChatAudioRecording}
+                                onTouchStart={(event) => { event.preventDefault(); startChatAudioRecording(); }}
+                                onTouchEnd={(event) => { event.preventDefault(); stopChatAudioRecording(); }}
+                              >
+                                {chatIsRecording ? `🎙️ Recording ${formatDurationSeconds(chatRecordingElapsedMs / 1000)} / 05:00` : '🎙️ Press and hold to record audio'}
+                              </button>
+                              {chatAudioDraft.url ? (
+                                <div className="chat-audio-preview">
+                                  <div className="chat-audio-preview-meta">
+                                    <span className="chat-audio-pill">Audio ready • {formatDurationSeconds(chatAudioDraft.durationSeconds)}</span>
+                                    <button className="icon-btn" onClick={clearChatAudioDraft}>Remove Audio</button>
+                                  </div>
+                                  <audio className="chat-audio-player" controls preload="metadata" src={chatAudioDraft.url}></audio>
+                                </div>
+                              ) : (
+                                <div className="chat-section-note">Hold the record button to capture an audio note up to 5 minutes. Release the button to save the draft.</div>
+                              )}
                             </div>
                             <div className="chat-compose-actions">
                               <button className="btn" onClick={handleSendSystemChatMessage}>Send Message</button>
-                              <button className="btn secondary" onClick={() => setChatForm((current) => ({ ...current, message_text: '' }))}>Clear</button>
+                              <button className="btn secondary" onClick={() => { setChatForm((current) => ({ ...current, message_text: '' })); clearChatAudioDraft(); }}>Clear</button>
                             </div>
-                            <div className="chat-section-note">Messages remain stored in the system unless a user deletes them for self. School admin retains permanent delete control for student to student chat.</div>
+                            <div className="chat-section-note">Messages remain stored in the system unless a user deletes them for self. School admin retains permanent delete control for student to student chat. Message tones play on send and on receive.</div>
                           </div>
                         </>
                       ) : (
@@ -6195,7 +6480,8 @@
                                 </div>
                                 <span className="chat-contact-role">{chatTypeLabel(message.chat_type)}</span>
                               </div>
-                              <div className="chat-monitor-message">{message.message_text}</div>
+                              <div className="chat-monitor-message">{(message.message_text && !(String(message.message_kind || '').trim() === 'audio' && String(message.message_text || '').trim() === '[Audio message]')) ? message.message_text : 'Audio message'}</div>
+                              {message.audio_url ? <div style={{ marginTop:10 }}><audio className="chat-audio-player" controls preload="metadata" src={message.audio_url}></audio></div> : null}
                               <div className="chat-monitor-actions">
                                 {role === ROLE.TEACHER && <button className="icon-btn" onClick={() => quickReplyToChatStudent(message.sender_profile_id)}>Reply to Sender</button>}
                                 {role === ROLE.TEACHER && <button className="icon-btn" onClick={() => quickReplyToChatStudent(message.recipient_profile_id)}>Reply to Recipient</button>}
