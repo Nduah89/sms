@@ -2550,30 +2550,105 @@
         const parentMap = new Map((parentsHook.rows || []).map((parent) => [String(parent.id || '').trim(), parent]));
         const details = new Map();
         (parentLinksRows || []).forEach((link) => {
-          const studentId = String(link.student_id || '').trim();
-          const parentId = String(link.parent_id || '').trim();
-          if (!studentId || !parentId) return;
-          const parent = parentMap.get(parentId);
+          const studentKeys = [
+            String(link.student_id || '').trim(),
+            String(link.student_profile_id || '').trim(),
+            String(link.linked_student_id || '').trim()
+          ].filter(Boolean);
+          const parentId = String(link.parent_id || link.parent_profile_id || '').trim();
+          if (!studentKeys.length || !parentId) return;
+          const parent = parentMap.get(parentId) || (parentsHook.rows || []).find((row) => String(row.profile_id || '').trim() === parentId) || null;
           if (!parent) return;
-          const existing = details.get(studentId) || {};
-          details.set(studentId, {
-            parent_full_name: existing.parent_full_name || String(parent.full_name || '').trim(),
-            parent_contact: existing.parent_contact || String(parent.phone || parent.email || '').trim()
+          studentKeys.forEach((studentKey) => {
+            const existing = details.get(studentKey) || {};
+            details.set(studentKey, {
+              parent_full_name: existing.parent_full_name || String(parent.full_name || '').trim(),
+              parent_contact: existing.parent_contact || String(parent.phone || parent.email || '').trim()
+            });
           });
         });
         return details;
       }, [parentsHook.rows, parentLinksRows]);
 
+      const fallbackParentDetailsByStudentId = useMemo(() => {
+        const details = new Map();
+        const normalize = (value) => String(value || '').trim().toLowerCase();
+        const add = (studentKey, payload) => {
+          const key = String(studentKey || '').trim();
+          if (!key) return;
+          const existing = details.get(key) || {};
+          details.set(key, {
+            parent_full_name: existing.parent_full_name || String(payload.parent_full_name || '').trim(),
+            parent_contact: existing.parent_contact || String(payload.parent_contact || '').trim()
+          });
+        };
+        const parentMap = new Map((parentsHook.rows || []).map((parent) => [String(parent.id || '').trim(), parent]));
+        (mergedStudentsRows || []).forEach((student) => {
+          const studentId = String(student.id || '').trim();
+          const profileId = String(student.profile_id || '').trim();
+          const directName = String(student.parent_full_name || '').trim();
+          const directContact = String(student.parent_contact || '').trim();
+          if (directName || directContact) {
+            add(studentId, { parent_full_name: directName, parent_contact: directContact });
+            add(profileId, { parent_full_name: directName, parent_contact: directContact });
+          }
+          (parentLinksRows || []).forEach((link) => {
+            const linkStudentKeys = [
+              String(link.student_id || '').trim(),
+              String(link.student_profile_id || '').trim(),
+              String(link.linked_student_id || '').trim()
+            ].filter(Boolean);
+            if (!linkStudentKeys.includes(studentId) && !linkStudentKeys.includes(profileId)) return;
+            const parentId = String(link.parent_id || link.parent_profile_id || '').trim();
+            const parent = parentMap.get(parentId) || (parentsHook.rows || []).find((row) => String(row.profile_id || '').trim() === parentId) || null;
+            if (!parent) return;
+            const payload = {
+              parent_full_name: parent.full_name || '',
+              parent_contact: parent.phone || parent.email || ''
+            };
+            add(studentId, payload);
+            add(profileId, payload);
+          });
+          if (!directName && !directContact) {
+            const normalizedStudentName = normalize(student.full_name || '');
+            (parentsHook.rows || []).forEach((parent) => {
+              const sameName = normalizedStudentName && String(parent.linked_student_names || '').toLowerCase().includes(normalizedStudentName);
+              if (!sameName) return;
+              const payload = {
+                parent_full_name: parent.full_name || '',
+                parent_contact: parent.phone || parent.email || ''
+              };
+              add(studentId, payload);
+              add(profileId, payload);
+            });
+          }
+        });
+        return details;
+      }, [mergedStudentsRows, parentsHook.rows, parentLinksRows]);
+
+      const resolveStudentParentDetails = (row) => {
+        const directName = String(row?.parent_full_name || '').trim();
+        const directContact = String(row?.parent_contact || '').trim();
+        const byId = linkedParentDetailsByStudentId.get(String(row?.id || '').trim()) || {};
+        const byProfileId = linkedParentDetailsByStudentId.get(String(row?.profile_id || '').trim()) || {};
+        const fallbackById = fallbackParentDetailsByStudentId.get(String(row?.id || '').trim()) || {};
+        const fallbackByProfileId = fallbackParentDetailsByStudentId.get(String(row?.profile_id || '').trim()) || {};
+        return {
+          parent_full_name: directName || byId.parent_full_name || byProfileId.parent_full_name || fallbackById.parent_full_name || fallbackByProfileId.parent_full_name || '',
+          parent_contact: directContact || byId.parent_contact || byProfileId.parent_contact || fallbackById.parent_contact || fallbackByProfileId.parent_contact || ''
+        };
+      };
+
       const studentRecordsRows = useMemo(() => (
         (mergedStudentsRows || []).map((row) => {
-          const linkedParent = linkedParentDetailsByStudentId.get(String(row.id || '').trim()) || {};
+          const parentDetails = resolveStudentParentDetails(row);
           return {
             ...row,
-            parent_full_name: row.parent_full_name || linkedParent.parent_full_name || '',
-            parent_contact: row.parent_contact || linkedParent.parent_contact || ''
+            parent_full_name: parentDetails.parent_full_name || '',
+            parent_contact: parentDetails.parent_contact || ''
           };
         }).sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')))
-      ), [mergedStudentsRows, linkedParentDetailsByStudentId]);
+      ), [mergedStudentsRows, linkedParentDetailsByStudentId, fallbackParentDetailsByStudentId]);
 
       const mergedTeachersRows = useMemo(() => (
         (teachersHook.rows || []).map((row) => ({
@@ -2612,8 +2687,15 @@
       const studentClassSectionOptions = useMemo(() => classCategoryOptions, []);
       const classNameMap = useMemo(() => Object.fromEntries(orderedClassRows.map(c => [c.id, buildClassDisplay(c) || c.class_name || c.name])), [orderedClassRows]);
       const teacherAssignedClassDisplay = (row) => {
-        const source = classNameMap[row.class_id] || row.class_name || '';
-        return normalizeTeacherMainClassName(source) || source || '-';
+        const source = buildClassDisplay(orderedClassRows.find((entry) => String(entry.id || '').trim() === String(row?.class_id || '').trim()) || null)
+          || classNameMap[row?.class_id]
+          || buildClassDisplay(row)
+          || row?.student_main_class_name
+          || row?.class_name
+          || row?.teacher_main_class_name
+          || row?.assigned_class
+          || '';
+        return String(source || '').trim() || '-';
       };
       const findClassRowByMainAndSection = (mainClassName, sectionChoice = 'None') => {
         const normalizedMainClass = normalizeMainClassName(mainClassName);
@@ -2848,17 +2930,22 @@
         const profileAuthUserId = String(profile?.auth_user_id || '').trim();
         const profileEmail = normalized(profile?.email || '');
         const profileName = normalized(profile?.full_name || welcomeContext?.full_name || '');
-        const candidates = [currentStudentDashboardRecord, ...(studentRecordsRows || []), ...(studentsRawHook.rows || [])].filter(Boolean);
+        const currentStudentId = String(currentStudentDashboardRecord?.id || '').trim();
+        const currentStudentNo = String(currentStudentDashboardRecord?.student_no || '').trim();
+        const rawByCurrentId = currentStudentId ? (studentsRawMap[currentStudentId] || null) : null;
+        const candidates = [rawByCurrentId, currentStudentDashboardRecord, ...(studentRecordsRows || []), ...(studentsRawHook.rows || [])].filter(Boolean);
         const matchedWithPhoto = candidates.find((row) => {
           const hasPhoto = String(row?.student_photo_url || row?.profile_photo_url || '').trim();
           if (!hasPhoto) return false;
-          return String(row?.profile_id || '').trim() === profileId
+          return String(row?.id || '').trim() === currentStudentId
+            || (currentStudentNo && String(row?.student_no || '').trim() === currentStudentNo)
+            || String(row?.profile_id || '').trim() === profileId
             || (profileAuthUserId && String(row?.auth_user_id || '').trim() === profileAuthUserId)
             || (profileEmail && normalized(row?.email || row?.student_email || '') === profileEmail)
             || (profileName && normalized(row?.full_name || '') === profileName);
         });
-        return matchedWithPhoto?.student_photo_url || currentStudentDashboardRecord?.student_photo_url || currentStudentDashboardRecord?.profile_photo_url || profile?.profile_photo_url || null;
-      }, [currentStudentDashboardRecord, profile?.id, profile?.auth_user_id, profile?.email, profile?.full_name, profile?.profile_photo_url, studentRecordsRows, studentsRawHook.rows, welcomeContext?.full_name]);
+        return matchedWithPhoto?.student_photo_url || rawByCurrentId?.student_photo_url || currentStudentDashboardRecord?.student_photo_url || currentStudentDashboardRecord?.profile_photo_url || profile?.profile_photo_url || null;
+      }, [currentStudentDashboardRecord, profile?.id, profile?.auth_user_id, profile?.email, profile?.full_name, profile?.profile_photo_url, studentRecordsRows, studentsRawHook.rows, studentsRawMap, welcomeContext?.full_name]);
 
       const parentEntityRow = useMemo(() => {
         if (role !== ROLE.PARENT) return null;
@@ -2993,14 +3080,14 @@
       const teacherStudentRecordsRows = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
         return (studentRecordsRows || []).map((row) => {
-          const linkedParent = linkedParentDetailsByStudentId.get(String(row.id || '').trim()) || {};
+          const parentDetails = resolveStudentParentDetails(row);
           return {
             ...row,
-            parent_full_name: row.parent_full_name || linkedParent.parent_full_name || '',
-            parent_contact: row.parent_contact || linkedParent.parent_contact || ''
+            parent_full_name: row.parent_full_name || parentDetails.parent_full_name || '',
+            parent_contact: row.parent_contact || parentDetails.parent_contact || ''
           };
         });
-      }, [role, studentRecordsRows, linkedParentDetailsByStudentId]);
+      }, [role, studentRecordsRows, linkedParentDetailsByStudentId, fallbackParentDetailsByStudentId]);
 
       const teacherRestrictedStudentRows = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
@@ -3051,14 +3138,14 @@
           ? teacherRestrictedStudentRows
           : teacherRestrictedStudentRows.filter((student) => String(student.class_id || '').trim() === selectedClassId);
         return rows.map((row) => {
-          const linkedParent = linkedParentDetailsByStudentId.get(String(row.id || '').trim()) || {};
+          const parentDetails = resolveStudentParentDetails(row);
           return {
             ...row,
-            parent_full_name: row.parent_full_name || linkedParent.parent_full_name || '-',
-            parent_contact: row.parent_contact || linkedParent.parent_contact || '-'
+            parent_full_name: row.parent_full_name || parentDetails.parent_full_name || '-',
+            parent_contact: row.parent_contact || parentDetails.parent_contact || '-'
           };
         });
-      }, [teacherRestrictedStudentRows, teacherStudentRecordsFilterClassId, linkedParentDetailsByStudentId]);
+      }, [teacherRestrictedStudentRows, teacherStudentRecordsFilterClassId, linkedParentDetailsByStudentId, fallbackParentDetailsByStudentId]);
 
       const principalStudentRecordClassOptions = useMemo(() => {
         const seen = new Set();
@@ -3075,9 +3162,18 @@
 
       const principalVisibleStudentRecordsRows = useMemo(() => {
         const selectedClassId = String(principalStudentRecordsFilterClassId || '').trim();
-        if (!selectedClassId) return studentRecordsRows;
-        return studentRecordsRows.filter((student) => String(student.class_id || '').trim() === selectedClassId);
-      }, [studentRecordsRows, principalStudentRecordsFilterClassId]);
+        const rows = !selectedClassId
+          ? studentRecordsRows
+          : studentRecordsRows.filter((student) => String(student.class_id || '').trim() === selectedClassId);
+        return rows.map((row) => {
+          const parentDetails = resolveStudentParentDetails(row);
+          return {
+            ...row,
+            parent_full_name: row.parent_full_name || parentDetails.parent_full_name || '',
+            parent_contact: row.parent_contact || parentDetails.parent_contact || ''
+          };
+        });
+      }, [studentRecordsRows, principalStudentRecordsFilterClassId, linkedParentDetailsByStudentId, fallbackParentDetailsByStudentId]);
 
       const principalAttendanceClassOptions = useMemo(() => {
         const options = [{ value: '', label: 'All Classes' }];
