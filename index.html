@@ -797,8 +797,32 @@
     }
 
     async function setCurrentPresence(isOnline) {
+      const desiredOnline = !!isOnline;
       try {
-        return await supabaseClient.rpc('set_current_user_presence', { p_is_online: !!isOnline });
+        const rpcResult = await supabaseClient.rpc('set_current_user_presence', { p_is_online: desiredOnline });
+        if (!rpcResult?.error && rpcResult?.data) return rpcResult;
+      } catch {}
+
+      try {
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        const authUserId = sessionData?.session?.user?.id || null;
+        if (!authUserId) return { data: null, error: null };
+        const payload = { is_online: desiredOnline, last_seen_at: new Date().toISOString() };
+        const updateResult = await supabaseClient
+          .from('profiles')
+          .update(payload)
+          .eq('auth_user_id', authUserId)
+          .select('id, is_online, last_seen_at')
+          .maybeSingle();
+        if (updateResult?.error) return updateResult;
+        return {
+          data: updateResult?.data ? {
+            profile_id: updateResult.data.id,
+            is_online: !!updateResult.data.is_online,
+            last_seen_at: updateResult.data.last_seen_at
+          } : null,
+          error: null
+        };
       } catch {
         return { data: null, error: null };
       }
@@ -1943,7 +1967,7 @@
             setPageForwardStack([]);
             removeBrowserValue('sms_current_page');
           }
-        }, 15000);
+        }, 10000);
 
         return () => {
           closed = true;
@@ -2006,7 +2030,7 @@
           await profilesPresenceHook.fetchRows((q)=>q.eq('school_id', profile.school_id));
         };
         pollPresence();
-        const timer = window.setInterval(pollPresence, 5000);
+        const timer = window.setInterval(pollPresence, 2000);
         return () => window.clearInterval(timer);
       }, [profile?.school_id]);
 
@@ -4548,9 +4572,33 @@
         return resolveSchoolCategory(linkedRegistration?.school_category || linkedRegistration?.category);
       }, [school?.school_category, school?.category, school?.id, school?.school_code, registrationByCreatedSchoolId, registrationBySchoolCode]);
       const currentSchoolGradingSystem = useMemo(() => getSchoolGradingSystem(currentSchoolCategory), [currentSchoolCategory]);
-      const managedUserRefMap = useMemo(() => Object.fromEntries((userLoginRefsHook.rows || []).map(r => [r.profile_id, r])), [userLoginRefsHook.rows]);
-      const managedPresenceMap = useMemo(() => Object.fromEntries((profilesPresenceHook.rows || []).map(r => [r.id, r])), [profilesPresenceHook.rows]);
-      const getManagedPresence = (row) => managedPresenceMap[row?.profile_id || row?.id] || null;
+      const managedUserRefMap = useMemo(() => Object.fromEntries((userLoginRefsHook.rows || []).map(r => [String(r.profile_id || '').trim(), r])), [userLoginRefsHook.rows]);
+      const managedUserRefByUsername = useMemo(() => Object.fromEntries((userLoginRefsHook.rows || []).filter((r) => r?.username).map((r) => [String(r.username || '').trim().toLowerCase(), r])), [userLoginRefsHook.rows]);
+      const managedUserRefByAuthUserId = useMemo(() => Object.fromEntries((userLoginRefsHook.rows || []).filter((r) => r?.auth_user_id).map((r) => [String(r.auth_user_id || '').trim(), r])), [userLoginRefsHook.rows]);
+      const managedPresenceMap = useMemo(() => Object.fromEntries((profilesPresenceHook.rows || []).map(r => [String(r.id || '').trim(), r])), [profilesPresenceHook.rows]);
+      const managedPresenceByAuthUserId = useMemo(() => Object.fromEntries((profilesPresenceHook.rows || []).filter((r) => r?.auth_user_id).map((r) => [String(r.auth_user_id || '').trim(), r])), [profilesPresenceHook.rows]);
+      const managedPresenceByUsername = useMemo(() => Object.fromEntries((profilesPresenceHook.rows || []).filter((r) => r?.username).map((r) => [String(r.username || '').trim().toLowerCase(), r])), [profilesPresenceHook.rows]);
+      const resolveManagedProfileId = (row) => {
+        const directProfileId = String(row?.profile_id || '').trim();
+        if (directProfileId) return directProfileId;
+        const directId = String(row?.id || '').trim();
+        if (directId && managedPresenceMap[directId]) return directId;
+        const authUserId = String(row?.auth_user_id || '').trim();
+        if (authUserId && managedPresenceByAuthUserId[authUserId]?.id) return String(managedPresenceByAuthUserId[authUserId].id || '').trim();
+        const usernameKey = String(row?.username || '').trim().toLowerCase();
+        if (usernameKey && managedUserRefByUsername[usernameKey]?.profile_id) return String(managedUserRefByUsername[usernameKey].profile_id || '').trim();
+        if (authUserId && managedUserRefByAuthUserId[authUserId]?.profile_id) return String(managedUserRefByAuthUserId[authUserId].profile_id || '').trim();
+        return directId;
+      };
+      const getManagedPresence = (row) => {
+        const profileId = resolveManagedProfileId(row);
+        if (profileId && managedPresenceMap[profileId]) return managedPresenceMap[profileId];
+        const authUserId = String(row?.auth_user_id || '').trim();
+        if (authUserId && managedPresenceByAuthUserId[authUserId]) return managedPresenceByAuthUserId[authUserId];
+        const usernameKey = String(row?.username || '').trim().toLowerCase();
+        if (usernameKey && managedPresenceByUsername[usernameKey]) return managedPresenceByUsername[usernameKey];
+        return null;
+      };
       const getPresenceStateLabel = (presenceRow) => isPresenceActive(presenceRow) ? 'online' : 'offline';
       const getManagedLiveStatus = (row) => getPresenceStateLabel(getManagedPresence(row));
       const currentPresenceRow = profile?.id ? (managedPresenceMap[profile.id] || null) : null;
@@ -5560,7 +5608,8 @@
                 <div className="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Credentials</th><th>Actions</th></tr></thead><tbody>
                   {accountsHook.rows.length === 0 && <tr><td colSpan="5"><div className="empty">No records found</div></td></tr>}
                   {accountsHook.rows.map(r => {
-                    const ref = managedUserRefMap[r.profile_id];
+                    const resolvedProfileId = resolveManagedProfileId(r);
+                      const ref = managedUserRefMap[resolvedProfileId] || managedUserRefByUsername[String(r.username || '').trim().toLowerCase()] || managedUserRefByAuthUserId[String(r.auth_user_id || '').trim()] || null;
                     return <tr key={r.id}>
                       <td>{r.full_name}</td>
                       <td>{r.email}</td>
@@ -5641,7 +5690,7 @@
                       <div><strong>Username</strong><div className="subtle">{userForm.username || '-'}</div></div>
                       <div><strong>Account Access</strong><div><span className={classNames('chip', normalizeAccountStatus(userForm.account_status || selectedManagedUser.account_status) === 'active' ? 'success' : normalizeAccountStatus(userForm.account_status || selectedManagedUser.account_status) === 'archived' ? 'warning' : 'danger')}>{normalizeAccountStatus(userForm.account_status || selectedManagedUser.account_status || '-')}</span></div></div>
                       <div><strong>Force Password Change</strong><div className="subtle">{String(userForm.force_password_change) === 'true' ? 'Yes' : 'No'}</div></div>
-                      <div><strong>Latest Temporary Password</strong><div className="subtle">{managedUserRefMap[selectedManagedUser.profile_id]?.temporary_password || '-'}</div></div>
+                      <div><strong>Latest Temporary Password</strong><div className="subtle">{(managedUserRefMap[resolveManagedProfileId(selectedManagedUser)] || managedUserRefByUsername[String(selectedManagedUser.username || '').trim().toLowerCase()] || managedUserRefByAuthUserId[String(selectedManagedUser.auth_user_id || '').trim()] || null)?.temporary_password || '-'}</div></div>
                     </div>
                   </div> : <div className="footer-note">Choose a role first. The names shown come only from users already added under Student Management, Principal Management, Teachers Management, Parents Management, and Account Office Staff Management.</div>}
                 </div>
@@ -5650,10 +5699,12 @@
                   <div className="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Username</th><th>Live Status</th><th>Account Access</th><th>Force Password Change</th><th>Latest Temp Password</th><th>Issued At</th><th>Actions</th></tr></thead><tbody>
                     {managedUsersRows.length === 0 && <tr><td colSpan="9"><div className="empty">No managed user records found</div></td></tr>}
                     {managedUsersRows.map(r => {
-                      const ref = managedUserRefMap[r.profile_id];
+                      const resolvedProfileId = resolveManagedProfileId(r);
+                      const ref = managedUserRefMap[resolvedProfileId] || managedUserRefByUsername[String(r.username || '').trim().toLowerCase()] || managedUserRefByAuthUserId[String(r.auth_user_id || '').trim()] || null;
                       const accessStatus = normalizeAccountStatus(r.account_status || r.status || 'active');
                       const liveStatus = getManagedLiveStatus(r);
-                      return <tr key={r.profile_id}>
+                      return <tr key={resolvedProfileId || r.profile_id || r.id || r.username}>
+
                         <td>{r.full_name}</td>
                         <td>{r.role_name}</td>
                         <td>{r.username || generateManagedUsername(r)}</td>
