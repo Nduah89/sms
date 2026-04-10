@@ -2827,12 +2827,38 @@
 
       const currentStudentDashboardRecord = useMemo(() => {
         if (role !== ROLE.STUDENT || !profile?.id) return null;
+        const normalized = (value) => String(value || '').trim().toLowerCase();
+        const profileId = String(profile.id || '').trim();
+        const profileAuthUserId = String(profile.auth_user_id || '').trim();
+        const profileEmail = normalized(profile.email || '');
+        const profileName = normalized(profile.full_name || welcomeContext?.full_name || '');
+        const candidates = [...(studentRecordsRows || []), ...(studentsRawHook.rows || [])];
         return (
-          studentRecordsRows.find((row) => row.profile_id === profile.id)
-          || (studentsRawHook.rows || []).find((row) => row.profile_id === profile.id)
+          candidates.find((row) => String(row.profile_id || '').trim() === profileId)
+          || (profileAuthUserId ? candidates.find((row) => String(row.auth_user_id || '').trim() === profileAuthUserId) : null)
+          || (profileEmail ? candidates.find((row) => normalized(row.email || row.student_email || '') === profileEmail) : null)
+          || (profileName ? candidates.find((row) => normalized(row.full_name || '') === profileName) : null)
           || null
         );
-      }, [role, profile?.id, studentRecordsRows, studentsRawHook.rows]);
+      }, [role, profile?.id, profile?.auth_user_id, profile?.email, profile?.full_name, studentRecordsRows, studentsRawHook.rows, welcomeContext?.full_name]);
+
+      const currentStudentDashboardPhotoUrl = useMemo(() => {
+        const normalized = (value) => String(value || '').trim().toLowerCase();
+        const profileId = String(profile?.id || '').trim();
+        const profileAuthUserId = String(profile?.auth_user_id || '').trim();
+        const profileEmail = normalized(profile?.email || '');
+        const profileName = normalized(profile?.full_name || welcomeContext?.full_name || '');
+        const candidates = [currentStudentDashboardRecord, ...(studentRecordsRows || []), ...(studentsRawHook.rows || [])].filter(Boolean);
+        const matchedWithPhoto = candidates.find((row) => {
+          const hasPhoto = String(row?.student_photo_url || row?.profile_photo_url || '').trim();
+          if (!hasPhoto) return false;
+          return String(row?.profile_id || '').trim() === profileId
+            || (profileAuthUserId && String(row?.auth_user_id || '').trim() === profileAuthUserId)
+            || (profileEmail && normalized(row?.email || row?.student_email || '') === profileEmail)
+            || (profileName && normalized(row?.full_name || '') === profileName);
+        });
+        return matchedWithPhoto?.student_photo_url || currentStudentDashboardRecord?.student_photo_url || currentStudentDashboardRecord?.profile_photo_url || profile?.profile_photo_url || null;
+      }, [currentStudentDashboardRecord, profile?.id, profile?.auth_user_id, profile?.email, profile?.full_name, profile?.profile_photo_url, studentRecordsRows, studentsRawHook.rows, welcomeContext?.full_name]);
 
       const parentEntityRow = useMemo(() => {
         if (role !== ROLE.PARENT) return null;
@@ -2924,51 +2950,115 @@
         return Array.from(values);
       }, [teacherAssignments]);
 
+      const teacherAccessibleClassIds = useMemo(() => {
+        if (role !== ROLE.TEACHER) return [];
+        const resolvedIds = new Set();
+        const addId = (value) => {
+          const id = String(value || '').trim();
+          if (!id) return;
+          const linkedClassRow = orderedClassRows.find((row) => String(row.id || '').trim() === id) || null;
+          if (linkedClassRow?.id) {
+            resolvedIds.add(String(linkedClassRow.id || '').trim());
+            return;
+          }
+          if (classNameMap[id]) resolvedIds.add(id);
+        };
+        const addClassLabel = (value) => {
+          const normalizedName = normalizeTeacherMainClassName(value);
+          if (!normalizedName) return;
+          const linkedClassRow = orderedClassRows.find((row) => normalizeTeacherMainClassName(row.class_name || row.name || '') === normalizedName) || null;
+          if (linkedClassRow?.id) resolvedIds.add(String(linkedClassRow.id || '').trim());
+        };
+
+        (teacherAssignedClassIds || []).forEach(addId);
+        (Array.isArray(teacherEntityRow?.assigned_class_ids) ? teacherEntityRow.assigned_class_ids : []).forEach(addId);
+        addId(teacherEntityRow?.class_id);
+        addId(teacherEntityRow?.teacher_main_class_name);
+        addId(teacherEntityRow?.assigned_class);
+        addClassLabel(teacherEntityRow?.teacher_main_class_name);
+        addClassLabel(teacherEntityRow?.assigned_class);
+        addClassLabel(teacherEntityRow?.class_name);
+
+        if (!resolvedIds.size) {
+          (studentRecordsRows || []).forEach((student) => {
+            const classId = String(student.class_id || '').trim();
+            const classLabel = String(classNameMap[classId] || student.student_main_class_name || student.class_name || '').trim();
+            if (classId && classLabel) resolvedIds.add(classId);
+          });
+        }
+
+        return Array.from(resolvedIds);
+      }, [role, teacherAssignedClassIds, teacherEntityRow, orderedClassRows, classNameMap, studentRecordsRows]);
+
       const teacherStudentRecordsRows = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
-        return [...(studentRecordsRows || [])];
-      }, [role, studentRecordsRows]);
+        return (studentRecordsRows || []).map((row) => {
+          const linkedParent = linkedParentDetailsByStudentId.get(String(row.id || '').trim()) || {};
+          return {
+            ...row,
+            parent_full_name: row.parent_full_name || linkedParent.parent_full_name || '',
+            parent_contact: row.parent_contact || linkedParent.parent_contact || ''
+          };
+        });
+      }, [role, studentRecordsRows, linkedParentDetailsByStudentId]);
 
       const teacherRestrictedStudentRows = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
-        const assignedIds = new Set((teacherAssignedClassIds || []).map((value) => String(value || '').trim()).filter(Boolean));
+        const assignedIds = new Set((teacherAccessibleClassIds || []).map((value) => String(value || '').trim()).filter(Boolean));
         if (!assignedIds.size) return teacherStudentRecordsRows;
         return teacherStudentRecordsRows.filter((student) => assignedIds.has(String(student.class_id || '').trim()));
-      }, [role, teacherStudentRecordsRows, teacherAssignedClassIds]);
+      }, [role, teacherStudentRecordsRows, teacherAccessibleClassIds]);
 
       const teacherAttendanceClassOptions = useMemo(() => {
-        const seen = new Set();
         const options = [{ value: '', label: 'Select Class' }];
-        teacherRestrictedStudentRows.forEach((student) => {
-          const classId = String(student.class_id || '').trim();
+        const seen = new Set();
+        const classIds = (teacherAccessibleClassIds || []).length
+          ? teacherAccessibleClassIds
+          : Array.from(new Set((teacherRestrictedStudentRows || []).map((student) => String(student.class_id || '').trim()).filter(Boolean)));
+        classIds.forEach((classId) => {
           if (!classId || seen.has(classId)) return;
           seen.add(classId);
-          const linkedClassRow = orderedClassRows.find((row) => String(row.id || '') === classId) || null;
-          const label = String(buildClassDisplay(linkedClassRow) || student.student_main_class_name || classNameMap[classId] || student.class_name || '').trim();
+          const linkedClassRow = orderedClassRows.find((row) => String(row.id || '').trim() === classId) || null;
+          const fallbackStudent = teacherRestrictedStudentRows.find((student) => String(student.class_id || '').trim() === classId) || null;
+          const label = String(buildClassDisplay(linkedClassRow) || classNameMap[classId] || fallbackStudent?.student_main_class_name || fallbackStudent?.class_name || '').trim();
           if (!label) return;
           options.push({ value: classId, label });
         });
         return options;
-      }, [teacherRestrictedStudentRows, orderedClassRows, classNameMap]);
+      }, [teacherAccessibleClassIds, teacherRestrictedStudentRows, orderedClassRows, classNameMap]);
 
       const teacherStudentRecordClassOptions = useMemo(() => {
-        const seen = new Set();
         const options = [{ value: '', label: 'All Classes' }];
-        teacherRestrictedStudentRows.forEach((student) => {
-          const classId = String(student.class_id || '').trim();
-          const label = String(student.student_main_class_name || classNameMap[classId] || student.class_name || '').trim();
-          if (!classId || !label || seen.has(classId)) return;
+        const seen = new Set();
+        const classIds = (teacherAccessibleClassIds || []).length
+          ? teacherAccessibleClassIds
+          : Array.from(new Set((teacherRestrictedStudentRows || []).map((student) => String(student.class_id || '').trim()).filter(Boolean)));
+        classIds.forEach((classId) => {
+          if (!classId || seen.has(classId)) return;
           seen.add(classId);
+          const linkedClassRow = orderedClassRows.find((row) => String(row.id || '').trim() === classId) || null;
+          const fallbackStudent = teacherRestrictedStudentRows.find((student) => String(student.class_id || '').trim() === classId) || null;
+          const label = String(buildClassDisplay(linkedClassRow) || classNameMap[classId] || fallbackStudent?.student_main_class_name || fallbackStudent?.class_name || '').trim();
+          if (!label) return;
           options.push({ value: classId, label });
         });
         return options;
-      }, [teacherRestrictedStudentRows, classNameMap]);
+      }, [teacherAccessibleClassIds, teacherRestrictedStudentRows, orderedClassRows, classNameMap]);
 
       const teacherVisibleStudentRecordsRows = useMemo(() => {
         const selectedClassId = String(teacherStudentRecordsFilterClassId || '').trim();
-        if (!selectedClassId) return teacherRestrictedStudentRows;
-        return teacherRestrictedStudentRows.filter((student) => String(student.class_id || '').trim() === selectedClassId);
-      }, [teacherRestrictedStudentRows, teacherStudentRecordsFilterClassId]);
+        const rows = !selectedClassId
+          ? teacherRestrictedStudentRows
+          : teacherRestrictedStudentRows.filter((student) => String(student.class_id || '').trim() === selectedClassId);
+        return rows.map((row) => {
+          const linkedParent = linkedParentDetailsByStudentId.get(String(row.id || '').trim()) || {};
+          return {
+            ...row,
+            parent_full_name: row.parent_full_name || linkedParent.parent_full_name || '-',
+            parent_contact: row.parent_contact || linkedParent.parent_contact || '-'
+          };
+        });
+      }, [teacherRestrictedStudentRows, teacherStudentRecordsFilterClassId, linkedParentDetailsByStudentId]);
 
       const principalStudentRecordClassOptions = useMemo(() => {
         const seen = new Set();
@@ -3244,7 +3334,7 @@
           (parentsHook.rows || []).forEach((parentRow) => {
             const parentProfileId = String(parentRow.profile_id || '').trim();
             const linkedClassIds = parentProfileToLinkedClassIds.get(parentProfileId) || new Set();
-            const matches = Array.from(linkedClassIds).some((classId) => teacherAssignedClassIds.includes(classId));
+            const matches = Array.from(linkedClassIds).some((classId) => teacherAccessibleClassIds.includes(classId));
             if (!matches) return;
             addContact({
               profile_id: parentProfileId,
@@ -3263,7 +3353,7 @@
           if (aRole !== bRole) return aRole - bRole;
           return String(a.full_name || '').localeCompare(String(b.full_name || ''));
         });
-      }, [profile?.id, role, currentStudentIsJhs, currentStudentClassId, studentRecordsRows, mergedTeachersRows, principalsHook.rows, teacherRestrictedStudentRows, teacherAssignedClassIds, classNameMap, parentProfileToLinkedClassIds, chatPermissionByStudentProfileId]);
+      }, [profile?.id, role, currentStudentIsJhs, currentStudentClassId, studentRecordsRows, mergedTeachersRows, principalsHook.rows, teacherRestrictedStudentRows, teacherAccessibleClassIds, classNameMap, parentProfileToLinkedClassIds, chatPermissionByStudentProfileId]);
 
       useEffect(() => {
         if (role === ROLE.ADMIN) return;
@@ -3384,7 +3474,7 @@
           if (row?.id) addId(row.id);
         };
 
-        (teacherAssignedClassIds || []).forEach(addId);
+        (teacherAccessibleClassIds || []).forEach(addId);
         (Array.isArray(teacherEntityRow?.assigned_class_ids) ? teacherEntityRow.assigned_class_ids : []).forEach(addId);
         addId(teacherEntityRow?.class_id);
         addName(teacherEntityRow?.teacher_main_class_name);
@@ -3401,7 +3491,7 @@
         }
 
         return Array.from(resolvedIds);
-      }, [role, teacherAssignedClassIds, teacherEntityRow, orderedClassRows, classNameMap, teacherRestrictedStudentRows]);
+      }, [role, teacherAccessibleClassIds, teacherEntityRow, orderedClassRows, classNameMap, teacherRestrictedStudentRows]);
 
       const jhsChatMonitorClassOptions = useMemo(() => {
         if (role === ROLE.TEACHER) {
@@ -3581,7 +3671,7 @@
         if (role === ROLE.TEACHER && recipient.role_name === 'student') {
           const studentRow = studentRecordsRows.find((row) => String(row.profile_id || '').trim() === recipientId) || null;
           const recipientClassId = String(studentRow?.class_id || '').trim();
-          if (!recipientClassId || !teacherAssignedClassIds.includes(recipientClassId)) {
+          if (!recipientClassId || !teacherAccessibleClassIds.includes(recipientClassId)) {
             setNotice({ type: 'danger', text: 'You can reply only to students in your assigned classes.' });
             return;
           }
@@ -3591,7 +3681,7 @@
 
         if (role === ROLE.TEACHER && recipient.role_name === 'parent') {
           const linkedClassIds = new Set(Array.from(parentProfileToLinkedClassIds.get(recipientId) || []));
-          sharedClassId = teacherAssignedClassIds.find((classId) => linkedClassIds.has(classId)) || null;
+          sharedClassId = teacherAccessibleClassIds.find((classId) => linkedClassIds.has(classId)) || null;
           if (!sharedClassId) {
             setNotice({ type: 'danger', text: 'You can chat only with parents linked to students in your assigned classes.' });
             return;
@@ -4911,7 +5001,7 @@
                 {renderWelcomeCard()}
                 {renderSelfProfilePhotoCard()}
                 <MetricCards items={[
-                  { label: 'Assigned Classes', value: teacherAssignedClassIds.length },
+                  { label: 'Assigned Classes', value: teacherAccessibleClassIds.length || teacherAssignedClassIds.length },
                   { label: 'Assigned Subjects', value: [...new Set(teacherAssignments.map(x=>x.subject_name).filter(Boolean))].length },
                   { label: 'Attendance Entries', value: attendanceHook.rows.filter(x=>x.marked_by_profile_id===profile.id).length },
                   { label: 'Grade Entries', value: gradesHook.rows.filter(x=>x.teacher_profile_id===profile.id).length }
@@ -4942,7 +5032,7 @@
                   <h3>Student Picture</h3>
                   <p className="subtle">The picture uploaded by the school admin for this student appears here automatically.</p>
                   <div style={{ display:'flex', gap:18, alignItems:'flex-start', flexWrap:'wrap' }}>
-                    {renderRecordPhotoThumb(currentStudentDashboardRecord?.student_photo_url || profile?.profile_photo_url || null, profile?.full_name || 'Student Picture', 132)}
+                    {renderRecordPhotoThumb(currentStudentDashboardPhotoUrl, profile?.full_name || 'Student Picture', 132)}
                     <div style={{ minWidth:220 }}>
                       <div><strong>Full Name:</strong> {currentStudentDashboardRecord?.full_name || profile?.full_name || '-'}</div>
                       <div><strong>Student No:</strong> {currentStudentDashboardRecord?.student_no || '-'}</div>
