@@ -645,7 +645,7 @@
     function chatRuleDescription(role) {
       if (role === ROLE.STUDENT) return 'Students can chat with JHS classmates in the same class and with their teachers.';
       if (role === ROLE.PARENT) return 'Parents can chat with teachers connected to their child or children.';
-      if (role === ROLE.TEACHER) return 'Teachers can chat directly with their principal, students, and parents, and can monitor student to student chats in assigned classes.';
+      if (role === ROLE.TEACHER) return 'Teachers can chat directly with their principal, students, and parents, and can monitor student to student chats in their school classes.';
       if (role === ROLE.PRINCIPAL) return 'Principals can chat directly with teachers only.';
       if (role === ROLE.ADMIN) return 'School admins can monitor student to student chats, filter by class, allow or disallow students, and permanently delete student to student messages.';
       return 'System chat is available for permitted school roles.';
@@ -1660,8 +1660,6 @@
                     <p><strong>Class:</strong> {info.class_name || 'Not assigned'}</p>
                     <p><strong>Subject Specialty:</strong> {info.subject_specialty || 'Not set'}</p>
                     <p><strong>Qualification:</strong> {info.qualification || 'Not set'}</p>
-                    <p><strong>Assigned Classes:</strong> {listFromArray(info.assigned_class_names)}</p>
-                    <p><strong>Assigned Subjects:</strong> {listFromArray(info.assigned_subjects)}</p>
                   </>
                 )}
                 {welcomeContext.role_name === 'parent' && (
@@ -3036,24 +3034,18 @@
         );
       };
 
-      const teacherAssignments = useMemo(() => {
-        if (role !== ROLE.TEACHER || !profile?.id) return [];
-        const teacherRowId = teacherEntityRow?.id;
-        return (subjectAssignmentsHook.rows || []).filter((row) => (
-          row.teacher_id === teacherRowId
-          || row.teacher_profile_id === profile.id
-          || row.profile_id === profile.id
-        ));
-      }, [role, profile?.id, teacherEntityRow?.id, subjectAssignmentsHook.rows]);
+      const teacherAssignments = useMemo(() => [], []);
 
       const teacherAssignedClassIds = useMemo(() => {
         const values = new Set();
-        (teacherAssignments || []).forEach((assignment) => {
-          const value = String(assignment.class_id || '').trim();
-          if (value) values.add(value);
+        const directClassId = String(teacherEntityRow?.class_id || '').trim();
+        if (directClassId) values.add(directClassId);
+        (Array.isArray(teacherEntityRow?.assigned_class_ids) ? teacherEntityRow.assigned_class_ids : []).forEach((value) => {
+          const id = String(value || '').trim();
+          if (id) values.add(id);
         });
         return Array.from(values);
-      }, [teacherAssignments]);
+      }, [teacherEntityRow]);
 
       const teacherAccessibleClassIds = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
@@ -3257,15 +3249,31 @@
       const teacherRowById = useMemo(() => Object.fromEntries((mergedTeachersRows || []).map((row) => [String(row.id || '').trim(), row])), [mergedTeachersRows]);
       const teacherProfileToClassIds = useMemo(() => {
         const map = new Map();
-        (subjectAssignmentsHook.rows || []).forEach((assignment) => {
-          const teacherProfileId = String(assignment.teacher_profile_id || teacherRowById[String(assignment.teacher_id || '').trim()]?.profile_id || '').trim();
-          const classId = String(assignment.class_id || '').trim();
-          if (!teacherProfileId || !classId) return;
-          if (!map.has(teacherProfileId)) map.set(teacherProfileId, new Set());
-          map.get(teacherProfileId).add(classId);
+        const addForProfile = (teacherProfileId, classValue) => {
+          const profileId = String(teacherProfileId || '').trim();
+          if (!profileId) return;
+          let resolvedClassId = String(classValue || '').trim();
+          if (!resolvedClassId) return;
+          let linkedClassRow = orderedClassRows.find((row) => String(row.id || '').trim() === resolvedClassId) || null;
+          if (!linkedClassRow) {
+            const normalizedClassName = normalizeTeacherMainClassName(resolvedClassId);
+            if (normalizedClassName) {
+              linkedClassRow = orderedClassRows.find((row) => normalizeTeacherMainClassName(row.class_name || row.name || '') === normalizedClassName) || null;
+            }
+          }
+          if (!linkedClassRow?.id) return;
+          if (!map.has(profileId)) map.set(profileId, new Set());
+          map.get(profileId).add(String(linkedClassRow.id || '').trim());
+        };
+        (mergedTeachersRows || []).forEach((teacherRow) => {
+          const teacherProfileId = String(teacherRow.profile_id || '').trim();
+          addForProfile(teacherProfileId, teacherRow.class_id);
+          addForProfile(teacherProfileId, teacherRow.teacher_main_class_name);
+          addForProfile(teacherProfileId, teacherRow.assigned_class);
+          (Array.isArray(teacherRow.assigned_class_ids) ? teacherRow.assigned_class_ids : []).forEach((value) => addForProfile(teacherProfileId, value));
         });
         return map;
-      }, [subjectAssignmentsHook.rows, teacherRowById]);
+      }, [mergedTeachersRows, orderedClassRows]);
 
       const parentProfileToLinkedClassIds = useMemo(() => {
         const parentProfileMap = new Map((parentsHook.rows || []).map((row) => [String(row.id || '').trim(), String(row.profile_id || '').trim()]));
@@ -3424,7 +3432,7 @@
             profile_id: String(teacher.profile_id || '').trim(),
             full_name: teacher.full_name || 'Teacher',
             role_name: 'teacher',
-            class_name: teacher.subject_specialty || '',
+            class_name: teacherAssignedClassDisplay(teacher),
             note: 'Teacher in your school'
           }, 'Teacher in your school'));
         }
@@ -3442,8 +3450,8 @@
             full_name: student.full_name || 'Student',
             role_name: 'student',
             class_name: teacherAssignedClassDisplay(student),
-            note: 'Student in your assigned class'
-          }, 'Student in your assigned class'));
+            note: 'Student in your school class'
+          }, 'Student in your school class'));
 
           (parentsHook.rows || []).forEach((parentRow) => {
             const parentProfileId = String(parentRow.profile_id || '').trim();
@@ -3824,7 +3832,7 @@
           const studentRow = studentRecordsRows.find((row) => String(row.profile_id || '').trim() === recipientId) || null;
           const recipientClassId = String(studentRow?.class_id || '').trim();
           if (!recipientClassId || !teacherAccessibleClassIds.includes(recipientClassId)) {
-            setNotice({ type: 'danger', text: 'You can reply only to students in your assigned classes.' });
+            setNotice({ type: 'danger', text: 'You can reply only to students in your school class list.' });
             return;
           }
           chatType = 'student_teacher';
@@ -3835,7 +3843,7 @@
           const linkedClassIds = new Set(Array.from(parentProfileToLinkedClassIds.get(recipientId) || []));
           sharedClassId = teacherAccessibleClassIds.find((classId) => linkedClassIds.has(classId)) || null;
           if (!sharedClassId) {
-            setNotice({ type: 'danger', text: 'You can chat only with parents linked to students in your assigned classes.' });
+            setNotice({ type: 'danger', text: 'You can chat only with parents linked to students in your school class list.' });
             return;
           }
           chatType = 'parent_teacher';
@@ -3870,6 +3878,14 @@
         if (role === ROLE.TEACHER) {
           setChatForm((current) => ({ ...current, recipient_profile_id: String(targetProfileId || '').trim() }));
         }
+      };
+
+      const openDirectChatWithProfile = (targetProfileId, targetPage = 'chat') => {
+        const recipientId = String(targetProfileId || '').trim();
+        if (!recipientId) return;
+        setChatForm((current) => ({ ...current, recipient_profile_id: recipientId, message_text: '' }));
+        setPage(targetPage);
+        setNotice({ type: '', text: '' });
       };
 
       const attendanceRowsToday = useMemo(() => (
@@ -4644,22 +4660,10 @@
       ]), [schoolSubjectRows]);
 
       const teacherGradeSubjectOptions = useMemo(() => {
-        const selectedClassId = String(gradeForm.filter_class_name || gradeForm.class_id || '').trim();
-        const allowedSubjectNames = new Set();
-        (teacherAssignments || []).forEach((assignment) => {
-          const assignmentClassId = String(assignment.class_id || '').trim();
-          const assignmentSubjectName = String(assignment.subject_name || '').trim().toLowerCase();
-          if (!assignmentSubjectName) return;
-          if (selectedClassId && assignmentClassId && assignmentClassId !== selectedClassId) return;
-          allowedSubjectNames.add(assignmentSubjectName);
-        });
-        const rows = allowedSubjectNames.size
-          ? schoolSubjectRows.filter((row) => allowedSubjectNames.has(String(row.subject_name || '').trim().toLowerCase()))
-          : schoolSubjectRows;
         return [{ value: '', label: 'Select Subject' }].concat(
-          rows.map((row) => ({ value: row.id, label: row.subject_name }))
+          schoolSubjectRows.map((row) => ({ value: row.id, label: row.subject_name }))
         );
-      }, [teacherAssignments, schoolSubjectRows, gradeForm.filter_class_name, gradeForm.class_id]);
+      }, [schoolSubjectRows]);
 
       const teacherGradeRows = useMemo(() => {
         if (role !== ROLE.TEACHER) return gradesHook.rows || [];
@@ -5151,17 +5155,17 @@
               <div className="grid">
                 {renderWelcomeCard()}
                 <MetricCards items={[
-                  { label: 'Assigned Classes', value: teacherAccessibleClassIds.length || teacherAssignedClassIds.length },
-                  { label: 'Assigned Subjects', value: [...new Set(teacherAssignments.map(x=>x.subject_name).filter(Boolean))].length },
-                  { label: 'Attendance Entries', value: attendanceHook.rows.filter(x=>x.marked_by_profile_id===profile.id).length },
+                  { label: 'My Students', value: teacherRestrictedStudentRows.length },
+                  { label: 'School Classes', value: orderedClassRows.length },
+                  { label: 'School Subjects', value: schoolSubjectRows.length },
                   { label: 'Grade Entries', value: gradesHook.rows.filter(x=>x.teacher_profile_id===profile.id).length }
                 ]} />
                 <div className="grid cards-2">
                   <div className="card">
-                    <h3>Assigned Classes and Subjects</h3>
-                    <div className="table-wrap"><table><thead><tr><th>Class</th><th>Subject</th></tr></thead><tbody>
-                      {teacherAssignments.length === 0 && <tr><td colSpan="2"><div className="empty">No class and subject assignment has been linked to this teacher yet</div></td></tr>}
-                      {teacherAssignments.map((row) => <tr key={row.id || `${row.class_id}-${row.subject_name}`}><td>{row.class_name || classNameMap[row.class_id] || '-'}</td><td>{row.subject_name || '-'}</td></tr>)}
+                    <h3>Recent Grade Entries</h3>
+                    <div className="table-wrap"><table><thead><tr><th>Student</th><th>Class</th><th>Subject</th><th>Total</th></tr></thead><tbody>
+                      {teacherDisplayGradeRows.slice(0,10).map((row) => <tr key={row.id}><td>{row.student_name || '-'}</td><td>{row.class_name || '-'}</td><td>{row.subject_name || '-'}</td><td>{row.total_score ?? row.total_a_b ?? '-'}</td></tr>)}
+                      {teacherDisplayGradeRows.length === 0 && <tr><td colSpan="4"><div className="empty">No grade entries recorded yet</div></td></tr>}
                     </tbody></table></div>
                   </div>
                   <div className="card">
@@ -5335,16 +5339,16 @@
               role === ROLE.PRINCIPAL ? (
                 <div className="card">
                   <h3>Teacher Records</h3>
-                  <p className="subtle">View only teacher records. All saved teacher changes reflect automatically here.</p>
+                  <p className="subtle">View only teacher records. Click Chat to open a direct chat with the selected teacher.</p>
                   <div className="table-wrap">
                     <table>
                       <thead>
                         <tr>
-                          <th>Full Name</th><th>Teacher EMIS Code</th><th>Assigned Class</th><th>Primary Subject</th><th>Qualification</th><th>Gender</th><th>Date of Birth</th><th>Training Status</th><th>Account</th>
+                          <th>Full Name</th><th>Teacher EMIS Code</th><th>Assigned Class</th><th>Primary Subject</th><th>Qualification</th><th>Gender</th><th>Date of Birth</th><th>Training Status</th><th>Account</th><th>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {mergedTeachersRows.length === 0 && <tr><td colSpan="9"><div className="empty">No teacher records found</div></td></tr>}
+                        {mergedTeachersRows.length === 0 && <tr><td colSpan="10"><div className="empty">No teacher records found</div></td></tr>}
                         {mergedTeachersRows.map((row) => (
                           <tr key={row.id}>
                             <td>{row.full_name}</td>
@@ -5356,6 +5360,7 @@
                             <td>{formatDate(row.date_of_birth)}</td>
                             <td>{row.trained_status || '-'}</td>
                             <td><span className={classNames('chip', row.account_status === 'active' ? 'success' : row.account_status === 'archived' ? 'warning' : 'danger')}>{row.account_status || '-'}</span></td>
+                            <td><button className="btn secondary" onClick={() => openDirectChatWithProfile(row.profile_id, 'chat')}>Chat</button></td>
                           </tr>
                         ))}
                       </tbody>
@@ -5660,7 +5665,7 @@
                   <h3>Daily Attendance</h3>
                   {role === ROLE.TEACHER ? (
                     <>
-                      <p className="subtle">Teachers can record attendance only for students in their assigned classes. Once saved, the principal attendance summary updates automatically in real time.</p>
+                      <p className="subtle">Teachers can record attendance only for students in their school class list. Once saved, the principal attendance summary updates automatically in real time.</p>
                       <div className="form-grid-3">
                         <div className="field">
                           <label>Main Class</label>
@@ -5893,6 +5898,26 @@
                           >
                             <option value="">Select student</option>
                             {studentClassChatRecipientOptions.map((contact) => <option key={contact.profile_id} value={contact.profile_id}>{contact.full_name}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                    {role === ROLE.TEACHER && (
+                      <div className="toolbar" style={{ marginBottom: 14 }}>
+                        <div className="field-inline">
+                          <label>JHS Class Filter</label>
+                          <select value={chatMonitorClassId} onChange={(event) => setChatMonitorClassId(event.target.value)}>
+                            {jhsChatMonitorClassOptions.length === 0 ? <option value="">No JHS Class</option> : [{ value: '', label: 'Select JHS Class' }, ...jhsChatMonitorClassOptions].map((option) => <option key={option.value || 'teacher-chat-jhs'} value={option.value}>{option.label}</option>)}
+                          </select>
+                        </div>
+                        <div className="field-inline">
+                          <label>Student</label>
+                          <select
+                            value={chatContactOptions.some((contact) => String(contact.profile_id || '').trim() === String(chatForm.recipient_profile_id || '').trim() && String(contact.role_name || '').trim().toLowerCase() === 'student') ? chatForm.recipient_profile_id : ''}
+                            onChange={(event) => setChatForm((current) => ({ ...current, recipient_profile_id: event.target.value }))}
+                          >
+                            <option value="">Select student</option>
+                            {chatContactOptions.filter((contact) => String(contact.role_name || '').trim().toLowerCase() === 'student' && (!chatMonitorClassId || String(contact.class_id || '').trim() === String(chatMonitorClassId || '').trim())).map((contact) => <option key={contact.profile_id} value={contact.profile_id}>{contact.full_name}</option>)}
                           </select>
                         </div>
                       </div>
