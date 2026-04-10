@@ -176,7 +176,39 @@
     const SUPABASE_URL = "https://ccsghmcxinuvgndzlfry.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_ieRCsI82gXzIOhxqouQJvg_rOXmB__2";
     const STORAGE_BUCKET = "school-logos";
-    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+    const browserStorage = (() => {
+      try {
+        if (window?.localStorage) return window.localStorage;
+      } catch {}
+      try {
+        if (window?.sessionStorage) return window.sessionStorage;
+      } catch {}
+      return null;
+    })();
+
+    function getBrowserValue(key) {
+      try { return browserStorage?.getItem(key) ?? null; } catch { return null; }
+    }
+
+    function setBrowserValue(key, value) {
+      try { browserStorage?.setItem(key, String(value)); } catch {}
+      try { window.sessionStorage.setItem(key, String(value)); } catch {}
+    }
+
+    function removeBrowserValue(key) {
+      try { browserStorage?.removeItem(key); } catch {}
+      try { window.sessionStorage.removeItem(key); } catch {}
+    }
+
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storage: browserStorage || undefined
+      }
+    });
 
     const ROLE = {
       SUPER_ADMIN: "super_admin",
@@ -611,7 +643,7 @@
     }
 
     async function signOut() {
-      try { window.sessionStorage.removeItem("sms_login_surface"); } catch {}
+      removeBrowserValue("sms_login_surface");
       try { await setCurrentPresence(false); } catch {}
       return supabaseClient.auth.signOut();
     }
@@ -707,11 +739,11 @@
         setStatus({ type: "", text: "" });
         const form = isSuper ? superForm : loginForm;
         try {
-          window.sessionStorage.setItem("sms_login_surface", isSuper ? "super_admin" : "school");
+          setBrowserValue("sms_login_surface", isSuper ? "super_admin" : "school");
         } catch {}
         const { error } = await signIn(form.email, form.password);
         if (error) {
-          try { window.sessionStorage.removeItem("sms_login_surface"); } catch {}
+          removeBrowserValue("sms_login_surface");
           return setStatus({ type: "danger", text: getFriendlyErrorMessage(error) });
         }
         // Let onAuthStateChange handle bootstrap after sign in to avoid race conditions.
@@ -1012,6 +1044,8 @@
       const [profile, setProfile] = useState(null);
       const [school, setSchool] = useState(null);
       const [page, setPage] = useState("dashboard");
+      const [pageBackStack, setPageBackStack] = useState([]);
+      const [pageForwardStack, setPageForwardStack] = useState([]);
       const [mobileOpen, setMobileOpen] = useState(false);
       const [notice, setNotice] = useState({ type: "", text: "" });
       const [selectedReport, setSelectedReport] = useState("grade");
@@ -1072,7 +1106,7 @@
       useEffect(() => {
         if (role !== ROLE.PRINCIPAL) return;
         if (['classes', 'chat', 'reports'].includes(page)) {
-          setPage('performance-summary');
+          goToPage('performance-summary', { skipHistory: true });
         }
       }, [role, page]);
       const [importStatus, setImportStatus] = useState("");
@@ -1082,11 +1116,47 @@
       const selfProfilePhotoRef = useRef(null);
       const studentPhotoRef = useRef(null);
       const bootingRef = useRef(false);
+      const pageHistorySkipRef = useRef(false);
+      const pageHistoryBootRef = useRef(false);
+      const previousPageRef = useRef("dashboard");
+      const lastActivityRef = useRef(Date.now());
 
       const role = profile?.role_name;
       const isSuperAdmin = role === ROLE.SUPER_ADMIN;
       const canSchoolAdminManageUsers = role === ROLE.ADMIN;
       const showManagedWelcome = [ROLE.STUDENT, ROLE.TEACHER, ROLE.PARENT, ROLE.PRINCIPAL, ROLE.ACCOUNTS].includes(role);
+
+      const markUserActivity = (force = false) => {
+        const now = Date.now();
+        if (!force && (now - lastActivityRef.current) < 5000) return;
+        lastActivityRef.current = now;
+        setBrowserValue('sms_last_activity_at', String(now));
+      };
+
+      const goToPage = (nextPage, options = {}) => {
+        const target = String(nextPage || '').trim();
+        if (!target) return;
+        if (options.skipHistory) pageHistorySkipRef.current = true;
+        markUserActivity(true);
+        if (target !== page) setPage(target);
+        if (options.closeMobile) setMobileOpen(false);
+      };
+
+      const goBackPage = () => {
+        if (!pageBackStack.length) return;
+        const target = pageBackStack[pageBackStack.length - 1];
+        setPageBackStack((prev) => prev.slice(0, -1));
+        setPageForwardStack((prev) => [...prev, page].slice(-50));
+        goToPage(target, { skipHistory: true, closeMobile: true });
+      };
+
+      const goForwardPage = () => {
+        if (!pageForwardStack.length) return;
+        const target = pageForwardStack[pageForwardStack.length - 1];
+        setPageForwardStack((prev) => prev.slice(0, -1));
+        setPageBackStack((prev) => [...prev, page].slice(-50));
+        goToPage(target, { skipHistory: true, closeMobile: true });
+      };
 
       const requireSuperAdminAction = () => {
         if (isSuperAdmin) return true;
@@ -1247,10 +1317,12 @@
         }
       };
 
-      const loadCore = async (authUserOverride = null) => {
+      const loadCore = async (authUserOverride = null, options = {}) => {
+        const preservePage = options?.preservePage === true;
+        const silent = options?.silent === true;
         if (bootingRef.current) return;
         bootingRef.current = true;
-        setSessionReady(false);
+        if (!silent) setSessionReady(false);
         try {
           const data = await getCurrentProfile(authUserOverride);
           const p = data?.profile || null;
@@ -1268,7 +1340,7 @@
           }
 
           const selectedLoginSurface = (() => {
-            try { return window.sessionStorage.getItem('sms_login_surface'); } catch { return null; }
+            return getBrowserValue('sms_login_surface');
           })();
           const isSuperAdminProfile = p.role_name === ROLE.SUPER_ADMIN || p.is_super_admin === true;
 
@@ -1309,11 +1381,31 @@
             }
 
             setSchool(schoolData || null);
+            const storedPage = (() => {
+              return getBrowserValue('sms_current_page');
+            })();
             const initialPage = NAV_BY_ROLE[p.role_name]?.[0] || "dashboard";
-            setPage(initialPage);
+            const preferredPage = preservePage ? page : storedPage;
+            const nextPage = getPageAccess(p.role_name, preferredPage) ? preferredPage : initialPage;
+            if (!preservePage) {
+              setPageBackStack([]);
+              setPageForwardStack([]);
+              pageHistoryBootRef.current = false;
+            }
+            pageHistorySkipRef.current = true;
+            previousPageRef.current = nextPage;
+            setPage(nextPage);
           } else if (p.role_name === ROLE.SUPER_ADMIN) {
             setSchool(null);
-            setPage("super-dashboard");
+            const nextPage = preservePage && page === "super-dashboard" ? page : "super-dashboard";
+            if (!preservePage) {
+              setPageBackStack([]);
+              setPageForwardStack([]);
+              pageHistoryBootRef.current = false;
+            }
+            pageHistorySkipRef.current = true;
+            previousPageRef.current = nextPage;
+            setPage(nextPage);
           }
 
           await setCurrentPresence(true);
@@ -1324,7 +1416,7 @@
           setNotice({ type: 'danger', text: err?.message || 'Application bootstrap failed during login.' });
         } finally {
           bootingRef.current = false;
-          setSessionReady(true);
+          if (!silent) setSessionReady(true);
         }
       };
 
@@ -1486,9 +1578,17 @@
       useEffect(() => {
         loadSystemTheme();
 
-        supabaseClient.auth.getSession().then(({ data }) => {
+        supabaseClient.auth.getSession().then(async ({ data }) => {
           if (data.session) {
-            loadCore(data.session.user);
+            try {
+              const { data: refreshedData } = await supabaseClient.auth.refreshSession();
+              const effectiveSession = refreshedData?.session || data.session;
+              if (effectiveSession?.user) {
+                loadCore(effectiveSession.user, { preservePage: true });
+                return;
+              }
+            } catch {}
+            loadCore(data.session.user, { preservePage: true });
           } else {
             setSessionReady(true);
           }
@@ -1499,18 +1599,37 @@
             setProfile(null);
             setSchool(null);
             setWelcomeContext(null);
+            setPageBackStack([]);
+            setPageForwardStack([]);
             setSessionReady(true);
             return;
           }
 
-          if (evt === 'SIGNED_IN' || evt === 'INITIAL_SESSION' || evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED') {
+          if (evt === 'SIGNED_IN' || evt === 'INITIAL_SESSION') {
             window.setTimeout(() => {
               loadCore(session.user);
             }, 0);
           }
+
+          if (evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED') {
+            window.setTimeout(() => {
+              loadCore(session.user, { preservePage: true, silent: true });
+            }, 0);
+          }
         });
 
-        return () => sub.subscription.unsubscribe();
+        const handleBeforeUnload = () => {
+          try {
+            if (page) setBrowserValue('sms_current_page', page);
+            setBrowserValue('sms_last_activity_at', String(Date.now()));
+          } catch {}
+        };
+        window.addEventListener('beforeunload', handleBeforeUnload);
+
+        return () => {
+          window.removeEventListener('beforeunload', handleBeforeUnload);
+          sub.subscription.unsubscribe();
+        };
       }, []);
 
       useEffect(() => {
@@ -1520,6 +1639,79 @@
           setWelcomeContext(null);
         }
       }, [profile?.id, role]);
+
+      useEffect(() => {
+        setBrowserValue('sms_current_page', page);
+      }, [page]);
+
+      useEffect(() => {
+        if (!profile?.id) {
+          previousPageRef.current = page;
+          pageHistoryBootRef.current = false;
+          return;
+        }
+        if (!pageHistoryBootRef.current) {
+          pageHistoryBootRef.current = true;
+          previousPageRef.current = page;
+          return;
+        }
+        if (pageHistorySkipRef.current) {
+          pageHistorySkipRef.current = false;
+          previousPageRef.current = page;
+          return;
+        }
+        const previousPage = previousPageRef.current;
+        if (previousPage && previousPage !== page) {
+          setPageBackStack((prev) => (prev[prev.length - 1] === previousPage ? prev : [...prev, previousPage].slice(-50)));
+          setPageForwardStack([]);
+        }
+        previousPageRef.current = page;
+      }, [page, profile?.id]);
+
+      useEffect(() => {
+        if (!profile?.id) return undefined;
+
+        let closed = false;
+        const readStoredActivity = () => {
+          try {
+            const raw = getBrowserValue('sms_last_activity_at');
+            const parsed = Number(raw);
+            return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+          } catch {
+            return null;
+          }
+        };
+
+        const registerActivity = () => markUserActivity(false);
+        markUserActivity(true);
+
+        const activityEvents = ['pointerdown', 'keydown', 'mousemove', 'scroll', 'touchstart'];
+        activityEvents.forEach((eventName) => window.addEventListener(eventName, registerActivity, { passive: true }));
+
+        const timer = window.setInterval(async () => {
+          if (closed) return;
+          const lastActivityAt = readStoredActivity() || lastActivityRef.current;
+          if ((Date.now() - lastActivityAt) < IDLE_TIMEOUT_MS) return;
+          closed = true;
+          setNotice({ type: 'danger', text: 'Session expired after 10 minutes of inactivity. Please log in again.' });
+          try {
+            await signOut();
+          } finally {
+            setProfile(null);
+            setSchool(null);
+            setWelcomeContext(null);
+            setPageBackStack([]);
+            setPageForwardStack([]);
+            removeBrowserValue('sms_current_page');
+          }
+        }, 15000);
+
+        return () => {
+          closed = true;
+          activityEvents.forEach((eventName) => window.removeEventListener(eventName, registerActivity));
+          window.clearInterval(timer);
+        };
+      }, [profile?.id]);
 
       useEffect(() => {
         const channel = supabaseClient.channel('system-theme-public-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'system_theme_settings' }, loadSystemTheme).subscribe();
@@ -3766,6 +3958,8 @@
                 <div className="subtle">{school?.name || 'System Administration'}</div>
               </div>
               <div className="actions">
+                <button className="btn secondary" onClick={goBackPage} disabled={!pageBackStack.length}>Back</button>
+                <button className="btn secondary" onClick={goForwardPage} disabled={!pageForwardStack.length}>Forward</button>
                 {daysRemaining !== null && daysRemaining <= 14 && !loginLogoutOnly && <div className="banner warning">License reminder: {daysRemaining} day(s) remaining.</div>}
                 {loginLogoutOnly && <div className="banner danger">System has being limited to login-logout only, period usage over, contact the Super Admin for more extended period Thank You!</div>}
               </div>
