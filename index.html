@@ -1239,6 +1239,7 @@
       const [showGradeEditor, setShowGradeEditor] = useState(false);
       const [notificationForm, setNotificationForm] = useState({ id: "", title: "", message: "", audience_role: "all" });
       const [chatForm, setChatForm] = useState({ recipient_profile_id: "", message_text: "" });
+      const [studentChatClassId, setStudentChatClassId] = useState('');
       const [chatMonitorClassId, setChatMonitorClassId] = useState('');
       const [chatMonitorSearch, setChatMonitorSearch] = useState('');
       const [chatLastSeenAt, setChatLastSeenAt] = useState(0);
@@ -3467,6 +3468,44 @@
           return String(a.full_name || '').localeCompare(String(b.full_name || ''));
         });
       }, [profile?.id, role, currentStudentIsJhs, currentStudentClassId, studentRecordsRows, mergedTeachersRows, principalsHook.rows, teacherRestrictedStudentRows, teacherAccessibleClassIds, classNameMap, parentProfileToLinkedClassIds, chatPermissionByStudentProfileId]);
+
+      const studentChatClassOptions = useMemo(() => {
+        if (role !== ROLE.STUDENT || !currentStudentIsJhs || !currentStudentClassId) return [];
+        const classLabel = String(classNameMap[currentStudentClassId] || teacherAssignedClassDisplay(currentStudentDashboardRecord || {}) || '').trim();
+        if (!classLabel || !isJhsClassLabel(classLabel)) return [];
+        return [{ value: currentStudentClassId, label: classLabel }];
+      }, [role, currentStudentIsJhs, currentStudentClassId, classNameMap, currentStudentDashboardRecord]);
+
+      useEffect(() => {
+        if (role !== ROLE.STUDENT) return;
+        if (!currentStudentIsJhs || !currentStudentClassId) {
+          if (studentChatClassId) setStudentChatClassId('');
+          return;
+        }
+        const allowedIds = new Set(studentChatClassOptions.map((option) => String(option.value || '').trim()).filter(Boolean));
+        const currentSelected = String(studentChatClassId || '').trim();
+        if (currentSelected && allowedIds.has(currentSelected)) return;
+        setStudentChatClassId(currentStudentClassId);
+      }, [role, currentStudentIsJhs, currentStudentClassId, studentChatClassOptions, studentChatClassId]);
+
+      const studentClassChatRecipientOptions = useMemo(() => {
+        if (role !== ROLE.STUDENT || !currentStudentIsJhs) return [];
+        const selectedClassId = String(studentChatClassId || currentStudentClassId || '').trim();
+        if (!selectedClassId) return [];
+        return chatContactOptions.filter((contact) => String(contact.role_name || '').trim().toLowerCase() === 'student' && String(contact.class_id || '').trim() === selectedClassId);
+      }, [role, currentStudentIsJhs, studentChatClassId, currentStudentClassId, chatContactOptions]);
+
+      useEffect(() => {
+        if (role !== ROLE.STUDENT) return;
+        const selectedClassId = String(studentChatClassId || currentStudentClassId || '').trim();
+        if (!selectedClassId) return;
+        const studentRecipientIds = new Set(studentClassChatRecipientOptions.map((contact) => String(contact.profile_id || '').trim()).filter(Boolean));
+        const currentRecipientId = String(chatForm.recipient_profile_id || '').trim();
+        if (currentRecipientId && studentRecipientIds.has(currentRecipientId)) return;
+        const fallbackRecipientId = String(studentClassChatRecipientOptions[0]?.profile_id || '').trim();
+        if (!fallbackRecipientId) return;
+        setChatForm((current) => ({ ...current, recipient_profile_id: fallbackRecipientId }));
+      }, [role, studentChatClassId, currentStudentClassId, studentClassChatRecipientOptions, chatForm.recipient_profile_id]);
 
       useEffect(() => {
         if (role === ROLE.ADMIN) return;
@@ -5838,6 +5877,26 @@
                   <div className="card chat-sidebar">
                     <h3 style={{ marginTop:0 }}>System Chat</h3>
                     <p className="subtle">{chatRuleDescription(role)}</p>
+                    {role === ROLE.STUDENT && currentStudentIsJhs && (
+                      <div className="toolbar" style={{ marginBottom: 14 }}>
+                        <div className="field-inline">
+                          <label>JHS Class Filter</label>
+                          <select value={studentChatClassId} onChange={(event) => setStudentChatClassId(event.target.value)}>
+                            {studentChatClassOptions.length === 0 ? <option value="">No JHS Class</option> : studentChatClassOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                          </select>
+                        </div>
+                        <div className="field-inline">
+                          <label>Class Chat Room Student</label>
+                          <select
+                            value={studentClassChatRecipientOptions.some((contact) => String(contact.profile_id || '').trim() === String(chatForm.recipient_profile_id || '').trim()) ? chatForm.recipient_profile_id : ''}
+                            onChange={(event) => setChatForm((current) => ({ ...current, recipient_profile_id: event.target.value }))}
+                          >
+                            <option value="">Select student</option>
+                            {studentClassChatRecipientOptions.map((contact) => <option key={contact.profile_id} value={contact.profile_id}>{contact.full_name}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    )}
                     <div className="chat-contacts">
                       {chatContactOptions.length === 0 ? <div className="empty">No chat contacts are available for this account yet.</div> : chatContactOptions.map((contact) => {
                         const contactId = String(contact.profile_id || '').trim();
