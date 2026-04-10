@@ -2404,10 +2404,17 @@
         return rows.sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
       }, [role, mergedStudentsRows]);
 
+      const teacherRestrictedStudentRows = useMemo(() => {
+        if (role !== ROLE.TEACHER) return [];
+        const assignedIds = new Set((teacherAssignedClassIds || []).map((value) => String(value || '').trim()).filter(Boolean));
+        if (!assignedIds.size) return teacherStudentRecordsRows;
+        return teacherStudentRecordsRows.filter((student) => assignedIds.has(String(student.class_id || '').trim()));
+      }, [role, teacherStudentRecordsRows, teacherAssignedClassIds]);
+
       const teacherAttendanceClassOptions = useMemo(() => {
         const seen = new Set();
         const options = [{ value: '', label: 'Select Class' }];
-        teacherStudentRecordsRows.forEach((student) => {
+        teacherRestrictedStudentRows.forEach((student) => {
           const classId = String(student.class_id || '').trim();
           if (!classId || seen.has(classId)) return;
           seen.add(classId);
@@ -2417,19 +2424,19 @@
           options.push({ value: classId, label });
         });
         return options;
-      }, [teacherStudentRecordsRows, orderedClassRows, classNameMap]);
+      }, [teacherRestrictedStudentRows, orderedClassRows, classNameMap]);
 
       const teacherAttendanceStudents = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
         const targetClassId = String(attendanceForm.class_id || '').trim();
-        const rows = teacherStudentRecordsRows.filter((student) => {
+        const rows = teacherRestrictedStudentRows.filter((student) => {
           if (!student?.class_id) return false;
-          return targetClassId ? String(student.class_id) === targetClassId : true;
+          return targetClassId ? String(student.class_id || '').trim() === targetClassId : true;
         });
         return rows.sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
-      }, [role, attendanceForm.class_id, teacherStudentRecordsRows]);
+      }, [role, attendanceForm.class_id, teacherRestrictedStudentRows]);
 
-      const teacherAssignableStudents = useMemo(() => teacherStudentRecordsRows, [teacherStudentRecordsRows]);
+      const teacherAssignableStudents = useMemo(() => teacherRestrictedStudentRows, [teacherRestrictedStudentRows]);
 
 
       const attendanceRowsToday = useMemo(() => (
@@ -3115,6 +3122,24 @@
         ...schoolSubjectRows.map((row) => ({ value: row.id, label: row.subject_name }))
       ]), [schoolSubjectRows]);
 
+      const teacherGradeSubjectOptions = useMemo(() => {
+        const selectedClassId = String(gradeForm.filter_class_name || gradeForm.class_id || '').trim();
+        const allowedSubjectNames = new Set();
+        (teacherAssignments || []).forEach((assignment) => {
+          const assignmentClassId = String(assignment.class_id || '').trim();
+          const assignmentSubjectName = String(assignment.subject_name || '').trim().toLowerCase();
+          if (!assignmentSubjectName) return;
+          if (selectedClassId && assignmentClassId && assignmentClassId !== selectedClassId) return;
+          allowedSubjectNames.add(assignmentSubjectName);
+        });
+        const rows = allowedSubjectNames.size
+          ? schoolSubjectRows.filter((row) => allowedSubjectNames.has(String(row.subject_name || '').trim().toLowerCase()))
+          : schoolSubjectRows;
+        return [{ value: '', label: 'Select Subject' }].concat(
+          rows.map((row) => ({ value: row.id, label: row.subject_name }))
+        );
+      }, [teacherAssignments, schoolSubjectRows, gradeForm.filter_class_name, gradeForm.class_id]);
+
       const teacherGradeRows = useMemo(() => {
         if (role !== ROLE.TEACHER) return gradesHook.rows || [];
         return (gradesHook.rows || []).filter((row) => String(row.teacher_profile_id || '') === String(profile?.id || ''));
@@ -3189,6 +3214,55 @@
         setShowGradeEditor(true);
       };
 
+      const saveTeacherAttendance = async () => {
+        const selectedClassId = String(attendanceForm.class_id || '').trim();
+        const selectedStudent = teacherAttendanceStudents.find((student) => String(student.id || '').trim() === String(attendanceForm.student_id || '').trim()) || null;
+        if (!selectedClassId) {
+          setNotice({ type: 'danger', text: 'Please select a main class before saving attendance.' });
+          return;
+        }
+        if (!selectedStudent) {
+          setNotice({ type: 'danger', text: 'Please select a student from the selected class.' });
+          return;
+        }
+        const matchedAssignment = (teacherAssignments || []).find((assignment) => String(assignment.class_id || '').trim() === selectedClassId) || null;
+        const payload = {
+          id: attendanceForm.id || undefined,
+          student_id: attendanceForm.student_id,
+          class_id: selectedClassId,
+          attendance_date: attendanceForm.attendance_date,
+          status: attendanceForm.status,
+          remarks: attendanceForm.remarks || null,
+          marked_by_profile_id: profile.id,
+          teacher_assignment_id: matchedAssignment?.id || null,
+          subject_name: matchedAssignment?.subject_name || null
+        };
+        try {
+          setNotice({ type: '', text: '' });
+          let query = payload.id
+            ? supabaseClient.from('attendance').update(payload).eq('id', payload.id)
+            : supabaseClient.from('attendance').insert(payload);
+          let res = await query;
+          if (res?.error && matchedAssignment) {
+            const fallbackPayload = { ...payload };
+            delete fallbackPayload.subject_name;
+            query = payload.id
+              ? supabaseClient.from('attendance').update(fallbackPayload).eq('id', payload.id)
+              : supabaseClient.from('attendance').insert(fallbackPayload);
+            res = await query;
+          }
+          if (res?.error) {
+            setNotice({ type: 'danger', text: res.error.message || 'Failed to save attendance.' });
+            return;
+          }
+          setAttendanceForm({ id:'', student_id:'', class_id:'', teacher_assignment_id:'', subject_name:'', attendance_date: todayISO(), status: 'Present', remarks: '' });
+          await refreshAll();
+          setNotice({ type: 'success', text: 'attendance saved successfully' });
+        } catch (error) {
+          setNotice({ type: 'danger', text: error?.message || 'Failed to save attendance.' });
+        }
+      };
+
       const saveTeacherGrade = async () => {
         const selectedStudent = mergedStudentsRows.find((student) => String(student.id || '') === String(gradeForm.student_id || '')) || null;
         const resolvedClassId = String(gradeForm.filter_class_name || gradeForm.class_id || selectedStudent?.class_id || '').trim();
@@ -3204,11 +3278,16 @@
           setNotice({ type: 'danger', text: 'The selected student does not belong to the selected class.' });
           return;
         }
+        const subjectAllowed = teacherGradeSubjectOptions.some((option) => String(option.value || '').trim() === String(gradeForm.subject_id || '').trim());
+        if (!subjectAllowed) {
+          setNotice({ type: 'danger', text: 'Please select a subject assigned to this class.' });
+          return;
+        }
         const midTermA = clampScore(gradeForm.mid_term_a_score, 0, 50);
         const endTermRaw = clampScore(gradeForm.end_of_term_raw_score, 0, 100);
         const endTermB = Number((endTermRaw / 2).toFixed(2));
-        await saveEntity('grades', {
-          id: gradeForm.id,
+        const payload = {
+          id: gradeForm.id || undefined,
           student_id: gradeForm.student_id,
           class_id: resolvedClassId,
           subject_id: gradeForm.subject_id,
@@ -3216,8 +3295,32 @@
           academic_year: gradeForm.academic_year,
           assignment_score: midTermA,
           test_score: 0,
-          exam_score: endTermB
-        }, resetTeacherGradeForm, { teacher_profile_id: profile.id });
+          exam_score: endTermB,
+          teacher_profile_id: profile.id
+        };
+        try {
+          setNotice({ type: '', text: '' });
+          let query = payload.id
+            ? supabaseClient.from('grades').update(payload).eq('id', payload.id)
+            : supabaseClient.from('grades').insert(payload);
+          let res = await query;
+          if (res?.error && /academic_year/i.test(String(res.error.message || '')) && String(payload.academic_year || '').includes('/')) {
+            const fallbackPayload = { ...payload, academic_year: String(payload.academic_year || '').split('/')[0] || String(new Date().getFullYear()) };
+            query = payload.id
+              ? supabaseClient.from('grades').update(fallbackPayload).eq('id', payload.id)
+              : supabaseClient.from('grades').insert(fallbackPayload);
+            res = await query;
+          }
+          if (res?.error) {
+            setNotice({ type: 'danger', text: res.error.message || 'Failed to save grade.' });
+            return;
+          }
+          resetTeacherGradeForm();
+          await refreshAll();
+          setNotice({ type: 'success', text: 'grades saved successfully' });
+        } catch (error) {
+          setNotice({ type: 'danger', text: error?.message || 'Failed to save grade.' });
+        }
       };
 
       const handleCredentialSelection = (profileId) => {
@@ -4033,19 +4136,10 @@
                       </div>
                       <div style={{marginTop:16}}>
                         <button
+                          type="button"
                           className="btn"
                           disabled={loginLogoutOnly || !attendanceForm.class_id || !attendanceForm.student_id}
-                          onClick={()=>saveEntity(
-                            'attendance',
-                            attendanceForm,
-                            ()=>setAttendanceForm({ id:'', student_id:'', class_id:'', teacher_assignment_id:'', subject_name:'', attendance_date: todayISO(), status: 'Present', remarks: '' }),
-                            {
-                              marked_by_profile_id: profile.id,
-                              class_id: attendanceForm.class_id || null,
-                              subject_name: null,
-                              teacher_assignment_id: null
-                            }
-                          )}
+                          onClick={saveTeacherAttendance}
                         >
                           Save Attendance
                         </button>
@@ -4133,7 +4227,7 @@
                     <div className="form-grid-3">
                       <div className="field"><label>Class</label><select value={gradeForm.filter_class_name} onChange={(e)=>setGradeForm(prev => ({...prev, filter_class_name:e.target.value, class_id:e.target.value, student_id:''}))}>{teacherGradeClassOptions.map(option => <option key={option.value || 'grade-class-filter'} value={option.value}>{option.label}</option>)}</select></div>
                       <div className="field"><label>Student</label><select value={gradeForm.student_id} onChange={(e)=>setGradeForm({...gradeForm, student_id:e.target.value})}><option value="">Select Student</option>{teacherGradeStudentOptions.map(student => { const linkedClassRow = orderedClassRows.find((row) => String(row.id || '') === String(student.class_id || '')) || null; const classValue = buildClassDisplay(linkedClassRow) || student.student_main_class_name || classNameMap[student.class_id] || student.class_name || ''; return <option key={student.id} value={student.id}>{student.full_name}{classValue ? `, ${classValue}` : ''}</option>; })}</select></div>
-                      <div className="field"><label>Subject Name</label><select value={gradeForm.subject_id} onChange={(e)=>setGradeForm((prev)=>({...prev, subject_id:e.target.value}))}>{schoolSubjectOptions.map(option => <option key={option.value || 'select-subject'} value={option.value}>{option.label}</option>)}</select></div>
+                      <div className="field"><label>Subject Name</label><select value={gradeForm.subject_id} onChange={(e)=>setGradeForm((prev)=>({...prev, subject_id:e.target.value}))}>{teacherGradeSubjectOptions.map(option => <option key={option.value || 'select-subject'} value={option.value}>{option.label}</option>)}</select></div>
                       <div className="field"><label>Term</label><select value={gradeForm.term_name} onChange={(e)=>setGradeForm({...gradeForm, term_name:e.target.value})}>{termOptions.map(x => <option key={x}>{x}</option>)}</select></div>
                       <div className="field"><label>Academic Year</label><select value={gradeForm.academic_year} onChange={(e)=>setGradeForm({...gradeForm, academic_year:e.target.value})}>{teacherAcademicYearOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></div>
                       <div className="field"><label>Mid Term Exams A (50)</label><input type="number" min="0" max="50" value={gradeForm.mid_term_a_score} onChange={(e)=>setGradeForm({...gradeForm, mid_term_a_score:e.target.value})} /></div>
@@ -4141,7 +4235,7 @@
                       <div className="field"><label>Total A+B (100 Marks)</label><input value={(clampScore(gradeForm.mid_term_a_score, 0, 50) + clampScore(gradeForm.end_of_term_raw_score, 0, 100) / 2).toFixed(1)} readOnly /></div>
                     </div>
                     <div style={{marginTop:16, display:'flex', gap:10, flexWrap:'wrap'}}>
-                      <button className="btn" disabled={loginLogoutOnly || !gradeForm.student_id || !gradeForm.subject_id} onClick={saveTeacherGrade}>{gradeForm.id ? 'Update Grade' : 'Save Grade'}</button>
+                      <button type="button" className="btn" disabled={loginLogoutOnly || !gradeForm.student_id || !gradeForm.subject_id} onClick={saveTeacherGrade}>{gradeForm.id ? 'Update Grade' : 'Save Grade'}</button>
                       <button className="btn secondary" onClick={resetTeacherGradeForm}>Cancel</button>
                     </div>
                     <div className="footer-note">The teacher form now records Mid Term Exams A out of 50 and End of Term Exams B as a raw score out of 100. The saved total is normalized to 100 marks, and those saved rows reflect immediately in the principal academic performance table. WAEC BECE uses a nine point scale, Grade 1 as highest and Grade 9 as lowest. This screen applies that interpretation to the saved 100 mark total.</div>
