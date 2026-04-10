@@ -1054,6 +1054,8 @@
       const [principalForm, setPrincipalForm] = useState(buildManagedForm('principal'));
       const [attendanceForm, setAttendanceForm] = useState({ id: "", student_id: "", class_id: "", attendance_date: todayISO(), status: "Present", remarks: "" });
       const [gradeForm, setGradeForm] = useState({ id: '', student_id: '', class_id: '', subject_id: '', term_name: 'Term 1', academic_year: getAcademicYearLabel(), filter_class_name: '', mid_term_a_score: '', end_of_term_raw_score: '' });
+      const [teacherStudentRecordsFilterClassId, setTeacherStudentRecordsFilterClassId] = useState('');
+      const [principalStudentRecordsFilterClassId, setPrincipalStudentRecordsFilterClassId] = useState('');
       const [feeForm, setFeeForm] = useState({ id: "", student_id: "", term_name: "Term 1", academic_year: getAcademicYearLabel(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
       const [showGradeEditor, setShowGradeEditor] = useState(false);
       const [notificationForm, setNotificationForm] = useState({ id: "", title: "", message: "", audience_role: "all" });
@@ -2129,6 +2131,36 @@
         }))
       ), [studentsHook.rows, studentsRawMap]);
 
+      const parentLinksRows = parentLinksHook.rows || [];
+      const linkedParentDetailsByStudentId = useMemo(() => {
+        const parentMap = new Map((parentsHook.rows || []).map((parent) => [String(parent.id || '').trim(), parent]));
+        const details = new Map();
+        (parentLinksRows || []).forEach((link) => {
+          const studentId = String(link.student_id || '').trim();
+          const parentId = String(link.parent_id || '').trim();
+          if (!studentId || !parentId) return;
+          const parent = parentMap.get(parentId);
+          if (!parent) return;
+          const existing = details.get(studentId) || {};
+          details.set(studentId, {
+            parent_full_name: existing.parent_full_name || String(parent.full_name || '').trim(),
+            parent_contact: existing.parent_contact || String(parent.phone || parent.email || '').trim()
+          });
+        });
+        return details;
+      }, [parentsHook.rows, parentLinksRows]);
+
+      const studentRecordsRows = useMemo(() => (
+        (mergedStudentsRows || []).map((row) => {
+          const linkedParent = linkedParentDetailsByStudentId.get(String(row.id || '').trim()) || {};
+          return {
+            ...row,
+            parent_full_name: row.parent_full_name || linkedParent.parent_full_name || '',
+            parent_contact: row.parent_contact || linkedParent.parent_contact || ''
+          };
+        }).sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')))
+      ), [mergedStudentsRows, linkedParentDetailsByStudentId]);
+
       const mergedTeachersRows = useMemo(() => (
         (teachersHook.rows || []).map((row) => ({
           ...(teachersRawMap[row.id] || {}),
@@ -2302,9 +2334,8 @@
         }
       }, [teacherForm.class_id]);
 
-      const parentLinksRows = parentLinksHook.rows || [];
       const managedUsersRows = managedUsersHook.rows || [];
-      const studentLookup = useMemo(() => Object.fromEntries(mergedStudentsRows.map((row) => [row.id, row])), [mergedStudentsRows]);
+      const studentLookup = useMemo(() => Object.fromEntries(studentRecordsRows.map((row) => [row.id, row])), [studentRecordsRows]);
       const computedParentsRows = useMemo(() => {
         const normalized = (value) => String(value || '').trim().toLowerCase();
         const rowsFromParents = (parentsHook.rows || []).map((parent) => {
@@ -2400,9 +2431,8 @@
 
       const teacherStudentRecordsRows = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
-        const rows = [...(mergedStudentsRows || [])];
-        return rows.sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
-      }, [role, mergedStudentsRows]);
+        return [...(studentRecordsRows || [])];
+      }, [role, studentRecordsRows]);
 
       const teacherRestrictedStudentRows = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
@@ -2425,6 +2455,44 @@
         });
         return options;
       }, [teacherRestrictedStudentRows, orderedClassRows, classNameMap]);
+
+      const teacherStudentRecordClassOptions = useMemo(() => {
+        const seen = new Set();
+        const options = [{ value: '', label: 'All Classes' }];
+        teacherRestrictedStudentRows.forEach((student) => {
+          const classId = String(student.class_id || '').trim();
+          const label = String(student.student_main_class_name || classNameMap[classId] || student.class_name || '').trim();
+          if (!classId || !label || seen.has(classId)) return;
+          seen.add(classId);
+          options.push({ value: classId, label });
+        });
+        return options;
+      }, [teacherRestrictedStudentRows, classNameMap]);
+
+      const teacherVisibleStudentRecordsRows = useMemo(() => {
+        const selectedClassId = String(teacherStudentRecordsFilterClassId || '').trim();
+        if (!selectedClassId) return teacherRestrictedStudentRows;
+        return teacherRestrictedStudentRows.filter((student) => String(student.class_id || '').trim() === selectedClassId);
+      }, [teacherRestrictedStudentRows, teacherStudentRecordsFilterClassId]);
+
+      const principalStudentRecordClassOptions = useMemo(() => {
+        const seen = new Set();
+        const options = [{ value: '', label: 'All Classes' }];
+        studentRecordsRows.forEach((student) => {
+          const classId = String(student.class_id || '').trim();
+          const label = String(student.student_main_class_name || classNameMap[classId] || student.class_name || '').trim();
+          if (!classId || !label || seen.has(classId)) return;
+          seen.add(classId);
+          options.push({ value: classId, label });
+        });
+        return options;
+      }, [studentRecordsRows, classNameMap]);
+
+      const principalVisibleStudentRecordsRows = useMemo(() => {
+        const selectedClassId = String(principalStudentRecordsFilterClassId || '').trim();
+        if (!selectedClassId) return studentRecordsRows;
+        return studentRecordsRows.filter((student) => String(student.class_id || '').trim() === selectedClassId);
+      }, [studentRecordsRows, principalStudentRecordsFilterClassId]);
 
       const teacherAttendanceStudents = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
@@ -2695,6 +2763,19 @@
           setAttendanceForm((prev) => ({ ...prev, student_id: '' }));
         }
       }, [role, attendanceForm.class_id, attendanceForm.student_id, teacherAttendanceClassOptions, teacherAttendanceStudents]);
+
+
+      useEffect(() => {
+        if (!teacherStudentRecordsFilterClassId) return;
+        const exists = teacherStudentRecordClassOptions.some((option) => String(option.value || '').trim() === String(teacherStudentRecordsFilterClassId || '').trim());
+        if (!exists) setTeacherStudentRecordsFilterClassId('');
+      }, [teacherStudentRecordsFilterClassId, teacherStudentRecordClassOptions]);
+
+      useEffect(() => {
+        if (!principalStudentRecordsFilterClassId) return;
+        const exists = principalStudentRecordClassOptions.some((option) => String(option.value || '').trim() === String(principalStudentRecordsFilterClassId || '').trim());
+        if (!exists) setPrincipalStudentRecordsFilterClassId('');
+      }, [principalStudentRecordsFilterClassId, principalStudentRecordClassOptions]);
 
 
       const dashboardRecentAccounts = useMemo(() => {
@@ -3713,6 +3794,14 @@
                 <div className="card">
                   <h3>Student Records</h3>
                   <p className="subtle">View only student records. All saved student changes, including linked parent details, reflect automatically here.</p>
+                  <div className="toolbar" style={{ marginTop: 12 }}>
+                    <div className="field-inline" style={{ maxWidth: 320 }}>
+                      <label>Filter by Class</label>
+                      <select value={role === ROLE.TEACHER ? teacherStudentRecordsFilterClassId : principalStudentRecordsFilterClassId} onChange={(e) => role === ROLE.TEACHER ? setTeacherStudentRecordsFilterClassId(e.target.value) : setPrincipalStudentRecordsFilterClassId(e.target.value)}>
+                        {(role === ROLE.TEACHER ? teacherStudentRecordClassOptions : principalStudentRecordClassOptions).map((option) => <option key={option.value || 'all-classes'} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
                   <div className="table-wrap">
                     <table>
                       <thead>
@@ -3721,8 +3810,8 @@
                         </tr>
                       </thead>
                       <tbody>
-                        {(role === ROLE.TEACHER ? teacherStudentRecordsRows : mergedStudentsRows).length === 0 && <tr><td colSpan="8"><div className="empty">No student records found</div></td></tr>}
-                        {(role === ROLE.TEACHER ? teacherStudentRecordsRows : mergedStudentsRows).map((row) => (
+                        {(role === ROLE.TEACHER ? teacherVisibleStudentRecordsRows : principalVisibleStudentRecordsRows).length === 0 && <tr><td colSpan="8"><div className="empty">No student records found for the selected class</div></td></tr>}
+                        {(role === ROLE.TEACHER ? teacherVisibleStudentRecordsRows : principalVisibleStudentRecordsRows).map((row) => (
                           <tr key={row.id}>
                             <td>{row.full_name}</td>
                             <td>{row.student_no || '-'}</td>
