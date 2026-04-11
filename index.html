@@ -142,49 +142,87 @@
     .mobile-nav-toggle { display: none; }
     .empty { padding: 30px; text-align: center; color: var(--text-soft); }
     .printable { background: var(--card); padding: 24px; border-radius: 18px; border: 1px solid var(--line); }
-    .chat-box { height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 16px; padding: 12px; background: var(--app-bg); }
+    .chat-box { height: 520px; overflow: auto; border: 1px solid rgba(255,255,255,0.48); border-radius: 30px; padding: 18px; background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(244,247,255,0.94)); box-shadow: 0 22px 50px rgba(80, 90, 140, 0.12); backdrop-filter: blur(14px); }
     .nav-btn-inner { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; }
     .nav-badge { min-width:22px; height:22px; padding:0 7px; border-radius:999px; background:#ef4444; color:#fff; font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
-    .chat-layout { display:grid; gap:16px; grid-template-columns: 300px minmax(0,1fr) 360px; align-items:start; }
-    .chat-layout.no-monitor { grid-template-columns: 300px minmax(0,1fr); }
+    .card { position: relative; overflow: hidden; }
+    .card::before { content:''; position:absolute; inset:0; pointer-events:none; background: linear-gradient(140deg, rgba(99,102,241,0.04), rgba(236,72,153,0.03) 48%, rgba(59,130,246,0.04)); }
+    .chat-layout { display:grid; gap:18px; grid-template-columns: 320px minmax(0,1fr) 360px; align-items:start; }
+    .chat-layout.no-monitor { grid-template-columns: 320px minmax(0,1fr); }
     .chat-layout.monitor-only { grid-template-columns: 1fr; }
-    .chat-sidebar, .chat-thread-panel, .chat-monitor-panel { min-width:0; }
-    .chat-contacts { display:flex; flex-direction:column; gap:8px; max-height:640px; overflow:auto; }
-    .chat-contact-btn { width:100%; border:1px solid var(--line); background:var(--card); border-radius:14px; padding:12px; text-align:left; cursor:pointer; }
-    .chat-contact-btn.active { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.08); }
+    .chat-sidebar, .chat-thread-panel, .chat-monitor-panel { min-width:0; position:relative; z-index:1; }
+    .chat-sidebar { border-radius:32px; background: linear-gradient(180deg, rgba(138,92,246,0.96), rgba(74,126,255,0.92)); color:#fff; border:0; box-shadow: 0 24px 60px rgba(99,102,241,0.24); }
+    .chat-sidebar .subtle, .chat-sidebar label, .chat-sidebar .chat-contact-meta { color: rgba(255,255,255,0.82); }
+    .chat-sidebar .field-inline select, .chat-sidebar .field-inline input { background: rgba(255,255,255,0.18); border:1px solid rgba(255,255,255,0.16); color:#fff; }
+    .chat-sidebar .field-inline option { color:#0f172a; }
+    .chat-thread-panel { border-radius:34px; background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(244,247,255,0.98)); border: 1px solid rgba(255,255,255,0.7); box-shadow: 0 24px 60px rgba(15,23,42,0.08); }
+    .chat-monitor-panel { border-radius:28px; background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(249,250,255,0.98)); }
+    .chat-contacts { display:flex; flex-direction:column; gap:12px; max-height:680px; overflow:auto; padding-right:6px; }
+    .chat-contact-btn { width:100%; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.16); border-radius:22px; padding:14px; text-align:left; cursor:pointer; color:#fff; backdrop-filter: blur(12px); }
+    .chat-contact-btn.active { background:rgba(255,255,255,0.26); box-shadow: 0 14px 30px rgba(76,81,191,0.18); transform: translateY(-1px); }
     .chat-contact-title { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
-    .chat-contact-role { display:inline-flex; align-items:center; padding:3px 8px; border-radius:999px; background:#e2e8f0; color:#334155; font-size:11px; font-weight:700; text-transform:capitalize; }
-    .chat-contact-meta { font-size:12px; color:var(--text-soft); line-height:1.45; }
-    .chat-thread-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+    .chat-contact-role { display:inline-flex; align-items:center; padding:4px 9px; border-radius:999px; background:rgba(255,255,255,0.18); color:inherit; font-size:11px; font-weight:700; text-transform:capitalize; }
+    .chat-contact-meta { font-size:12px; line-height:1.45; }
+    .chat-thread-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:18px; flex-wrap:wrap; }
     .chat-thread-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    .chat-empty-state { min-height:420px; display:grid; place-items:center; color:var(--text-soft); border:1px dashed var(--line); border-radius:18px; background:rgba(148,163,184,0.08); padding:20px; text-align:center; }
-    .virtual-chat-box { height: 420px; padding: 0; position: relative; }
+    .chat-empty-state { min-height:520px; display:grid; place-items:center; color:var(--text-soft); border:1px dashed #d7dff5; border-radius:28px; background:linear-gradient(180deg, rgba(246,248,255,0.96), rgba(255,255,255,0.94)); padding:20px; text-align:center; }
+    .virtual-chat-box { height: 520px; padding: 0; position: relative; }
     .virtual-chat-inner { position: relative; }
     .virtual-chat-stack { position: absolute; inset-inline: 0; }
-    .chat-message-shell { padding: 10px 12px; }
-    .chat-message-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
-    .icon-btn { border:1px solid var(--line); background:#fff; border-radius:12px; padding:7px 10px; cursor:pointer; font-size:12px; font-weight:600; }
+    .chat-message-shell { padding: 12px 14px; }
+    .chat-message-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+    .icon-btn { border:1px solid var(--line); background:#fff; border-radius:14px; padding:8px 11px; cursor:pointer; font-size:12px; font-weight:600; }
     .icon-btn.danger { color:#b91c1c; border-color:#fecaca; background:#fff5f5; }
     .icon-btn.warning { color:#92400e; border-color:#fde68a; background:#fffbeb; }
-    .chat-compose { display:grid; gap:10px; margin-top:14px; }
+    .chat-compose { display:grid; gap:12px; margin-top:18px; }
     .emoji-row { display:flex; gap:8px; flex-wrap:wrap; }
-    .emoji-btn { border:1px solid var(--line); background:#fff; border-radius:12px; padding:7px 10px; cursor:pointer; font-size:18px; line-height:1; }
-    .chat-monitor-list { display:flex; flex-direction:column; gap:10px; max-height:640px; overflow:auto; }
-    .chat-monitor-item { border:1px solid var(--line); border-radius:16px; padding:14px; background:var(--card); }
+    .emoji-btn { border:1px solid #dbe1f3; background:#fff; border-radius:16px; padding:9px 12px; cursor:pointer; font-size:18px; line-height:1; box-shadow: 0 8px 20px rgba(15,23,42,0.04); }
+    .chat-monitor-list { display:flex; flex-direction:column; gap:10px; max-height:680px; overflow:auto; }
+    .chat-monitor-item { border:1px solid var(--line); border-radius:18px; padding:14px; background:var(--card); }
     .chat-monitor-item-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; }
     .chat-monitor-message { margin:10px 0; padding:12px; border-radius:14px; background:rgba(148,163,184,0.08); white-space:pre-wrap; word-break:break-word; }
     .chat-monitor-actions { display:flex; gap:8px; flex-wrap:wrap; }
     .chat-rule-list { display:grid; gap:10px; }
     .chat-rule-item { padding:12px 14px; border:1px solid var(--line); border-radius:14px; background:rgba(148,163,184,0.06); }
-    .chat-search-input { width:100%; border:1px solid var(--line); padding:12px 14px; border-radius:14px; background:var(--card); }
-    .chat-unread-pill { display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px; padding:0 8px; border-radius:999px; background:#2563eb; color:#fff; font-size:12px; font-weight:700; }
+    .chat-search-input { width:100%; border:1px solid #dbe1f3; padding:14px 16px; border-radius:18px; background:rgba(255,255,255,0.85); }
+    .chat-unread-pill { display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px; padding:0 8px; border-radius:999px; background:#f43f5e; color:#fff; font-size:12px; font-weight:700; box-shadow: 0 6px 18px rgba(244,63,94,0.34); }
+    .chat-header-status { display:inline-flex; align-items:center; gap:8px; font-size:13px; color: var(--text-soft); }
+    .chat-avatar { width:48px; height:48px; border-radius:50%; display:grid; place-items:center; font-weight:800; color:#fff; background: linear-gradient(135deg, #7c3aed, #ec4899); box-shadow: 0 8px 22px rgba(124,58,237,0.24); flex: 0 0 auto; }
+    .chat-avatar.sm { width:42px; height:42px; font-size:14px; }
+    .chat-avatar-row { display:flex; align-items:center; gap:12px; min-width:0; }
+    .chat-user-status { display:inline-flex; width:12px; height:12px; border-radius:50%; box-shadow: 0 0 0 3px rgba(255,255,255,0.82); }
+    .chat-user-status.online { background:#22c55e; }
+    .chat-user-status.offline { background:#ef4444; }
+    .chat-contact-row { display:flex; align-items:flex-start; gap:12px; }
+    .chat-contact-snippet { font-size:13px; line-height:1.45; opacity:0.95; }
+    .chat-contact-date { font-size:12px; opacity:0.85; white-space:nowrap; }
+    .chat-thread-topbar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:0 4px 6px; }
+    .chat-thread-surface { border-radius:28px; padding:18px; background: linear-gradient(180deg, rgba(246,248,255,0.92), rgba(255,255,255,0.98)); border: 1px solid #eef2ff; }
+    .chat-compose-panel { border-radius:24px; border:1px solid #e8ecfb; background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(246,248,255,0.96)); padding:16px; }
+    .chat-compose-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .chat-textarea { width:100%; min-height:90px; resize:vertical; border:0; background:transparent; outline:none; padding:4px 2px; color:var(--text); }
+    .chat-input-shell { border:1px solid #e2e8f5; background:#fff; border-radius:24px; padding:14px 16px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.75); }
+    .chat-composer-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .chat-round-btn { width:46px; height:46px; border-radius:50%; border:1px solid #dbe1f3; background:#fff; display:grid; place-items:center; cursor:pointer; font-size:18px; box-shadow: 0 10px 18px rgba(15,23,42,0.06); }
+    .chat-send-btn { border:0; border-radius:999px; padding:12px 18px; font-weight:700; color:#fff; background: linear-gradient(135deg, #7c3aed, #9333ea 45%, #6366f1); box-shadow: 0 14px 30px rgba(124,58,237,0.26); cursor:pointer; }
+    .chat-emoji-panel { display:grid; grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); gap:8px; padding-top:8px; }
+    .chat-record-btn { min-width:170px; border:0; border-radius:999px; padding:12px 18px; font-weight:700; color:#fff; background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 14px 30px rgba(34,197,94,0.22); cursor:pointer; }
+    .chat-record-btn.recording { background: linear-gradient(135deg, #ef4444, #f43f5e); box-shadow: 0 14px 30px rgba(239,68,68,0.28); animation: pulseRecord 1.15s infinite; }
+    .chat-recording-meta { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-soft); }
+    .chat-audio-bubble { display:flex; align-items:center; gap:12px; margin-top:10px; padding:12px 14px; border-radius:18px; background: rgba(124,58,237,0.08); }
+    .chat-audio-bubble audio { width: 240px; max-width: 100%; }
+    .chat-section-title { color:#fff; margin-top:0; margin-bottom:6px; }
+    .chat-panel-cap { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
+    .chat-status-chip { display:inline-flex; align-items:center; gap:8px; padding:7px 12px; border-radius:999px; background:rgba(255,255,255,0.14); color:#fff; font-size:12px; font-weight:700; }
+    @keyframes pulseRecord { 0% { transform: scale(1); } 50% { transform: scale(1.04); } 100% { transform: scale(1); } }
     @media (max-width: 1180px) {
       .chat-layout, .chat-layout.no-monitor { grid-template-columns: 1fr; }
     }
-    .msg { margin-bottom: 10px; }
+    .msg { margin-bottom: 12px; }
     .msg.mine { text-align: right; }
-    .msg .bubble { display: inline-block; max-width: 78%; padding: 10px 14px; border-radius: 16px; background: var(--card); border: 1px solid var(--line); }
-    .msg.mine .bubble { background: color-mix(in srgb, var(--primary) 18%, white 82%); border-color: color-mix(in srgb, var(--primary) 28%, white 72%); }
+    .msg .bubble { display: inline-block; max-width: 82%; padding: 14px 16px; border-radius: 24px; background: rgba(255,255,255,0.94); border: 1px solid #e5eaf7; box-shadow: 0 12px 26px rgba(15,23,42,0.06); text-align:left; }
+    .msg.mine .bubble { background: linear-gradient(135deg, #7c3aed, #9333ea 42%, #6366f1); border-color: rgba(255,255,255,0.16); color:#fff; }
+    .msg.mine .subtle, .msg.mine .chat-header-status { color: rgba(255,255,255,0.82); }
     .footer-note { margin-top: 18px; color: var(--text-soft); font-size: 13px; }
     @media (max-width: 1120px) {
       .cards-4, .cards-3, .form-grid-3, .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -214,6 +252,7 @@
     const SUPABASE_URL = "https://ccsghmcxinuvgndzlfry.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_ieRCsI82gXzIOhxqouQJvg_rOXmB__2";
     const STORAGE_BUCKET = "school-logos";
+    const CHAT_AUDIO_BUCKET = "chat-audio";
     const IDLE_TIMEOUT_MS = 10 * 60 * 1000;
     const browserStorage = (() => {
       try {
@@ -682,11 +721,11 @@
       return 'System chat is available for permitted school roles.';
     }
 
-    function VirtualizedChatList({ messages, currentProfileId, canDeleteForMe, onDeleteForMe, canPermanentDelete, onPermanentDelete }) {
+    function VirtualizedChatList({ messages, currentProfileId, canDeleteForMe, onDeleteForMe, canPermanentDelete, onPermanentDelete, getPresenceStateLabel, isPresenceActive, resolveProfileMeta }) {
       const containerRef = useRef(null);
       const [scrollTop, setScrollTop] = useState(0);
-      const rowHeight = 120;
-      const viewportHeight = 420;
+      const rowHeight = 168;
+      const viewportHeight = 520;
       const overscan = 4;
       const totalHeight = Math.max(messages.length * rowHeight, viewportHeight);
       const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan);
@@ -709,16 +748,39 @@
             <div className="virtual-chat-stack" style={{ top: startIndex * rowHeight }}>
               {visibleMessages.map((message) => {
                 const isMine = String(message.sender_profile_id || '') === String(currentProfileId || '');
+                const senderMeta = typeof resolveProfileMeta === 'function' ? resolveProfileMeta(message.sender_profile_id) : null;
+                const senderInitials = String(senderMeta?.full_name || message.sender_name || 'U').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'U';
+                const senderPresenceOnline = typeof isPresenceActive === 'function' ? isPresenceActive(senderMeta) : false;
+                const presenceLabel = typeof getPresenceStateLabel === 'function' ? getPresenceStateLabel(senderMeta) : (senderPresenceOnline ? 'online' : 'offline');
+                const isAudioMessage = String(message.message_kind || 'text') === 'audio' && !!message.audio_url;
                 return (
                   <div key={message.id} className="chat-message-shell" style={{ minHeight: rowHeight }}>
                     <div className={classNames('msg', isMine && 'mine')}>
                       <div className="bubble">
                         <div style={{ display:'flex', justifyContent:'space-between', gap:10, alignItems:'flex-start', flexWrap:'wrap' }}>
-                          <strong>{message.sender_name || 'Unknown User'}</strong>
+                          <div className="chat-avatar-row">
+                            <div className="chat-avatar sm">{senderInitials}</div>
+                            <div>
+                              <strong>{message.sender_name || 'Unknown User'}</strong>
+                              <div className="chat-header-status">
+                                <span className={classNames('chat-user-status', senderPresenceOnline ? 'online' : 'offline')} />
+                                <span>{presenceLabel}</span>
+                              </div>
+                            </div>
+                          </div>
                           <span className="chat-contact-role">{chatTypeLabel(message.chat_type)}</span>
                         </div>
-                        <div style={{ marginTop:8, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{message.message_text}</div>
-                        <div className="subtle" style={{ fontSize:12, marginTop:8 }}>
+                        {message.message_text ? <div style={{ marginTop:10, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{message.message_text}</div> : null}
+                        {isAudioMessage ? (
+                          <div className="chat-audio-bubble">
+                            <span style={{ fontSize: 24 }}>🎤</span>
+                            <audio controls src={message.audio_url}>
+                              Your browser does not support audio playback.
+                            </audio>
+                            {message.audio_duration_seconds ? <span className="subtle">{Math.round(Number(message.audio_duration_seconds || 0))} sec</span> : null}
+                          </div>
+                        ) : null}
+                        <div className="subtle" style={{ fontSize:12, marginTop:10 }}>
                           {message.class_name ? `Class: ${message.class_name} | ` : ''}
                           {new Date(message.created_at).toLocaleString()}
                         </div>
@@ -1286,6 +1348,14 @@
       const [chatMonitorClassId, setChatMonitorClassId] = useState('');
       const [chatMonitorSearch, setChatMonitorSearch] = useState('');
       const [chatLastSeenAt, setChatLastSeenAt] = useState(0);
+      const [showEmojiPanel, setShowEmojiPanel] = useState(false);
+      const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+      const [recordingDurationSec, setRecordingDurationSec] = useState(0);
+      const [audioRecorderError, setAudioRecorderError] = useState('');
+      const mediaRecorderRef = useRef(null);
+      const mediaRecorderChunksRef = useRef([]);
+      const mediaRecorderStreamRef = useRef(null);
+      const mediaRecordingTimerRef = useRef(null);
       useEffect(() => {
         if (role !== ROLE.PRINCIPAL) return;
         if (['classes', 'reports'].includes(page)) {
@@ -1303,6 +1373,14 @@
       const pageHistoryBootRef = useRef(false);
       const previousPageRef = useRef("dashboard");
       const lastActivityRef = useRef(Date.now());
+
+      useEffect(() => {
+        return () => {
+          try { mediaRecordingTimerRef.current && window.clearInterval(mediaRecordingTimerRef.current); } catch {}
+          try { mediaRecorderRef.current?.stop?.(); } catch {}
+          try { mediaRecorderStreamRef.current?.getTracks?.().forEach((track) => track.stop()); } catch {}
+        };
+      }, []);
 
       const role = profile?.role_name;
       const isSuperAdmin = role === ROLE.SUPER_ADMIN;
@@ -3855,15 +3933,23 @@
         await refreshAll();
       };
 
-      const handleSendSystemChatMessage = async () => {
+      const handleSendSystemChatMessage = async (options = {}) => {
         const recipientId = String(chatForm.recipient_profile_id || '').trim();
-        const messageText = String(chatForm.message_text || '').trim();
+        const messageText = String(options.message_text ?? chatForm.message_text ?? '').trim();
+        const messageKind = String(options.message_kind || 'text').trim().toLowerCase();
+        const audioUrl = options.audio_url || null;
+        const audioFilePath = options.audio_file_path || null;
+        const audioDurationSeconds = options.audio_duration_seconds || null;
         if (!recipientId) {
           setNotice({ type: 'danger', text: 'Select who you want to chat with first.' });
           return;
         }
-        if (!messageText) {
+        if (messageKind === 'text' && !messageText) {
           setNotice({ type: 'danger', text: 'Enter a message before sending.' });
+          return;
+        }
+        if (messageKind === 'audio' && !audioUrl) {
+          setNotice({ type: 'danger', text: 'No audio recording was attached to this message.' });
           return;
         }
         const recipient = chatContactOptions.find((entry) => String(entry.profile_id || '').trim() === recipientId) || chatDirectoryMap.get(recipientId) || null;
@@ -3953,7 +4039,11 @@
           message_text: messageText,
           school_id: profile.school_id || null,
           class_id: sharedClassId || null,
-          chat_type: chatType
+          chat_type: chatType,
+          message_kind: messageKind,
+          audio_url: audioUrl,
+          audio_file_path: audioFilePath,
+          audio_duration_seconds: audioDurationSeconds
         };
         const { error } = await supabaseClient.from('chat_messages').insert(payload);
         if (error) {
@@ -3961,9 +4051,104 @@
           return;
         }
         setChatForm((current) => ({ ...current, message_text: '' }));
-        setNotice({ type: 'success', text: 'Message sent.' });
+        setShowEmojiPanel(false);
+        setNotice({ type: 'success', text: messageKind === 'audio' ? 'Audio message sent.' : 'Message sent.' });
         await refreshAll();
         markChatSeen();
+      };
+
+      const stopMediaRecordingVisuals = () => {
+        setIsRecordingAudio(false);
+        setRecordingDurationSec(0);
+        try { mediaRecordingTimerRef.current && window.clearInterval(mediaRecordingTimerRef.current); } catch {}
+        mediaRecordingTimerRef.current = null;
+      };
+
+      const handleStartChatAudioRecording = async () => {
+        if (!navigator?.mediaDevices?.getUserMedia || typeof window.MediaRecorder === 'undefined') {
+          setAudioRecorderError('Audio recording is not supported on this browser or device.');
+          return;
+        }
+        if (!chatForm.recipient_profile_id) {
+          setNotice({ type: 'danger', text: 'Choose a contact before recording audio.' });
+          return;
+        }
+        setAudioRecorderError('');
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const recorder = new MediaRecorder(stream);
+          mediaRecorderStreamRef.current = stream;
+          mediaRecorderChunksRef.current = [];
+          recorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) mediaRecorderChunksRef.current.push(event.data);
+          };
+          recorder.onerror = () => {
+            setAudioRecorderError('Audio recording failed. Please try again.');
+            stopMediaRecordingVisuals();
+          };
+          recorder.start();
+          mediaRecorderRef.current = recorder;
+          setIsRecordingAudio(true);
+          setRecordingDurationSec(0);
+          mediaRecordingTimerRef.current = window.setInterval(() => {
+            setRecordingDurationSec((current) => current + 1);
+          }, 1000);
+        } catch (error) {
+          setAudioRecorderError(error?.message || 'Unable to access your microphone.');
+          stopMediaRecordingVisuals();
+        }
+      };
+
+      const handleStopChatAudioRecording = async (shouldSend = true) => {
+        const recorder = mediaRecorderRef.current;
+        if (!recorder) return;
+        const durationAtStop = recordingDurationSec;
+        recorder.onstop = async () => {
+          try {
+            const chunks = Array.isArray(mediaRecorderChunksRef.current) ? mediaRecorderChunksRef.current : [];
+            const stream = mediaRecorderStreamRef.current;
+            if (stream?.getTracks) stream.getTracks().forEach((track) => track.stop());
+            mediaRecorderStreamRef.current = null;
+            mediaRecorderRef.current = null;
+            if (!shouldSend || chunks.length === 0) {
+              mediaRecorderChunksRef.current = [];
+              stopMediaRecordingVisuals();
+              return;
+            }
+            const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+            mediaRecorderChunksRef.current = [];
+            const extension = (blob.type || '').includes('ogg') ? 'ogg' : ((blob.type || '').includes('mp4') ? 'm4a' : 'webm');
+            const filePath = `${String(profile?.school_id || 'global')}/${String(profile?.id || 'user')}/${Date.now()}.${extension}`;
+            const { error: uploadError } = await supabaseClient.storage.from(CHAT_AUDIO_BUCKET).upload(filePath, blob, {
+              contentType: blob.type || 'audio/webm',
+              upsert: false
+            });
+            if (uploadError) {
+              setNotice({ type: 'danger', text: uploadError.message });
+              stopMediaRecordingVisuals();
+              return;
+            }
+            const { data: publicUrlData } = supabaseClient.storage.from(CHAT_AUDIO_BUCKET).getPublicUrl(filePath);
+            const audioUrlValue = publicUrlData?.publicUrl || null;
+            await handleSendSystemChatMessage({
+              message_kind: 'audio',
+              message_text: '',
+              audio_url: audioUrlValue,
+              audio_file_path: filePath,
+              audio_duration_seconds: durationAtStop
+            });
+          } catch (error) {
+            setNotice({ type: 'danger', text: error?.message || 'Failed to send the audio message.' });
+          } finally {
+            stopMediaRecordingVisuals();
+          }
+        };
+        try {
+          recorder.stop();
+        } catch (error) {
+          setNotice({ type: 'danger', text: error?.message || 'Failed to stop audio recording.' });
+          stopMediaRecordingVisuals();
+        }
       };
 
       const quickReplyToChatStudent = (targetProfileId) => {
@@ -6013,8 +6198,16 @@
               <div className={classNames('chat-layout', role === ROLE.ADMIN && 'monitor-only', role !== ROLE.ADMIN && role !== ROLE.TEACHER && 'no-monitor')}>
                 {role !== ROLE.ADMIN && (
                   <div className="card chat-sidebar">
-                    <h3 style={{ marginTop:0 }}>System Chat</h3>
-                    <p className="subtle">{chatRuleDescription(role)}</p>
+                    <div className="chat-panel-cap">
+                      <div>
+                        <h3 className="chat-section-title">Chat</h3>
+                        <div className="subtle">{chatRuleDescription(role)}</div>
+                      </div>
+                      <span className="chat-status-chip">
+                        <span className={classNames('chat-user-status', isPresenceActive(chatDirectoryMap.get(String(profile?.id || '').trim())) ? 'online' : 'offline')} />
+                        {getPresenceStateLabel(chatDirectoryMap.get(String(profile?.id || '').trim()))}
+                      </span>
+                    </div>
                     {role === ROLE.STUDENT && currentStudentIsJhs && (
                       <div className="toolbar" style={{ marginBottom: 14 }}>
                         <div className="field-inline">
@@ -6055,18 +6248,46 @@
                         </div>
                       </div>
                     )}
+                    <div className="field-inline" style={{ marginBottom: 14 }}>
+                      <label>Search contact</label>
+                      <input
+                        className="chat-search-input"
+                        value={chatMonitorSearch}
+                        onChange={(event) => setChatMonitorSearch(event.target.value)}
+                        placeholder="Search by name, role, or class"
+                      />
+                    </div>
                     <div className="chat-contacts">
-                      {chatContactOptions.length === 0 ? <div className="empty">No chat contacts are available for this account yet.</div> : chatContactOptions.map((contact) => {
+                      {chatContactOptions.filter((contact) => {
+                        const q = String(chatMonitorSearch || '').trim().toLowerCase();
+                        if (!q) return true;
+                        return [contact.full_name, contact.role_name, contact.class_name, contact.note].some((value) => String(value || '').toLowerCase().includes(q));
+                      }).length === 0 ? <div className="empty">No chat contacts are available for this account yet.</div> : chatContactOptions.filter((contact) => {
+                        const q = String(chatMonitorSearch || '').trim().toLowerCase();
+                        if (!q) return true;
+                        return [contact.full_name, contact.role_name, contact.class_name, contact.note].some((value) => String(value || '').toLowerCase().includes(q));
+                      }).map((contact) => {
                         const contactId = String(contact.profile_id || '').trim();
                         const unread = chatUnreadByContact[contactId] || 0;
+                        const contactPresence = chatDirectoryMap.get(contactId);
+                        const initials = String(contact.full_name || 'U').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'U';
+                        const isOnline = isPresenceActive(contactPresence);
                         return (
                           <button key={contactId} className={classNames('chat-contact-btn', String(chatForm.recipient_profile_id || '').trim() === contactId && 'active')} onClick={() => setChatForm((current) => ({ ...current, recipient_profile_id: contactId }))}>
-                            <div className="chat-contact-title">
-                              <strong>{contact.full_name || '-'}</strong>
-                              {unread > 0 ? <span className="chat-unread-pill">{unread}</span> : <span className="chat-contact-role">{contact.role_name}</span>}
+                            <div className="chat-contact-row">
+                              <div className="chat-avatar sm">{initials}</div>
+                              <div style={{ flex:1, minWidth:0 }}>
+                                <div className="chat-contact-title">
+                                  <strong>{contact.full_name || '-'}</strong>
+                                  {unread > 0 ? <span className="chat-unread-pill">{unread}</span> : <span className="chat-contact-date">{isOnline ? 'online' : 'offline'}</span>}
+                                </div>
+                                <div className="chat-header-status">
+                                  <span className={classNames('chat-user-status', isOnline ? 'online' : 'offline')} />
+                                  <span>{contact.role_name}{contact.class_name ? ` | ${contact.class_name}` : ''}</span>
+                                </div>
+                                <div className="chat-contact-snippet">{contact.note || chatTypeLabel(deriveChatTypeFromRoles(role, contact.role_name))}</div>
+                              </div>
                             </div>
-                            <div className="chat-contact-meta">{contact.note || chatTypeLabel(deriveChatTypeFromRoles(role, contact.role_name))}</div>
-                            {contact.class_name ? <div className="chat-contact-meta">{contact.class_name}</div> : null}
                           </button>
                         );
                       })}
@@ -6076,10 +6297,16 @@
 
                 {role !== ROLE.ADMIN && (
                   <div className="card chat-thread-panel">
-                    <div className="chat-thread-header">
-                      <div>
-                        <h3 style={{ margin:'0 0 4px' }}>{currentChatRecipient ? currentChatRecipient.full_name : 'Select a contact'}</h3>
-                        <div className="subtle">{currentChatRecipient ? `${currentChatRecipient.role_name}${currentChatRecipient.class_name ? ` | ${currentChatRecipient.class_name}` : ''}` : 'Choose a teacher, student, parent, or principal based on your role permissions.'}</div>
+                    <div className="chat-thread-topbar">
+                      <div className="chat-avatar-row">
+                        <div className="chat-avatar">{String(currentChatRecipient?.full_name || 'C').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'C'}</div>
+                        <div>
+                          <h3 style={{ margin:'0 0 4px' }}>{currentChatRecipient ? currentChatRecipient.full_name : 'Select a contact'}</h3>
+                          <div className="chat-header-status">
+                            <span className={classNames('chat-user-status', currentChatRecipient && isPresenceActive(chatDirectoryMap.get(String(currentChatRecipient.profile_id || '').trim())) ? 'online' : 'offline')} />
+                            <span>{currentChatRecipient ? `${getPresenceStateLabel(chatDirectoryMap.get(String(currentChatRecipient.profile_id || '').trim()))}, ${currentChatRecipient.role_name}${currentChatRecipient.class_name ? ` | ${currentChatRecipient.class_name}` : ''}` : 'Choose a teacher, student, parent, or principal based on your role permissions.'}</span>
+                          </div>
+                        </div>
                       </div>
                       <div className="chat-thread-actions">
                         {chatUnreadCount > 0 ? <span className="chip info">{chatUnreadCount} unread</span> : <span className="chip success">Up to date</span>}
@@ -6089,25 +6316,62 @@
 
                     {currentChatRecipient ? (
                       <>
-                        <VirtualizedChatList
-                          messages={currentConversationMessages}
-                          currentProfileId={profile.id}
-                          canDeleteForMe={true}
-                          onDeleteForMe={handleHideChatMessageForCurrentUser}
-                          canPermanentDelete={false}
-                          onPermanentDelete={() => {}}
-                        />
+                        <div className="chat-thread-surface">
+                          <VirtualizedChatList
+                            messages={currentConversationMessages}
+                            currentProfileId={profile.id}
+                            canDeleteForMe={true}
+                            onDeleteForMe={handleHideChatMessageForCurrentUser}
+                            canPermanentDelete={false}
+                            onPermanentDelete={() => {}}
+                            getPresenceStateLabel={getPresenceStateLabel}
+                            isPresenceActive={isPresenceActive}
+                            resolveProfileMeta={(profileId) => chatDirectoryMap.get(String(profileId || '').trim())}
+                          />
+                        </div>
                         <div className="chat-compose">
-                          <div className="emoji-row">
-                            {['😀','😊','👍','🙏','🎉','❤️','😂','😮','😢','😡','✅','❗'].map((emoji) => <button key={emoji} className="emoji-btn" onClick={() => insertEmojiIntoChat(emoji)}>{emoji}</button>)}
-                          </div>
-                          <div className="field">
-                            <label>Message</label>
-                            <textarea rows="5" value={chatForm.message_text} onChange={(event) => setChatForm({ ...chatForm, message_text: event.target.value })} placeholder="Type your message here. Emojis and symbols are supported." />
-                          </div>
-                          <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
-                            <button className="btn" onClick={handleSendSystemChatMessage}>Send Message</button>
-                            <button className="btn secondary" onClick={() => setChatForm((current) => ({ ...current, message_text: '' }))}>Clear</button>
+                          <div className="chat-compose-panel">
+                            <div className="chat-compose-toolbar">
+                              <div className="chat-composer-actions">
+                                <button className="chat-round-btn" type="button" onClick={() => setShowEmojiPanel((current) => !current)} title="More emoji">😊</button>
+                                <button
+                                  className={classNames('chat-record-btn', isRecordingAudio && 'recording')}
+                                  type="button"
+                                  onMouseDown={handleStartChatAudioRecording}
+                                  onMouseUp={() => handleStopChatAudioRecording(true)}
+                                  onMouseLeave={() => isRecordingAudio && handleStopChatAudioRecording(false)}
+                                  onTouchStart={handleStartChatAudioRecording}
+                                  onTouchEnd={() => handleStopChatAudioRecording(true)}
+                                >
+                                  {isRecordingAudio ? 'Release to send audio' : 'Hold to record audio'}
+                                </button>
+                                <button className="chat-round-btn" type="button" onClick={() => setChatForm((current) => ({ ...current, message_text: '' }))} title="Clear text">🧹</button>
+                              </div>
+                              <div className="chat-recording-meta">
+                                {isRecordingAudio ? <><span>🎙️ Recording</span><strong>{recordingDurationSec}s</strong></> : <span>Realtime text, emoji, and audio chat</span>}
+                              </div>
+                            </div>
+                            {audioRecorderError ? <div className="banner danger" style={{ marginTop: 12, marginBottom: 0 }}>{audioRecorderError}</div> : null}
+                            {showEmojiPanel ? (
+                              <div className="chat-emoji-panel">
+                                {['😀','😁','😂','🤣','😊','😍','😘','😎','🤩','😮','😢','😭','😡','👍','👏','🙏','🎉','🔥','❤️','💙','💚','💯','✅','❗','📚','🧠','📝','🎓','🏫','👨‍🏫','👩‍🏫','👨‍🎓','👩‍🎓'].map((emoji) => (
+                                  <button key={emoji} className="emoji-btn" type="button" onClick={() => insertEmojiIntoChat(emoji)}>{emoji}</button>
+                                ))}
+                              </div>
+                            ) : null}
+                            <div className="chat-input-shell">
+                              <textarea className="chat-textarea" value={chatForm.message_text} onChange={(event) => setChatForm({ ...chatForm, message_text: event.target.value })} placeholder="Type something..." />
+                            </div>
+                            <div className="chat-compose-toolbar">
+                              <div className="chat-header-status">
+                                <span className={classNames('chat-user-status', currentChatRecipient && isPresenceActive(chatDirectoryMap.get(String(currentChatRecipient.profile_id || '').trim())) ? 'online' : 'offline')} />
+                                <span>{currentChatRecipient ? `${currentChatRecipient.full_name} is ${getPresenceStateLabel(chatDirectoryMap.get(String(currentChatRecipient.profile_id || '').trim()))}` : 'No user selected'}</span>
+                              </div>
+                              <div className="chat-composer-actions">
+                                <button className="btn secondary" type="button" onClick={() => setShowEmojiPanel((current) => !current)}>More Emoji</button>
+                                <button className="chat-send-btn" type="button" onClick={() => handleSendSystemChatMessage()}>Send Message</button>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </>
