@@ -1323,7 +1323,7 @@
       const profilesPresenceHook = useSupabaseTable("profiles", "id, school_id, auth_user_id, username, is_online, last_seen_at");
 
       const buildManagedForm = (roleName = 'student') => ({
-        profile_id: "", role_name: roleName, full_name: "", email: "", username: "", phone: "", account_status: "active", force_password_change: 'true', temporary_password: "",
+        id: "", profile_id: "", role_name: roleName, full_name: "", email: "", username: "", phone: "", account_status: "active", force_password_change: 'true', temporary_password: "",
         class_id: "", student_main_class_name: "", student_class_section: "None", teacher_main_class_name: "", gender: "Male", date_of_birth: "", guardian_contact: "", address: "", student_no: "", staff_no: "",
         subject_specialty: "", qualification: "", assigned_subjects: [], assigned_class_ids: [], relationship_to_student: "",
         parent_full_name: "", parent_contact: "", emis_code: "", ghana_card: "", trained_status: "Trained", student_photo_url: ""
@@ -1387,32 +1387,31 @@
       const canSchoolAdminManageUsers = role === ROLE.ADMIN;
       const showManagedWelcome = [ROLE.STUDENT, ROLE.TEACHER, ROLE.PARENT, ROLE.PRINCIPAL, ROLE.ACCOUNTS].includes(role);
 
-      const markPresenceLocally = (profileId, isOnline, lastSeenAt = null, seed = {}) => {
+      const markPresenceLocally = (profileId, isOnline, lastSeenAt = null) => {
         const targetProfileId = String(profileId || '').trim();
-        if (!targetProfileId) return;
         const resolvedLastSeenAt = lastSeenAt || new Date().toISOString();
-        profilesPresenceHook.setRows((prev) => {
-          const list = Array.isArray(prev) ? [...prev] : [];
-          const index = list.findIndex((row) => String(row?.id || '') === targetProfileId);
-          const existing = index >= 0 ? (list[index] || {}) : {};
-          const nextRow = {
-            ...existing,
-            ...seed,
-            id: targetProfileId,
-            school_id: seed.school_id ?? existing.school_id ?? null,
-            auth_user_id: seed.auth_user_id ?? existing.auth_user_id ?? null,
-            username: seed.username ?? existing.username ?? null,
-            is_online: !!isOnline,
-            last_seen_at: resolvedLastSeenAt
-          };
-          if (index >= 0) {
-            list[index] = nextRow;
-          } else {
-            list.unshift(nextRow);
-          }
-          return list;
-        });
-        if (profile?.id && String(profile.id) === targetProfileId) {
+        if (targetProfileId) {
+          profilesPresenceHook.setRows((prev) => {
+            const list = Array.isArray(prev) ? [...prev] : [];
+            const index = list.findIndex((row) => String(row?.id || '') === targetProfileId);
+            const nextRow = {
+              ...(index >= 0 ? list[index] : {}),
+              id: targetProfileId,
+              school_id: profile?.school_id || (index >= 0 ? list[index]?.school_id : null) || null,
+              auth_user_id: profile?.auth_user_id || (index >= 0 ? list[index]?.auth_user_id : null) || null,
+              username: profile?.username || (index >= 0 ? list[index]?.username : null) || null,
+              is_online: !!isOnline,
+              last_seen_at: resolvedLastSeenAt
+            };
+            if (index >= 0) {
+              list[index] = nextRow;
+            } else {
+              list.unshift(nextRow);
+            }
+            return list;
+          });
+        }
+        if (profile?.id && targetProfileId && String(profile.id) === targetProfileId) {
           setSelfPresenceState(isOnline ? 'online' : 'offline');
         }
       };
@@ -1585,13 +1584,10 @@
       };
 
       const isPresenceActive = (presenceRow) => {
-        if (!presenceRow) return false;
+        if (!presenceRow?.is_online) return false;
         const lastSeen = presenceRow?.last_seen_at ? new Date(presenceRow.last_seen_at).getTime() : 0;
-        if (presenceRow?.is_online === true) {
-          return !lastSeen || (Date.now() - lastSeen) <= 180000;
-        }
         if (!lastSeen) return false;
-        return (Date.now() - lastSeen) <= 90000;
+        return (Date.now() - lastSeen) <= 120000;
       };
 
       const syncCurrentProfilePhoto = async (profileId) => {
@@ -2944,6 +2940,7 @@
         const resolvedClassId = row.class_id || classRow?.id || '';
         return {
           ...buildManagedForm('student'),
+          id: row.id || '',
           profile_id: row.profile_id || '',
           role_name: 'student',
           full_name: row.full_name || '',
@@ -3105,15 +3102,18 @@
         const profileAuthUserId = String(profile.auth_user_id || '').trim();
         const profileEmail = normalized(profile.email || '');
         const profileName = normalized(profile.full_name || welcomeContext?.full_name || '');
-        const candidates = [...(studentRecordsRows || []), ...(studentsRawHook.rows || [])];
+        const managedStudentRow = (managedUsersRows || []).find((row) => String(row?.profile_id || '').trim() === profileId) || null;
+        const managedStudentNo = String(managedStudentRow?.student_no || '').trim();
+        const candidates = [...(mergedStudentsRows || []), ...(studentRecordsRows || []), ...(studentsRawHook.rows || [])];
         return (
           candidates.find((row) => String(row.profile_id || '').trim() === profileId)
           || (profileAuthUserId ? candidates.find((row) => String(row.auth_user_id || '').trim() === profileAuthUserId) : null)
+          || (managedStudentNo ? candidates.find((row) => String(row.student_no || '').trim() === managedStudentNo) : null)
           || (profileEmail ? candidates.find((row) => normalized(row.email || row.student_email || '') === profileEmail) : null)
           || (profileName ? candidates.find((row) => normalized(row.full_name || '') === profileName) : null)
           || null
         );
-      }, [role, profile?.id, profile?.auth_user_id, profile?.email, profile?.full_name, studentRecordsRows, studentsRawHook.rows, welcomeContext?.full_name]);
+      }, [role, managedUsersRows, mergedStudentsRows, profile?.id, profile?.auth_user_id, profile?.email, profile?.full_name, studentRecordsRows, studentsRawHook.rows, welcomeContext?.full_name]);
 
       const currentStudentDashboardPhotoUrl = useMemo(() => {
         const normalized = (value) => String(value || '').trim().toLowerCase();
@@ -3121,52 +3121,38 @@
         const profileAuthUserId = String(profile?.auth_user_id || '').trim();
         const profileEmail = normalized(profile?.email || '');
         const profileName = normalized(profile?.full_name || welcomeContext?.full_name || '');
-        const welcomeStudentNo = String(welcomeContext?.info?.student_no || '').trim();
+        const managedStudentRow = (managedUsersRows || []).find((row) => String(row?.profile_id || '').trim() === profileId) || null;
+        const managedStudentNo = String(managedStudentRow?.student_no || currentStudentDashboardRecord?.student_no || '').trim();
         const currentStudentId = String(currentStudentDashboardRecord?.id || '').trim();
-        const currentStudentNo = String(currentStudentDashboardRecord?.student_no || '').trim() || welcomeStudentNo;
         const rawByCurrentId = currentStudentId ? (studentsRawMap[currentStudentId] || null) : null;
         const candidates = [
           rawByCurrentId,
           currentStudentDashboardRecord,
+          managedStudentRow,
           ...(mergedStudentsRows || []),
           ...(studentRecordsRows || []),
-          ...(studentsRawHook.rows || []),
-          ...(managedUsersRows || [])
+          ...(studentsRawHook.rows || [])
         ].filter(Boolean);
         const matchedWithPhoto = candidates.find((row) => {
-          const hasPhoto = String(row?.student_photo_url || row?.profile_photo_url || row?.avatar_url || '').trim();
+          const hasPhoto = String(row?.student_photo_url || row?.profile_photo_url || '').trim();
           if (!hasPhoto) return false;
           return String(row?.id || '').trim() === currentStudentId
-            || (currentStudentNo && String(row?.student_no || '').trim() === currentStudentNo)
+            || (managedStudentNo && String(row?.student_no || '').trim() === managedStudentNo)
             || String(row?.profile_id || '').trim() === profileId
             || (profileAuthUserId && String(row?.auth_user_id || '').trim() === profileAuthUserId)
             || (profileEmail && normalized(row?.email || row?.student_email || '') === profileEmail)
             || (profileName && normalized(row?.full_name || '') === profileName);
         });
         return matchedWithPhoto?.student_photo_url
-          || matchedWithPhoto?.profile_photo_url
           || rawByCurrentId?.student_photo_url
           || currentStudentDashboardRecord?.student_photo_url
+          || managedStudentRow?.student_photo_url
+          || matchedWithPhoto?.profile_photo_url
           || currentStudentDashboardRecord?.profile_photo_url
-          || welcomeContext?.student_photo_url
-          || profile?.student_photo_url
+          || managedStudentRow?.profile_photo_url
           || profile?.profile_photo_url
           || null;
-      }, [currentStudentDashboardRecord, managedUsersRows, mergedStudentsRows, profile?.id, profile?.auth_user_id, profile?.email, profile?.full_name, profile?.profile_photo_url, profile?.student_photo_url, studentRecordsRows, studentsRawHook.rows, studentsRawMap, welcomeContext?.full_name, welcomeContext?.info?.student_no, welcomeContext?.student_photo_url]);
-
-      const renderStudentDashboardPhotoCard = () => {
-        if (role !== ROLE.STUDENT) return null;
-        return (
-          <div className="card">
-            <h3>My Student Picture</h3>
-            <p className="subtle">This picture comes from Student Management and updates automatically when the school admin uploads or changes it.</p>
-            <div style={{ display:'flex', gap:20, alignItems:'center', flexWrap:'wrap' }}>
-              {renderRecordPhotoThumb(currentStudentDashboardPhotoUrl, profile?.full_name || 'Student Picture', 140)}
-              <div className="subtle">{currentStudentDashboardPhotoUrl ? 'Your latest saved student picture is showing here.' : 'No student picture has been linked to your record yet.'}</div>
-            </div>
-          </div>
-        );
-      };
+      }, [currentStudentDashboardRecord, managedUsersRows, mergedStudentsRows, profile?.id, profile?.auth_user_id, profile?.email, profile?.full_name, profile?.profile_photo_url, studentRecordsRows, studentsRawHook.rows, studentsRawMap, welcomeContext?.full_name]);
 
       const parentEntityRow = useMemo(() => {
         if (role !== ROLE.PARENT) return null;
@@ -3354,23 +3340,13 @@
           : teacherRestrictedStudentRows.filter((student) => String(student.class_id || '').trim() === selectedClassId);
         return rows.map((row) => {
           const parentDetails = resolveStudentParentDetails(row);
-          const rawMatch = (mergedStudentsRows || []).find((student) => {
-            const rowId = String(row?.id || '').trim();
-            const rowProfileId = String(row?.profile_id || '').trim();
-            const rowStudentNo = String(row?.student_no || '').trim();
-            return (rowId && String(student?.id || '').trim() === rowId)
-              || (rowProfileId && String(student?.profile_id || '').trim() === rowProfileId)
-              || (rowStudentNo && String(student?.student_no || '').trim() === rowStudentNo);
-          }) || {};
           return {
-            ...rawMatch,
             ...row,
-            parent_full_name: row.parent_full_name || rawMatch.parent_full_name || parentDetails.parent_full_name || '-',
-            parent_contact: row.parent_contact || rawMatch.parent_contact || parentDetails.parent_contact || '-',
-            student_photo_url: row.student_photo_url || rawMatch.student_photo_url || ''
+            parent_full_name: row.parent_full_name || parentDetails.parent_full_name || '-',
+            parent_contact: row.parent_contact || parentDetails.parent_contact || '-'
           };
         });
-      }, [teacherRestrictedStudentRows, teacherStudentRecordsFilterClassId, linkedParentDetailsByStudentId, fallbackParentDetailsByStudentId, mergedStudentsRows]);
+      }, [teacherRestrictedStudentRows, teacherStudentRecordsFilterClassId, linkedParentDetailsByStudentId, fallbackParentDetailsByStudentId]);
 
       const principalStudentRecordClassOptions = useMemo(() => {
         const seen = new Set();
@@ -4656,6 +4632,7 @@
         const base = buildManagedForm(row.role_name || 'student');
         setUserForm({
           ...base,
+          id: row.id || '',
           profile_id: row.profile_id || '',
           role_name: row.role_name || base.role_name,
           full_name: row.full_name || '',
@@ -4818,9 +4795,10 @@
 
       const getLatestStudentRow = async (form) => {
         let query = supabaseClient.from('students').select('*').eq('school_id', school?.id || null).order('updated_at', { ascending: false }).limit(1);
-        if (form.profile_id) query = supabaseClient.from('students').select('*').eq('profile_id', form.profile_id).limit(1);
-        else if (form.student_no) query = supabaseClient.from('students').select('*').eq('school_id', school?.id || null).eq('student_no', form.student_no).order('updated_at', { ascending: false }).limit(1);
-        else query = supabaseClient.from('students').select('*').eq('school_id', school?.id || null).eq('full_name', form.full_name).order('updated_at', { ascending: false }).limit(1);
+        if (form?.id) query = supabaseClient.from('students').select('*').eq('id', form.id).limit(1);
+        else if (form?.profile_id) query = supabaseClient.from('students').select('*').eq('profile_id', form.profile_id).limit(1);
+        else if (form?.student_no) query = supabaseClient.from('students').select('*').eq('school_id', school?.id || null).eq('student_no', form.student_no).order('updated_at', { ascending: false }).limit(1);
+        else query = supabaseClient.from('students').select('*').eq('school_id', school?.id || null).eq('full_name', form?.full_name || '').order('updated_at', { ascending: false }).limit(1);
         const { data, error } = await query.maybeSingle();
         return error ? null : data;
       };
@@ -4863,13 +4841,26 @@
         const syncStudentPictureOnly = async () => {
           const studentPhotoFile = studentPhotoRef.current?.files?.[0] || null;
           if (!studentPhotoFile) return null;
-          const { publicUrl, error: studentPhotoError } = await uploadStudentPhotoForRecord(studentRow, studentPhotoFile);
+          const latestStudentRow = await getLatestStudentRow({
+            id: studentRow.id,
+            profile_id: studentRow.profile_id,
+            student_no: studentRow.student_no,
+            full_name: studentRow.full_name
+          }) || studentRow;
+          const { publicUrl, error: studentPhotoError } = await uploadStudentPhotoForRecord(latestStudentRow, studentPhotoFile);
           if (studentPhotoError) return studentPhotoError;
           const { error: photoUpdateError } = await supabaseClient
             .from('students')
-            .update({ student_photo_url: publicUrl })
-            .eq('id', studentRow.id);
+            .update({ student_photo_url: publicUrl, updated_at: new Date().toISOString() })
+            .eq('id', latestStudentRow.id);
           if (photoUpdateError) return photoUpdateError;
+          const linkedProfileId = String(latestStudentRow.profile_id || form.profile_id || '').trim();
+          if (linkedProfileId) {
+            await supabaseClient
+              .from('profiles')
+              .update({ profile_photo_url: publicUrl })
+              .eq('id', linkedProfileId);
+          }
           if (studentPhotoRef.current) studentPhotoRef.current.value = '';
           return null;
         };
@@ -5416,7 +5407,6 @@
             {page === 'principal-dashboard' && (
               <div className="grid">
                 {renderWelcomeCard()}
-                {renderSelfProfilePhotoCard()}
                 <MetricCards items={[
                   { label: 'Total Students', value: mergedStudentsRows.length },
                   { label: 'Total Teachers', value: mergedTeachersRows.length },
@@ -5515,7 +5505,6 @@
             {page === 'teacher-dashboard' && (
               <div className="grid">
                 {renderWelcomeCard()}
-                {renderSelfProfilePhotoCard()}
                 <MetricCards items={[
                   { label: 'My Students', value: teacherRestrictedStudentRows.length },
                   { label: 'School Classes', value: orderedClassRows.length },
@@ -5544,7 +5533,6 @@
             {page === 'student-dashboard' && (
               <>
                 {renderWelcomeCard()}
-                {renderStudentDashboardPhotoCard()}
                 <MetricCards items={[
                   { label: 'Timetable Entries', value: timetableHook.rows.length },
                   { label: 'Attendance Summary', value: attendanceHook.rows.length },
