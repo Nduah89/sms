@@ -1925,10 +1925,15 @@
             }, 0);
           }
 
-          if (evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED') {
+          if (evt === 'TOKEN_REFRESHED') {
             window.setTimeout(() => {
               setSelfPresenceState('online');
-              loadCore(session.user, { preservePage: true, silent: true });
+            }, 0);
+          }
+
+          if (evt === 'USER_UPDATED') {
+            window.setTimeout(() => {
+              setSelfPresenceState('online');
             }, 0);
           }
         });
