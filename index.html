@@ -1387,31 +1387,32 @@
       const canSchoolAdminManageUsers = role === ROLE.ADMIN;
       const showManagedWelcome = [ROLE.STUDENT, ROLE.TEACHER, ROLE.PARENT, ROLE.PRINCIPAL, ROLE.ACCOUNTS].includes(role);
 
-      const markPresenceLocally = (profileId, isOnline, lastSeenAt = null) => {
+      const markPresenceLocally = (profileId, isOnline, lastSeenAt = null, seed = {}) => {
         const targetProfileId = String(profileId || '').trim();
+        if (!targetProfileId) return;
         const resolvedLastSeenAt = lastSeenAt || new Date().toISOString();
-        if (targetProfileId) {
-          profilesPresenceHook.setRows((prev) => {
-            const list = Array.isArray(prev) ? [...prev] : [];
-            const index = list.findIndex((row) => String(row?.id || '') === targetProfileId);
-            const nextRow = {
-              ...(index >= 0 ? list[index] : {}),
-              id: targetProfileId,
-              school_id: profile?.school_id || (index >= 0 ? list[index]?.school_id : null) || null,
-              auth_user_id: profile?.auth_user_id || (index >= 0 ? list[index]?.auth_user_id : null) || null,
-              username: profile?.username || (index >= 0 ? list[index]?.username : null) || null,
-              is_online: !!isOnline,
-              last_seen_at: resolvedLastSeenAt
-            };
-            if (index >= 0) {
-              list[index] = nextRow;
-            } else {
-              list.unshift(nextRow);
-            }
-            return list;
-          });
-        }
-        if (profile?.id && targetProfileId && String(profile.id) === targetProfileId) {
+        profilesPresenceHook.setRows((prev) => {
+          const list = Array.isArray(prev) ? [...prev] : [];
+          const index = list.findIndex((row) => String(row?.id || '') === targetProfileId);
+          const existing = index >= 0 ? (list[index] || {}) : {};
+          const nextRow = {
+            ...existing,
+            ...seed,
+            id: targetProfileId,
+            school_id: seed.school_id ?? existing.school_id ?? null,
+            auth_user_id: seed.auth_user_id ?? existing.auth_user_id ?? null,
+            username: seed.username ?? existing.username ?? null,
+            is_online: !!isOnline,
+            last_seen_at: resolvedLastSeenAt
+          };
+          if (index >= 0) {
+            list[index] = nextRow;
+          } else {
+            list.unshift(nextRow);
+          }
+          return list;
+        });
+        if (profile?.id && String(profile.id) === targetProfileId) {
           setSelfPresenceState(isOnline ? 'online' : 'offline');
         }
       };
@@ -1584,10 +1585,13 @@
       };
 
       const isPresenceActive = (presenceRow) => {
-        if (!presenceRow?.is_online) return false;
+        if (!presenceRow) return false;
         const lastSeen = presenceRow?.last_seen_at ? new Date(presenceRow.last_seen_at).getTime() : 0;
+        if (presenceRow?.is_online === true) {
+          return !lastSeen || (Date.now() - lastSeen) <= 180000;
+        }
         if (!lastSeen) return false;
-        return (Date.now() - lastSeen) <= 120000;
+        return (Date.now() - lastSeen) <= 90000;
       };
 
       const syncCurrentProfilePhoto = async (profileId) => {
@@ -3120,9 +3124,15 @@
         const currentStudentId = String(currentStudentDashboardRecord?.id || '').trim();
         const currentStudentNo = String(currentStudentDashboardRecord?.student_no || '').trim();
         const rawByCurrentId = currentStudentId ? (studentsRawMap[currentStudentId] || null) : null;
-        const candidates = [rawByCurrentId, currentStudentDashboardRecord, ...(studentRecordsRows || []), ...(studentsRawHook.rows || [])].filter(Boolean);
+        const candidates = [
+          rawByCurrentId,
+          currentStudentDashboardRecord,
+          ...(mergedStudentsRows || []),
+          ...(studentRecordsRows || []),
+          ...(studentsRawHook.rows || [])
+        ].filter(Boolean);
         const matchedWithPhoto = candidates.find((row) => {
-          const hasPhoto = String(row?.student_photo_url || row?.profile_photo_url || '').trim();
+          const hasPhoto = String(row?.student_photo_url || row?.profile_photo_url || row?.avatar_url || '').trim();
           if (!hasPhoto) return false;
           return String(row?.id || '').trim() === currentStudentId
             || (currentStudentNo && String(row?.student_no || '').trim() === currentStudentNo)
@@ -3131,8 +3141,15 @@
             || (profileEmail && normalized(row?.email || row?.student_email || '') === profileEmail)
             || (profileName && normalized(row?.full_name || '') === profileName);
         });
-        return matchedWithPhoto?.student_photo_url || rawByCurrentId?.student_photo_url || currentStudentDashboardRecord?.student_photo_url || currentStudentDashboardRecord?.profile_photo_url || profile?.profile_photo_url || null;
-      }, [currentStudentDashboardRecord, profile?.id, profile?.auth_user_id, profile?.email, profile?.full_name, profile?.profile_photo_url, studentRecordsRows, studentsRawHook.rows, studentsRawMap, welcomeContext?.full_name]);
+        return matchedWithPhoto?.student_photo_url
+          || matchedWithPhoto?.profile_photo_url
+          || rawByCurrentId?.student_photo_url
+          || currentStudentDashboardRecord?.student_photo_url
+          || welcomeContext?.student_photo_url
+          || currentStudentDashboardRecord?.profile_photo_url
+          || profile?.profile_photo_url
+          || null;
+      }, [currentStudentDashboardRecord, mergedStudentsRows, profile?.id, profile?.auth_user_id, profile?.email, profile?.full_name, profile?.profile_photo_url, studentRecordsRows, studentsRawHook.rows, studentsRawMap, welcomeContext?.full_name, welcomeContext?.student_photo_url]);
 
       const parentEntityRow = useMemo(() => {
         if (role !== ROLE.PARENT) return null;
@@ -3320,13 +3337,23 @@
           : teacherRestrictedStudentRows.filter((student) => String(student.class_id || '').trim() === selectedClassId);
         return rows.map((row) => {
           const parentDetails = resolveStudentParentDetails(row);
+          const rawMatch = (mergedStudentsRows || []).find((student) => {
+            const rowId = String(row?.id || '').trim();
+            const rowProfileId = String(row?.profile_id || '').trim();
+            const rowStudentNo = String(row?.student_no || '').trim();
+            return (rowId && String(student?.id || '').trim() === rowId)
+              || (rowProfileId && String(student?.profile_id || '').trim() === rowProfileId)
+              || (rowStudentNo && String(student?.student_no || '').trim() === rowStudentNo);
+          }) || {};
           return {
+            ...rawMatch,
             ...row,
-            parent_full_name: row.parent_full_name || parentDetails.parent_full_name || '-',
-            parent_contact: row.parent_contact || parentDetails.parent_contact || '-'
+            parent_full_name: row.parent_full_name || rawMatch.parent_full_name || parentDetails.parent_full_name || '-',
+            parent_contact: row.parent_contact || rawMatch.parent_contact || parentDetails.parent_contact || '-',
+            student_photo_url: row.student_photo_url || rawMatch.student_photo_url || ''
           };
         });
-      }, [teacherRestrictedStudentRows, teacherStudentRecordsFilterClassId, linkedParentDetailsByStudentId, fallbackParentDetailsByStudentId]);
+      }, [teacherRestrictedStudentRows, teacherStudentRecordsFilterClassId, linkedParentDetailsByStudentId, fallbackParentDetailsByStudentId, mergedStudentsRows]);
 
       const principalStudentRecordClassOptions = useMemo(() => {
         const seen = new Set();
