@@ -3121,15 +3121,17 @@
         const profileAuthUserId = String(profile?.auth_user_id || '').trim();
         const profileEmail = normalized(profile?.email || '');
         const profileName = normalized(profile?.full_name || welcomeContext?.full_name || '');
+        const welcomeStudentNo = String(welcomeContext?.info?.student_no || '').trim();
         const currentStudentId = String(currentStudentDashboardRecord?.id || '').trim();
-        const currentStudentNo = String(currentStudentDashboardRecord?.student_no || '').trim();
+        const currentStudentNo = String(currentStudentDashboardRecord?.student_no || '').trim() || welcomeStudentNo;
         const rawByCurrentId = currentStudentId ? (studentsRawMap[currentStudentId] || null) : null;
         const candidates = [
           rawByCurrentId,
           currentStudentDashboardRecord,
           ...(mergedStudentsRows || []),
           ...(studentRecordsRows || []),
-          ...(studentsRawHook.rows || [])
+          ...(studentsRawHook.rows || []),
+          ...(managedUsersRows || [])
         ].filter(Boolean);
         const matchedWithPhoto = candidates.find((row) => {
           const hasPhoto = String(row?.student_photo_url || row?.profile_photo_url || row?.avatar_url || '').trim();
@@ -3145,11 +3147,26 @@
           || matchedWithPhoto?.profile_photo_url
           || rawByCurrentId?.student_photo_url
           || currentStudentDashboardRecord?.student_photo_url
-          || welcomeContext?.student_photo_url
           || currentStudentDashboardRecord?.profile_photo_url
+          || welcomeContext?.student_photo_url
+          || profile?.student_photo_url
           || profile?.profile_photo_url
           || null;
-      }, [currentStudentDashboardRecord, mergedStudentsRows, profile?.id, profile?.auth_user_id, profile?.email, profile?.full_name, profile?.profile_photo_url, studentRecordsRows, studentsRawHook.rows, studentsRawMap, welcomeContext?.full_name, welcomeContext?.student_photo_url]);
+      }, [currentStudentDashboardRecord, managedUsersRows, mergedStudentsRows, profile?.id, profile?.auth_user_id, profile?.email, profile?.full_name, profile?.profile_photo_url, profile?.student_photo_url, studentRecordsRows, studentsRawHook.rows, studentsRawMap, welcomeContext?.full_name, welcomeContext?.info?.student_no, welcomeContext?.student_photo_url]);
+
+      const renderStudentDashboardPhotoCard = () => {
+        if (role !== ROLE.STUDENT) return null;
+        return (
+          <div className="card">
+            <h3>My Student Picture</h3>
+            <p className="subtle">This picture comes from Student Management and updates automatically when the school admin uploads or changes it.</p>
+            <div style={{ display:'flex', gap:20, alignItems:'center', flexWrap:'wrap' }}>
+              {renderRecordPhotoThumb(currentStudentDashboardPhotoUrl, profile?.full_name || 'Student Picture', 140)}
+              <div className="subtle">{currentStudentDashboardPhotoUrl ? 'Your latest saved student picture is showing here.' : 'No student picture has been linked to your record yet.'}</div>
+            </div>
+          </div>
+        );
+      };
 
       const parentEntityRow = useMemo(() => {
         if (role !== ROLE.PARENT) return null;
@@ -5399,6 +5416,7 @@
             {page === 'principal-dashboard' && (
               <div className="grid">
                 {renderWelcomeCard()}
+                {renderSelfProfilePhotoCard()}
                 <MetricCards items={[
                   { label: 'Total Students', value: mergedStudentsRows.length },
                   { label: 'Total Teachers', value: mergedTeachersRows.length },
@@ -5497,6 +5515,7 @@
             {page === 'teacher-dashboard' && (
               <div className="grid">
                 {renderWelcomeCard()}
+                {renderSelfProfilePhotoCard()}
                 <MetricCards items={[
                   { label: 'My Students', value: teacherRestrictedStudentRows.length },
                   { label: 'School Classes', value: orderedClassRows.length },
@@ -5525,6 +5544,7 @@
             {page === 'student-dashboard' && (
               <>
                 {renderWelcomeCard()}
+                {renderStudentDashboardPhotoCard()}
                 <MetricCards items={[
                   { label: 'Timetable Entries', value: timetableHook.rows.length },
                   { label: 'Attendance Summary', value: attendanceHook.rows.length },
