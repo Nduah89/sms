@@ -1373,12 +1373,35 @@
       const pageHistoryBootRef = useRef(false);
       const previousPageRef = useRef("dashboard");
       const lastActivityRef = useRef(Date.now());
+      const tabVisibilityRef = useRef(typeof document !== 'undefined' ? document.visibilityState === 'hidden' : false);
+      const suppressAutoReloadUntilRef = useRef(0);
 
       useEffect(() => {
         return () => {
           try { mediaRecordingTimerRef.current && window.clearInterval(mediaRecordingTimerRef.current); } catch {}
           try { mediaRecorderRef.current?.stop?.(); } catch {}
           try { mediaRecorderStreamRef.current?.getTracks?.().forEach((track) => track.stop()); } catch {}
+        };
+      }, []);
+
+      useEffect(() => {
+        const syncTabVisibilityState = () => {
+          const hidden = typeof document !== 'undefined' ? document.visibilityState === 'hidden' : false;
+          tabVisibilityRef.current = hidden;
+          if (hidden) {
+            suppressAutoReloadUntilRef.current = Number.MAX_SAFE_INTEGER;
+            return;
+          }
+          suppressAutoReloadUntilRef.current = Date.now() + 15000;
+        };
+        syncTabVisibilityState();
+        document.addEventListener('visibilitychange', syncTabVisibilityState);
+        window.addEventListener('focus', syncTabVisibilityState);
+        window.addEventListener('blur', syncTabVisibilityState);
+        return () => {
+          document.removeEventListener('visibilitychange', syncTabVisibilityState);
+          window.removeEventListener('focus', syncTabVisibilityState);
+          window.removeEventListener('blur', syncTabVisibilityState);
         };
       }, []);
 
@@ -1417,6 +1440,7 @@
       };
 
       const markUserActivity = (force = false) => {
+        if (!force && tabVisibilityRef.current) return;
         const now = Date.now();
         if (!force && (now - lastActivityRef.current) < 5000) return;
         lastActivityRef.current = now;
@@ -1714,6 +1738,8 @@
 
       const refreshAll = async () => {
         if (!profile) return;
+        if (tabVisibilityRef.current) return;
+        if (Date.now() < suppressAutoReloadUntilRef.current) return;
         await Promise.all([
           studentsHook.fetchRows(), studentsRawHook.fetchRows(), teachersHook.fetchRows(), teachersRawHook.fetchRows(), parentsHook.fetchRows(), parentLinksHook.fetchRows(), accountsHook.fetchRows(), principalsHook.fetchRows(),
           classesHook.fetchRows(), subjectsHook.fetchRows((q)=>q.order('subject_name')), subjectAssignmentsHook.fetchRows(), attendanceHook.fetchRows(), gradesHook.fetchRows(), feesHook.fetchRows(),
@@ -1917,6 +1943,17 @@
             return;
           }
 
+          if (tabVisibilityRef.current) {
+            if (evt === 'SIGNED_OUT' || !session) {
+              setSelfPresenceState('offline');
+            }
+            return;
+          }
+
+          if (Date.now() < suppressAutoReloadUntilRef.current && (evt === 'SIGNED_IN' || evt === 'INITIAL_SESSION' || evt === 'TOKEN_REFRESHED' || evt === 'USER_UPDATED')) {
+            return;
+          }
+
           if (evt === 'SIGNED_IN' || evt === 'INITIAL_SESSION') {
             window.setTimeout(async () => {
               try { await setCurrentPresence(true); } catch {}
@@ -2010,6 +2047,7 @@
 
         const timer = window.setInterval(async () => {
           if (closed) return;
+          if (tabVisibilityRef.current) return;
           const lastActivityAt = readStoredActivity() || lastActivityRef.current;
           if ((Date.now() - lastActivityAt) < IDLE_TIMEOUT_MS) return;
           closed = true;
@@ -2047,6 +2085,8 @@
         if (!profile) return undefined;
 
         const handleProfilesRealtime = async (payload) => {
+          if (tabVisibilityRef.current) return;
+          if (Date.now() < suppressAutoReloadUntilRef.current) return;
           const nextRow = payload?.new || {};
           const prevRow = payload?.old || {};
           const keys = Array.from(new Set([...Object.keys(nextRow), ...Object.keys(prevRow)]));
@@ -2059,26 +2099,32 @@
           await (profile?.school_id ? profilesPresenceHook.fetchRows((q)=>q.eq('school_id', profile.school_id)) : profilesPresenceHook.fetchRows());
         };
 
+        const guardedRefreshAll = async () => {
+          if (tabVisibilityRef.current) return;
+          if (Date.now() < suppressAutoReloadUntilRef.current) return;
+          await refreshAll();
+        };
+
         const channels = [
           supabaseClient.channel('profiles-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, handleProfilesRealtime).subscribe(),
-          supabaseClient.channel('schools-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'schools' }, refreshAll).subscribe(),
-          supabaseClient.channel('students-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, refreshAll).subscribe(),
-          supabaseClient.channel('teachers-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'teachers' }, refreshAll).subscribe(),
-          supabaseClient.channel('parents-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'parents' }, refreshAll).subscribe(),
-          supabaseClient.channel('principals-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'principals' }, refreshAll).subscribe(),
-          supabaseClient.channel('accounts-office-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'accounts_office_staff' }, refreshAll).subscribe(),
-          supabaseClient.channel('parent-links-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'parent_student_links' }, refreshAll).subscribe(),
-          supabaseClient.channel('classes-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'classes' }, refreshAll).subscribe(),
-          supabaseClient.channel('subjects-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'subjects' }, refreshAll).subscribe(),
-          supabaseClient.channel('subject-assignments-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_subject_assignments' }, refreshAll).subscribe(),
-          supabaseClient.channel('attendance-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, refreshAll).subscribe(),
-          supabaseClient.channel('grades-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'grades' }, refreshAll).subscribe(),
-          supabaseClient.channel('fees-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'fee_payments' }, refreshAll).subscribe(),
-          supabaseClient.channel('notifications-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, refreshAll).subscribe(),
-          supabaseClient.channel('timetable-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'timetable' }, refreshAll).subscribe(),
-          supabaseClient.channel('chat-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, refreshAll).subscribe(),
-          supabaseClient.channel('chat-permissions-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'chat_permissions' }, refreshAll).subscribe(),
-          supabaseClient.channel('chat-hides-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'chat_message_hides' }, refreshAll).subscribe()
+          supabaseClient.channel('schools-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'schools' }, guardedRefreshAll).subscribe(),
+          supabaseClient.channel('students-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, guardedRefreshAll).subscribe(),
+          supabaseClient.channel('teachers-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'teachers' }, guardedRefreshAll).subscribe(),
+          supabaseClient.channel('parents-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'parents' }, guardedRefreshAll).subscribe(),
+          supabaseClient.channel('principals-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'principals' }, guardedRefreshAll).subscribe(),
+          supabaseClient.channel('accounts-office-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'accounts_office_staff' }, guardedRefreshAll).subscribe(),
+          supabaseClient.channel('parent-links-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'parent_student_links' }, guardedRefreshAll).subscribe(),
+          supabaseClient.channel('classes-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'classes' }, guardedRefreshAll).subscribe(),
+          supabaseClient.channel('subjects-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'subjects' }, guardedRefreshAll).subscribe(),
+          supabaseClient.channel('subject-assignments-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_subject_assignments' }, guardedRefreshAll).subscribe(),
+          supabaseClient.channel('attendance-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, guardedRefreshAll).subscribe(),
+          supabaseClient.channel('grades-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'grades' }, guardedRefreshAll).subscribe(),
+          supabaseClient.channel('fees-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'fee_payments' }, guardedRefreshAll).subscribe(),
+          supabaseClient.channel('notifications-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, guardedRefreshAll).subscribe(),
+          supabaseClient.channel('timetable-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'timetable' }, guardedRefreshAll).subscribe(),
+          supabaseClient.channel('chat-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, guardedRefreshAll).subscribe(),
+          supabaseClient.channel('chat-permissions-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'chat_permissions' }, guardedRefreshAll).subscribe(),
+          supabaseClient.channel('chat-hides-ch').on('postgres_changes', { event: '*', schema: 'public', table: 'chat_message_hides' }, guardedRefreshAll).subscribe()
         ];
         return () => channels.forEach(ch => supabaseClient.removeChannel(ch));
       }, [profile?.id, role]);
