@@ -3719,20 +3719,19 @@
       const teacherStudentRecordClassOptions = useMemo(() => {
         const options = [{ value: '', label: 'All Classes' }];
         const seen = new Set();
-        const classIds = (teacherAccessibleClassIds || []).length
-          ? teacherAccessibleClassIds
-          : Array.from(new Set((teacherRestrictedStudentRows || []).map((student) => String(student.class_id || '').trim()).filter(Boolean)));
-        classIds.forEach((classId) => {
+        const linkedClassRows = (teacherAccessibleClassIds || []).length
+          ? orderedClassRows.filter((row) => teacherAccessibleClassIds.includes(String(row.id || '').trim()))
+          : orderedClassRows;
+        linkedClassRows.forEach((row) => {
+          const classId = String(row?.id || '').trim();
           if (!classId || seen.has(classId)) return;
           seen.add(classId);
-          const linkedClassRow = orderedClassRows.find((row) => String(row.id || '').trim() === classId) || null;
-          const fallbackStudent = teacherRestrictedStudentRows.find((student) => String(student.class_id || '').trim() === classId) || null;
-          const label = String(buildClassDisplay(linkedClassRow) || classNameMap[classId] || fallbackStudent?.student_main_class_name || fallbackStudent?.class_name || '').trim();
+          const label = String(buildClassDisplay(row) || classNameMap[classId] || row?.class_name || row?.name || '').trim();
           if (!label) return;
           options.push({ value: classId, label });
         });
         return options;
-      }, [teacherAccessibleClassIds, teacherRestrictedStudentRows, orderedClassRows, classNameMap]);
+      }, [teacherAccessibleClassIds, orderedClassRows, classNameMap]);
 
       const teacherVisibleStudentRecordsRows = useMemo(() => {
         const selectedClassId = String(teacherStudentRecordsFilterClassId || '').trim();
@@ -5990,7 +5989,7 @@
               </div>
             )}
             {page === 'students' && (
-              (role === ROLE.PRINCIPAL || role === ROLE.TEACHER) ? (
+              (role === ROLE.PRINCIPAL || role === ROLE.TEACHER || role === ROLE.ACCOUNTS) ? (
                 <div className="card">
                   <h3>Student Records</h3>
                   <p className="subtle">View only student records. All saved student changes, including linked parent details, reflect automatically here.</p>
