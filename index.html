@@ -1375,6 +1375,7 @@
       const lastActivityRef = useRef(Date.now());
       const tabVisibilityRef = useRef(typeof document !== 'undefined' ? document.visibilityState === 'hidden' : false);
       const suppressAutoReloadUntilRef = useRef(0);
+      const hasTabBeenHiddenRef = useRef(false);
 
       useEffect(() => {
         return () => {
@@ -1387,12 +1388,18 @@
       useEffect(() => {
         const syncTabVisibilityState = () => {
           const hidden = typeof document !== 'undefined' ? document.visibilityState === 'hidden' : false;
+          const wasHidden = tabVisibilityRef.current;
           tabVisibilityRef.current = hidden;
           if (hidden) {
+            hasTabBeenHiddenRef.current = true;
             suppressAutoReloadUntilRef.current = Number.MAX_SAFE_INTEGER;
             return;
           }
-          suppressAutoReloadUntilRef.current = Date.now() + 15000;
+          if (wasHidden || hasTabBeenHiddenRef.current) {
+            suppressAutoReloadUntilRef.current = Date.now() + 15000;
+            return;
+          }
+          suppressAutoReloadUntilRef.current = 0;
         };
         syncTabVisibilityState();
         document.addEventListener('visibilitychange', syncTabVisibilityState);
