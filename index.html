@@ -3819,7 +3819,13 @@
             .filter(Boolean)
         );
 
-        const rows = (studentRecordsRows || []).filter((student) => {
+        const candidateRows = [...new Map(
+          [...(studentRecordsRows || []), ...(mergedStudentsRows || []), ...(studentsRawHook.rows || [])]
+            .filter(Boolean)
+            .map((row) => [String(row.id || row.student_id || row.profile_id || ''), row])
+        ).values()];
+
+        const rows = candidateRows.filter((student) => {
           const studentId = String(student.id || student.student_id || '').trim();
           const studentName = normalized(student.full_name || '');
           const studentParentName = normalized(student.parent_full_name || '');
@@ -3830,11 +3836,18 @@
             || (studentName && linkedStudentNamesFromComputedParent.has(studentName))
             || (parentName && studentParentName === parentName)
             || (studentParentContact && contactValues.has(studentParentContact));
+        }).map((row) => {
+          const parentDetails = resolveStudentParentDetails(row);
+          return {
+            ...row,
+            parent_full_name: row.parent_full_name || parentDetails.parent_full_name || '',
+            parent_contact: row.parent_contact || parentDetails.parent_contact || ''
+          };
         });
 
         return [...new Map(rows.map((row) => [String(row.id || row.student_id || ''), row])).values()]
           .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
-      }, [role, parentEntityRow, parentLinksRows, profile?.full_name, profile?.phone, profile?.profile_phone, profile?.email, studentRecordsRows, computedParentsRows, welcomeContext?.full_name]);
+      }, [role, parentEntityRow, parentLinksRows, profile?.full_name, profile?.phone, profile?.profile_phone, profile?.email, studentRecordsRows, mergedStudentsRows, studentsRawHook.rows, computedParentsRows, welcomeContext?.full_name]);
 
       const renderLinkedStudentPhotoCards = () => {
         if (role !== ROLE.PARENT) return null;
@@ -3963,7 +3976,12 @@
           rows = rows.filter((row) => String(row.student_id || '').trim() === studentId);
         } else if (role === ROLE.PARENT) {
           const linkedIds = new Set((parentLinkedStudentRows || []).map((row) => String(row.id || row.student_id || '').trim()).filter(Boolean));
-          rows = rows.filter((row) => linkedIds.has(String(row.student_id || '').trim()));
+          const linkedNames = new Set((parentLinkedStudentRows || []).map((row) => String(row.full_name || '').trim().toLowerCase()).filter(Boolean));
+          rows = rows.filter((row) => {
+            const feeStudentId = String(row.student_id || '').trim();
+            const feeStudentName = String(row.student_name || '').trim().toLowerCase();
+            return linkedIds.has(feeStudentId) || (feeStudentName && linkedNames.has(feeStudentName));
+          });
         }
         if ((role === ROLE.ADMIN || role === ROLE.ACCOUNTS) && feeStatusFilter && feeStatusFilter !== 'All') {
           rows = rows.filter((row) => String(row.payment_status || '').trim() === String(feeStatusFilter || '').trim());
@@ -6352,7 +6370,7 @@
                   { label: 'Timetable Entries', value: timetableHook.rows.length },
                   { label: 'Attendance Summary', value: attendanceHook.rows.length },
                   { label: 'Grades', value: gradesHook.rows.length },
-                  { label: 'Outstanding Balance', value: formatCurrency(feesHook.rows.reduce((s,r)=>s+Number(r.balance||0),0)) }
+                  { label: 'Outstanding Balance', value: formatCurrency(visibleFeeRows.reduce((s,r)=>s+Number(r.balance||0),0)) }
                 ]} />
               </>
             )}
