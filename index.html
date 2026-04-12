@@ -507,13 +507,14 @@
       gap: 12px;
       padding: 12px 14px;
       margin-bottom: 12px;
-      border-radius: 16px;
-      border: 1px solid rgba(255,255,255,0.14);
-      background: rgba(255,255,255,0.12);
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.07));
       color: #fff;
       font-weight: 800;
       cursor: pointer;
-      box-shadow: 0 12px 28px rgba(15,23,42,0.12);
+      box-shadow: 0 10px 22px rgba(15,23,42,0.18);
+      backdrop-filter: blur(10px);
     }
     .mobile-nav-toggle .mobile-nav-icon { font-size: 18px; line-height: 1; }
     .mobile-nav-panel { display: contents; }
@@ -612,19 +613,45 @@
       .auth-scene { inset: 70px 0 0 0; transform: scale(0.82); transform-origin: top center; }
       .auth-register-scroll { max-height: none; overflow: visible; }
     }
+    
+    .mobile-sidebar-overlay {
+      display: none;
+    }
+
+    @media (max-width: 880px) {
+      .mobile-sidebar-overlay {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(2, 6, 23, 0.52);
+        backdrop-filter: blur(2px);
+        z-index: 35;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.22s ease;
+      }
+      .mobile-sidebar-overlay.show {
+        opacity: 1;
+        pointer-events: auto;
+      }
+    }
+
     @media (max-width: 880px) {
       .app-shell { grid-template-columns: 1fr; }
       .sidebar {
         position: fixed;
         left: 0;
         top: 0;
+        bottom: 0;
         transform: translateX(-100%);
-        width: min(300px, calc(100vw - 20px));
-        transition: 0.25s ease;
+        width: min(320px, calc(100vw - 42px));
+        transition: transform 0.24s ease;
         z-index: 40;
         padding: 12px;
-        border-radius: 0 18px 18px 0;
-        box-shadow: 0 20px 50px rgba(15,23,42,0.32);
+        border-radius: 0 20px 20px 0;
+        box-shadow: 0 24px 64px rgba(15,23,42,0.38);
+        overflow-y: auto;
+        background: linear-gradient(180deg, #0f172a, #081225 72%, #050d1a);
       }
       .sidebar.open { transform: translateX(0); }
       .mobile-nav-toggle { display: inline-flex; }
@@ -634,10 +661,77 @@
         flex-direction: column;
         gap: 12px;
       }
-      .nav-group { margin-bottom: 12px; }
-      .nav-btn { padding: 11px 12px; border-radius: 12px; }
+      .brand {
+        margin-bottom: 18px;
+        padding: 10px 8px 4px;
+      }
+      .brand-badge {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+      }
+      .sidebar h1 {
+        font-size: 20px;
+        line-height: 1.05;
+      }
+      .nav-group {
+        margin-bottom: 12px;
+        padding: 12px;
+        border-radius: 16px;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.06);
+      }
+      .nav-label {
+        margin-bottom: 10px;
+        color: rgba(148,163,184,0.92);
+      }
+      .nav-btn {
+        padding: 12px 13px;
+        border-radius: 12px;
+        margin-bottom: 8px;
+      }
+      .nav-btn:hover, .nav-btn.active {
+        background: rgba(255,255,255,0.12);
+      }
       .cards-4, .cards-3, .cards-2, .form-grid, .form-grid-3, .two { grid-template-columns: 1fr; }
-      .main { padding: 16px; }
+      .main {
+        padding: 14px;
+      }
+      .topbar {
+        margin-bottom: 14px;
+      }
+      .topbar .page-title h2 {
+        font-size: 24px;
+      }
+      .topbar .actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        width: 100%;
+      }
+      .topbar .actions .btn {
+        width: 100%;
+      }
+      .card {
+        border-radius: 18px;
+        padding: 15px;
+        box-shadow: 0 12px 28px rgba(15,23,42,0.08);
+      }
+      .metric {
+        font-size: 22px;
+      }
+      .toolbar {
+        gap: 10px;
+      }
+      .chat-layout,
+      .chat-layout.no-monitor,
+      .chat-layout.monitor-only {
+        grid-template-columns: 1fr !important;
+      }
+      .chat-sidebar,
+      .chat-thread-panel,
+      .chat-monitor-panel {
+        border-radius: 20px;
+      }
     }
     
     @media (max-width: 1100px) {
@@ -760,9 +854,13 @@
       }
       body {
         font-size: 14px;
+        background: #f4f7fb;
+      }
+      .app-shell {
+        background: #f4f7fb;
       }
       .main {
-        padding: 12px;
+        padding: 10px;
       }
       .page-title h1,
       .page-title h2,
@@ -779,6 +877,7 @@
       .card {
         padding: 14px;
         border-radius: 18px;
+        box-shadow: 0 10px 24px rgba(15,23,42,0.07);
       }
       .toolbar,
       .topbar,
@@ -791,6 +890,10 @@
       .icon-btn {
         width: 100%;
         justify-content: center;
+      }
+      .topbar .actions {
+        display: grid;
+        grid-template-columns: 1fr;
       }
       .topbar .actions .btn,
       .chat-thread-actions .btn,
@@ -851,14 +954,15 @@
         height: 300px;
       }
       .auth-shell {
-        padding: 10px;
+        padding: 8px;
       }
       .auth-card {
         border-radius: 22px;
+        box-shadow: 0 18px 42px rgba(15,23,42,0.14);
       }
       .auth-left {
-        padding: 22px 18px 10px;
-        min-height: 430px;
+        padding: 20px 16px 8px;
+        min-height: 360px;
       }
       .auth-right {
         padding: 16px 14px 22px;
@@ -880,11 +984,11 @@
         line-height: 1.5;
       }
       .auth-visual {
-        min-height: 360px;
+        min-height: 290px;
       }
       .auth-scene {
-        inset: 90px 0 0 0;
-        transform: scale(0.56);
+        inset: 70px 0 0 0;
+        transform: scale(0.44);
         transform-origin: top center;
       }
       .auth-surface-tabs {
@@ -905,6 +1009,7 @@
       .auth-form-card {
         border-radius: 22px;
         padding: 16px 14px 18px;
+        box-shadow: 0 14px 32px rgba(99,102,241,0.12);
       }
       .auth-form-card h2 {
         font-size: 24px !important;
@@ -946,19 +1051,19 @@
 
     @media (max-width: 420px) {
       .main {
-        padding: 10px;
+        padding: 8px;
       }
       .card {
         padding: 12px;
       }
       .auth-left {
-        min-height: 380px;
-      }
-      .auth-visual {
         min-height: 320px;
       }
+      .auth-visual {
+        min-height: 250px;
+      }
       .auth-scene {
-        transform: scale(0.48);
+        transform: scale(0.38);
       }
       .auth-visual-caption h1 {
         font-size: 26px;
@@ -6854,6 +6959,10 @@
           <Sidebar role={role} page={page} setPage={setPage} user={profile} school={school} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} chatUnreadCount={chatUnreadCount} onLogout={async()=>{ if (profile?.id) markPresenceLocally(profile.id, false, new Date().toISOString()); setSelfPresenceState('offline'); await signOut(); setProfile(null); setWelcomeContext(null); }} />
           <main className="main">
             <div className="topbar">
+              <button type="button" className="mobile-nav-toggle" onClick={() => setMobileOpen((prev) => !prev)} style={{ display: 'inline-flex' }}>
+                <span>{mobileOpen ? 'Close Menu' : 'Menu'}</span>
+                <span className="mobile-nav-icon">{mobileOpen ? '✕' : '☰'}</span>
+              </button>
               <div className="page-title">
                 <div className="actions"><button className="btn secondary mobile-nav-toggle" onClick={() => setMobileOpen(!mobileOpen)}>Menu</button></div>
                 <h2>{getPageLabel(page, role) || "Dashboard"}</h2>
@@ -8375,7 +8484,8 @@
               </div>
             )}
           </main>
-        </div>
+          </div>
+        </>
       );
     }
 
