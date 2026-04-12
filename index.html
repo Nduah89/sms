@@ -1674,6 +1674,7 @@
       const [studentForm, setStudentForm] = useState(buildManagedForm('student'));
       const [teacherForm, setTeacherForm] = useState(buildManagedForm('teacher'));
       const [parentForm, setParentForm] = useState(buildManagedForm('parent'));
+      const [accountsForm, setAccountsForm] = useState(buildManagedForm('accounts_office'));
       const [userForm, setUserForm] = useState(buildManagedForm('student'));
       const [classForm, setClassForm] = useState({ id: '', class_name: '', capacity: '' });
       const [subjectForm, setSubjectForm] = useState({ id: "", subject_name: "", subject_code: "" });
@@ -3449,6 +3450,18 @@
         force_password_change: String(row.force_password_change ?? true)
       });
 
+      const buildAccountsFormFromRow = (row) => ({
+        ...buildManagedForm('accounts_office'),
+        profile_id: row.profile_id || '',
+        role_name: 'accounts_office',
+        full_name: row.full_name || '',
+        email: row.email || '',
+        phone: row.phone || row.profile_phone || '',
+        username: row.username || '',
+        account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
+        force_password_change: String(row.force_password_change ?? true)
+      });
+
       const buildSubjectFormFromRow = (row) => ({
         id: row.id || '',
         subject_name: row.subject_name || '',
@@ -3757,24 +3770,14 @@
 
       const teacherAttendanceClassOptions = useMemo(() => {
         const options = [{ value: '', label: 'Select Class' }];
-        const seen = new Set();
-        (teacherRestrictedStudentRows || []).forEach((student) => {
-          const classId = String(student.class_id || '').trim();
-          if (!classId || seen.has(classId)) return;
-          const linkedClassRow = orderedClassRows.find((row) => String(row.id || '').trim() === classId) || null;
-          const label = String(
-            buildClassDisplay(linkedClassRow)
-            || classNameMap[classId]
-            || student.student_main_class_name
-            || student.class_name
-            || ''
-          ).trim();
-          if (!label) return;
-          seen.add(classId);
+        orderedClassRows.forEach((row) => {
+          const classId = String(row?.id || '').trim();
+          const label = String(buildClassDisplay(row) || classNameMap[classId] || row?.class_name || row?.name || '').trim();
+          if (!classId || !label) return;
           options.push({ value: classId, label });
         });
         return options;
-      }, [teacherRestrictedStudentRows, orderedClassRows, classNameMap]);
+      }, [orderedClassRows, classNameMap]);
 
       const teacherStudentRecordClassOptions = useMemo(() => {
         const options = [{ value: '', label: 'All Classes' }];
@@ -3889,14 +3892,14 @@
       const teacherAttendanceStudents = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
         const targetClassId = String(attendanceForm.class_id || '').trim();
-        const rows = teacherRestrictedStudentRows.filter((student) => {
+        const rows = (teacherStudentRecordsRows || []).filter((student) => {
           if (!student?.class_id) return false;
           return targetClassId ? String(student.class_id || '').trim() === targetClassId : true;
         });
         return rows.sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
-      }, [role, attendanceForm.class_id, teacherRestrictedStudentRows]);
+      }, [role, attendanceForm.class_id, teacherStudentRecordsRows]);
 
-      const teacherAssignableStudents = useMemo(() => teacherRestrictedStudentRows, [teacherRestrictedStudentRows]);
+      const teacherAssignableStudents = useMemo(() => teacherStudentRecordsRows, [teacherStudentRecordsRows]);
 
 
 
@@ -5453,14 +5456,40 @@
       };
 
       const roleScopedManagedUsers = useMemo(() => {
+        if (userForm.role_name === 'parent') {
+          return [...computedParentsRows]
+            .map((row) => ({
+              ...row,
+              role_name: 'parent',
+              profile_id: row.profile_id || row.id || '',
+              class_name: row.linked_class_names || row.class_name || ''
+            }))
+            .filter((row) => String(row.profile_id || '').trim())
+            .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
+        }
+
+        if (userForm.role_name === 'accounts_office') {
+          return [...(accountsHook.rows || [])]
+            .map((row) => ({
+              ...row,
+              role_name: 'accounts_office',
+              profile_id: row.profile_id || row.id || '',
+              class_name: row.class_name || ''
+            }))
+            .filter((row) => String(row.profile_id || '').trim())
+            .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
+        }
+
         return [...managedUsersRows]
           .filter((row) => row.role_name === userForm.role_name)
           .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
-      }, [managedUsersRows, userForm.role_name]);
+      }, [managedUsersRows, computedParentsRows, accountsHook.rows, userForm.role_name]);
 
       const selectedManagedUser = useMemo(() => {
-        return managedUsersRows.find((row) => row.profile_id === userForm.profile_id) || null;
-      }, [managedUsersRows, userForm.profile_id]);
+        return roleScopedManagedUsers.find((row) => row.profile_id === userForm.profile_id)
+          || managedUsersRows.find((row) => row.profile_id === userForm.profile_id)
+          || null;
+      }, [roleScopedManagedUsers, managedUsersRows, userForm.profile_id]);
 
       const schoolSubjectRows = useMemo(() => {
         return [...(subjectsHook.rows || [])].sort((a, b) => String(a.subject_name || '').localeCompare(String(b.subject_name || '')));
@@ -5485,24 +5514,14 @@
 
       const teacherGradeFilterClassOptions = useMemo(() => {
         const options = [{ value: '', label: 'All Classes' }];
-        const seen = new Set();
-        (teacherRestrictedStudentRows || []).forEach((student) => {
-          const classId = String(student.class_id || '').trim();
-          if (!classId || seen.has(classId)) return;
-          const linkedClassRow = orderedClassRows.find((row) => String(row.id || '').trim() === classId) || null;
-          const label = String(
-            buildClassDisplay(linkedClassRow)
-            || classNameMap[classId]
-            || student.student_main_class_name
-            || student.class_name
-            || ''
-          ).trim();
-          if (!label) return;
-          seen.add(classId);
+        orderedClassRows.forEach((row) => {
+          const classId = String(row?.id || '').trim();
+          const label = String(buildClassDisplay(row) || classNameMap[classId] || row?.class_name || row?.name || '').trim();
+          if (!classId || !label) return;
           options.push({ value: classId, label });
         });
         return options;
-      }, [teacherRestrictedStudentRows, orderedClassRows, classNameMap]);
+      }, [orderedClassRows, classNameMap]);
 
       const teacherGradeEntryClassOptions = useMemo(() => {
         const options = [{ value: '', label: 'Select Class' }];
@@ -5513,13 +5532,13 @@
       }, [teacherGradeFilterClassOptions]);
 
       const teacherGradeStudentOptions = useMemo(() => {
-        return (teacherAssignableStudents || [])
+        return (teacherStudentRecordsRows || [])
           .filter((student) => {
             if (!gradeForm.filter_class_name) return true;
             return String(student.class_id || '').trim() === String(gradeForm.filter_class_name || '').trim();
           })
           .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
-      }, [teacherAssignableStudents, gradeForm.filter_class_name]);
+      }, [teacherStudentRecordsRows, gradeForm.filter_class_name]);
 
       const teacherAcademicYearOptions = useMemo(() => (
         getAcademicYearOptions(
@@ -5677,7 +5696,8 @@
       };
 
       const handleCredentialSelection = (profileId) => {
-        const selectedRow = managedUsersRows.find((row) => row.profile_id === profileId);
+        const selectedRow = roleScopedManagedUsers.find((row) => row.profile_id === profileId)
+          || managedUsersRows.find((row) => row.profile_id === profileId);
         if (!selectedRow) {
           setUserForm(buildManagedForm(userForm.role_name));
           return;
@@ -6269,26 +6289,35 @@
             )}
 
             {page === 'accounts-staff' && (
-              <div className="card">
-                <h3>Accounts Office Staff</h3>
-                <div className="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Credentials</th><th>Actions</th></tr></thead><tbody>
-                  {accountsHook.rows.length === 0 && <tr><td colSpan="5"><div className="empty">No records found</div></td></tr>}
-                  {accountsHook.rows.map(r => {
-                    const ref = managedUserRefMap[r.profile_id];
-                    return <tr key={r.id}>
-                      <td>{r.full_name}</td>
-                      <td>{r.email}</td>
-                      <td>{r.phone}</td>
-                      <td>{ref ? <div className="subtle"><div>{ref.email || '-'}</div><div>Temp: {ref.temporary_password}</div><div>Issued: {formatDate(ref.issued_at)}</div></div> : <span className="subtle">No credentials saved yet</span>}</td>
-                      <td>{canSchoolAdminManageUsers ? <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-                        <button className="btn" onClick={()=>handleProvisionManagedUser(r)}>{ref ? 'Reset Login' : 'Create Login'}</button>
-                        <button className="btn secondary" onClick={()=>copyText(buildManagedUserReferenceText(r), 'User credential reference copied to clipboard')}>Copy</button>
-                        <button className="btn danger" onClick={()=>handleDeleteManagedUser(r)}>Permanent Delete</button>
-                      </div> : <span className="subtle">School admin only</span>}</td>
-                    </tr>
-                  })}
-                </tbody></table></div>
-              </div>
+              <GenericCrudPage
+                title="Accounts Office Staff Management"
+                description="Add, edit, and permanently delete accounts office staff records. These changes are saved to Supabase through the managed user backend, and login credentials can still be created or reset from here."
+                columns={[
+                  { key: 'full_name', label: 'Full Name' },
+                  { key: 'email', label: 'Email' },
+                  { key: 'phone', label: 'Phone' },
+                  { key: 'account_status', label: 'Account', render: (_, row) => <span className={classNames('chip', normalizeAccountStatus(row.account_status || row.status || 'active') === 'active' ? 'success' : normalizeAccountStatus(row.account_status || row.status || 'active') === 'archived' ? 'warning' : 'danger')}>{normalizeAccountStatus(row.account_status || row.status || 'active')}</span> }
+                ]}
+                rows={accountsHook.rows}
+                loading={accountsHook.loading}
+                formState={accountsForm}
+                setFormState={setAccountsForm}
+                fields={[
+                  { key: 'full_name', label: 'Full Name' },
+                  { key: 'email', label: 'Email', type: 'email' },
+                  { key: 'phone', label: 'Phone' },
+                  { key: 'username', label: 'Username' },
+                  { key: 'account_status', label: 'Account Status', type: 'select', options: statusOptions },
+                  { key: 'force_password_change', label: 'Force First Login Password Change', type: 'select', options: yesNoOptions }
+                ]}
+                onSave={() => saveManagedUserRecord(accountsForm, setAccountsForm, 'accounts_office')}
+                onDelete={(id, row) => handleDeleteManagedUser(row)}
+                onEdit={(row) => setAccountsForm(buildAccountsFormFromRow(row))}
+                rowActions={(row) => canSchoolAdminManageUsers ? <>
+                  <button className="btn secondary" onClick={() => openManagedUserCredentials(row)}>User Accounts</button>
+                  <button className="btn warning" onClick={() => handleProvisionManagedUser(row)}>{String(row.auth_user_id || '').trim() ? 'Reset Login' : 'Create Login'}</button>
+                </> : null}
+              />
             )}
 
             {page === 'principals' && (
