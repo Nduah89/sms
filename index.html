@@ -509,15 +509,22 @@
       margin-bottom: 12px;
       border-radius: 14px;
       border: 1px solid rgba(255,255,255,0.10);
-      background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.07));
+      background: linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.08));
       color: #fff;
       font-weight: 800;
       cursor: pointer;
-      box-shadow: 0 10px 22px rgba(15,23,42,0.18);
-      backdrop-filter: blur(10px);
+      box-shadow: 0 10px 22px rgba(15,23,42,0.16);
+      backdrop-filter: blur(8px);
     }
     .mobile-nav-toggle .mobile-nav-icon { font-size: 18px; line-height: 1; }
     .mobile-nav-panel { display: contents; }
+    .mobile-sidebar-overlay {
+      display: none;
+    }
+    .main > .topbar > .mobile-nav-toggle {
+      display: none;
+    }
+
     .empty { padding: 30px; text-align: center; color: var(--text-soft); }
     .printable { background: var(--card); padding: 24px; border-radius: 18px; border: 1px solid var(--line); }
     .chat-box { height: 520px; overflow: auto; border: 1px solid rgba(255,255,255,0.48); border-radius: 30px; padding: 18px; background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(244,247,255,0.94)); box-shadow: 0 22px 50px rgba(80, 90, 140, 0.12); backdrop-filter: blur(14px); }
@@ -613,30 +620,30 @@
       .auth-scene { inset: 70px 0 0 0; transform: scale(0.82); transform-origin: top center; }
       .auth-register-scroll { max-height: none; overflow: visible; }
     }
-    
-    .mobile-sidebar-overlay {
-      display: none;
-    }
-
     @media (max-width: 880px) {
       .mobile-sidebar-overlay {
         display: block;
         position: fixed;
         inset: 0;
-        background: rgba(2, 6, 23, 0.52);
+        background: rgba(2, 6, 23, 0.5);
         backdrop-filter: blur(2px);
         z-index: 35;
         opacity: 0;
         pointer-events: none;
-        transition: opacity 0.22s ease;
+        transition: opacity 0.2s ease;
       }
       .mobile-sidebar-overlay.show {
         opacity: 1;
         pointer-events: auto;
       }
-    }
-
-    @media (max-width: 880px) {
+      .main > .topbar > .mobile-nav-toggle {
+        display: inline-flex;
+        width: auto;
+        margin-bottom: 0;
+      }
+      .sidebar > .mobile-nav-toggle {
+        display: none;
+      }
       .app-shell { grid-template-columns: 1fr; }
       .sidebar {
         position: fixed;
@@ -644,14 +651,13 @@
         top: 0;
         bottom: 0;
         transform: translateX(-100%);
-        width: min(320px, calc(100vw - 42px));
+        width: min(310px, calc(100vw - 28px));
         transition: transform 0.24s ease;
         z-index: 40;
         padding: 12px;
-        border-radius: 0 20px 20px 0;
-        box-shadow: 0 24px 64px rgba(15,23,42,0.38);
+        border-radius: 0 18px 18px 0;
+        box-shadow: 0 24px 60px rgba(15,23,42,0.34);
         overflow-y: auto;
-        background: linear-gradient(180deg, #0f172a, #081225 72%, #050d1a);
       }
       .sidebar.open { transform: translateX(0); }
       .mobile-nav-toggle { display: inline-flex; }
@@ -662,66 +668,43 @@
         gap: 12px;
       }
       .brand {
-        margin-bottom: 18px;
-        padding: 10px 8px 4px;
+        margin-bottom: 16px;
       }
       .brand-badge {
         width: 42px;
         height: 42px;
-        border-radius: 12px;
       }
       .sidebar h1 {
         font-size: 20px;
-        line-height: 1.05;
+        line-height: 1.08;
       }
       .nav-group {
         margin-bottom: 12px;
-        padding: 12px;
-        border-radius: 16px;
+        padding: 10px;
+        border-radius: 14px;
         background: rgba(255,255,255,0.04);
-        border: 1px solid rgba(255,255,255,0.06);
-      }
-      .nav-label {
-        margin-bottom: 10px;
-        color: rgba(148,163,184,0.92);
+        border: 1px solid rgba(255,255,255,0.05);
       }
       .nav-btn {
-        padding: 12px 13px;
+        padding: 11px 12px;
         border-radius: 12px;
         margin-bottom: 8px;
       }
-      .nav-btn:hover, .nav-btn.active {
-        background: rgba(255,255,255,0.12);
-      }
       .cards-4, .cards-3, .cards-2, .form-grid, .form-grid-3, .two { grid-template-columns: 1fr; }
-      .main {
-        padding: 14px;
-      }
-      .topbar {
-        margin-bottom: 14px;
-      }
-      .topbar .page-title h2 {
-        font-size: 24px;
-      }
+      .main { padding: 14px; }
+      .topbar { margin-bottom: 14px; }
+      .topbar .page-title h2 { font-size: 24px; }
       .topbar .actions {
         display: grid;
         grid-template-columns: 1fr 1fr;
         width: 100%;
       }
-      .topbar .actions .btn {
-        width: 100%;
-      }
+      .topbar .actions .btn { width: 100%; }
       .card {
         border-radius: 18px;
         padding: 15px;
-        box-shadow: 0 12px 28px rgba(15,23,42,0.08);
       }
-      .metric {
-        font-size: 22px;
-      }
-      .toolbar {
-        gap: 10px;
-      }
+      .metric { font-size: 22px; }
       .chat-layout,
       .chat-layout.no-monitor,
       .chat-layout.monitor-only {
@@ -742,28 +725,6 @@
     }
 
     @media (max-width: 900px) {
-      .app-shell {
-        grid-template-columns: 1fr;
-      }
-      .sidebar {
-        position: sticky;
-        top: 0;
-        z-index: 40;
-        border-radius: 0 0 18px 18px;
-        padding: 14px;
-      }
-      .main {
-        padding: 14px;
-      }
-      .topbar {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 12px;
-      }
-      .topbar .actions {
-        width: 100%;
-        justify-content: space-between;
-      }
       .grid,
       .cards-2,
       .cards-3,
@@ -784,19 +745,9 @@
       .field-inline {
         flex: 1 1 100%;
       }
-      .metric {
-        font-size: 24px;
-      }
-      .card {
-        border-radius: 20px;
-      }
       .table-wrap {
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
-      }
-      th, td {
-        padding: 10px 12px;
-        font-size: 13px;
       }
       .chat-contacts,
       .chat-monitor-list {
@@ -807,18 +758,13 @@
         min-height: 360px;
         height: 360px;
       }
-      .chat-compose-panel,
-      .chat-thread-topbar,
-      .chat-contact-btn {
-        border-radius: 18px;
-      }
       .auth-card {
         grid-template-columns: 1fr;
         min-height: auto;
         border-radius: 24px;
       }
       .auth-left {
-        min-height: 520px;
+        min-height: 500px;
         border-right: 0;
         border-bottom: 1px solid rgba(15, 23, 42, 0.04);
       }
@@ -826,11 +772,11 @@
         padding: 22px 18px 24px;
       }
       .auth-visual {
-        min-height: 480px;
+        min-height: 430px;
       }
       .auth-scene {
         inset: 110px 0 0 0;
-        transform: scale(0.82);
+        transform: scale(0.76);
         transform-origin: top center;
       }
       .auth-panel {
@@ -840,12 +786,6 @@
       .auth-surface-tabs {
         max-width: 100%;
       }
-      .nav-shell {
-        width: 100%;
-      }
-      .nav-group {
-        grid-template-columns: 1fr;
-      }
     }
 
     @media (max-width: 640px) {
@@ -854,9 +794,6 @@
       }
       body {
         font-size: 14px;
-        background: #f4f7fb;
-      }
-      .app-shell {
         background: #f4f7fb;
       }
       .main {
@@ -877,7 +814,6 @@
       .card {
         padding: 14px;
         border-radius: 18px;
-        box-shadow: 0 10px 24px rgba(15,23,42,0.07);
       }
       .toolbar,
       .topbar,
@@ -890,10 +826,6 @@
       .icon-btn {
         width: 100%;
         justify-content: center;
-      }
-      .topbar .actions {
-        display: grid;
-        grid-template-columns: 1fr;
       }
       .topbar .actions .btn,
       .chat-thread-actions .btn,
@@ -958,11 +890,10 @@
       }
       .auth-card {
         border-radius: 22px;
-        box-shadow: 0 18px 42px rgba(15,23,42,0.14);
       }
       .auth-left {
         padding: 20px 16px 8px;
-        min-height: 360px;
+        min-height: 340px;
       }
       .auth-right {
         padding: 16px 14px 22px;
@@ -984,11 +915,11 @@
         line-height: 1.5;
       }
       .auth-visual {
-        min-height: 290px;
+        min-height: 260px;
       }
       .auth-scene {
-        inset: 70px 0 0 0;
-        transform: scale(0.44);
+        inset: 72px 0 0 0;
+        transform: scale(0.42);
         transform-origin: top center;
       }
       .auth-surface-tabs {
@@ -1009,7 +940,6 @@
       .auth-form-card {
         border-radius: 22px;
         padding: 16px 14px 18px;
-        box-shadow: 0 14px 32px rgba(99,102,241,0.12);
       }
       .auth-form-card h2 {
         font-size: 24px !important;
@@ -1051,19 +981,19 @@
 
     @media (max-width: 420px) {
       .main {
-        padding: 8px;
+        padding: 10px;
       }
       .card {
         padding: 12px;
       }
       .auth-left {
-        min-height: 320px;
+        min-height: 380px;
       }
       .auth-visual {
-        min-height: 250px;
+        min-height: 320px;
       }
       .auth-scene {
-        transform: scale(0.38);
+        transform: scale(0.48);
       }
       .auth-visual-caption h1 {
         font-size: 26px;
@@ -6955,16 +6885,16 @@
       }
 
       return (
-        <div className="app-shell">
-          <Sidebar role={role} page={page} setPage={setPage} user={profile} school={school} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} chatUnreadCount={chatUnreadCount} onLogout={async()=>{ if (profile?.id) markPresenceLocally(profile.id, false, new Date().toISOString()); setSelfPresenceState('offline'); await signOut(); setProfile(null); setWelcomeContext(null); }} />
+        <>
+          <div className={classNames('mobile-sidebar-overlay', mobileOpen && 'show')} onClick={() => setMobileOpen(false)} />
+          <div className="app-shell">
+            <Sidebar role={role} page={page} setPage={setPage} user={profile} school={school} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} chatUnreadCount={chatUnreadCount} onLogout={async()=>{ if (profile?.id) markPresenceLocally(profile.id, false, new Date().toISOString()); setSelfPresenceState('offline'); await signOut(); setProfile(null); setWelcomeContext(null); }} />
           <main className="main">
             <div className="topbar">
-              <button type="button" className="mobile-nav-toggle" onClick={() => setMobileOpen((prev) => !prev)} style={{ display: 'inline-flex' }}>
+              <button type="button" className="btn secondary mobile-nav-toggle" onClick={() => setMobileOpen(!mobileOpen)}>
                 <span>{mobileOpen ? 'Close Menu' : 'Menu'}</span>
-                <span className="mobile-nav-icon">{mobileOpen ? '✕' : '☰'}</span>
               </button>
               <div className="page-title">
-                <div className="actions"><button className="btn secondary mobile-nav-toggle" onClick={() => setMobileOpen(!mobileOpen)}>Menu</button></div>
                 <h2>{getPageLabel(page, role) || "Dashboard"}</h2>
                 <div className="subtle">{school?.name ? `${school.name} (${currentSchoolCategory} • ${currentSchoolGradingSystem})` : 'System Administration'}</div>
               </div>
