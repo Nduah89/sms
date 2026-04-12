@@ -664,7 +664,7 @@
       "my-grades": "My Grades",
       "my-attendance": "My Attendance",
       "my-fees": "My Fees",
-      children: "Linked Children",
+      children: "Linked Student",
       "fee-statements": "Fee Statements"
     };
 
@@ -1684,7 +1684,9 @@
       const [teacherStudentRecordsFilterClassId, setTeacherStudentRecordsFilterClassId] = useState('');
       const [principalStudentRecordsFilterClassId, setPrincipalStudentRecordsFilterClassId] = useState('');
       const [principalAttendanceFilterClassId, setPrincipalAttendanceFilterClassId] = useState('');
-      const [feeForm, setFeeForm] = useState({ id: "", student_id: "", term_name: "Term 1", academic_year: getAcademicYearLabel(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
+      const [feeForm, setFeeForm] = useState({ id: "", class_id: "", student_id: "", term_name: "Term 1", academic_year: getAcademicYearLabel(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
+      const [feeStatusFilter, setFeeStatusFilter] = useState('All');
+      const [showFeeEditor, setShowFeeEditor] = useState(false);
       const [showGradeEditor, setShowGradeEditor] = useState(false);
       const [notificationForm, setNotificationForm] = useState({ id: "", title: "", message: "", audience_role: "all" });
       const [chatForm, setChatForm] = useState({ recipient_profile_id: "", message_text: "" });
@@ -2217,6 +2219,19 @@
             </div>
           </div>
         );
+      };
+
+      const renderAttendanceStatusChip = (statusValue) => {
+        const normalizedStatus = String(statusValue || '').trim().toLowerCase();
+        const chipClass = normalizedStatus === 'present'
+          ? 'success'
+          : normalizedStatus === 'absent'
+            ? 'danger'
+            : normalizedStatus === 'late'
+              ? 'warning'
+              : 'info';
+        const label = normalizedStatus ? normalizedStatus.charAt(0).toUpperCase() + normalizedStatus.slice(1) : '-';
+        return <span className={classNames('chip', chipClass)}>{label}</span>;
       };
 
       const renderRecordPhotoThumb = (photoUrl, altLabel = 'Photo', size = 56) => (
@@ -3859,6 +3874,181 @@
           };
         });
       }, [role, studentRecordsRows, linkedParentDetailsByStudentId, fallbackParentDetailsByStudentId]);
+
+      const feeClassOptions = useMemo(() => (
+        [{ value: '', label: 'Select Class' }].concat(
+          orderedClassRows.map((row) => ({
+            value: String(row.id || '').trim(),
+            label: buildClassDisplay(row) || row.class_name || row.name || ''
+          })).filter((option) => option.value && option.label)
+        )
+      ), [orderedClassRows]);
+
+      const feeStudentOptions = useMemo(() => (
+        [{ value: '', label: 'Select Student' }].concat(
+          (studentRecordsRows || [])
+            .filter((row) => !feeForm.class_id || String(row.class_id || '').trim() === String(feeForm.class_id || '').trim())
+            .map((row) => ({
+              value: String(row.id || '').trim(),
+              label: `${row.full_name || '-'}${teacherAssignedClassDisplay(row) ? ` (${teacherAssignedClassDisplay(row)})` : ''}`
+            }))
+        )
+      ), [studentRecordsRows, feeForm.class_id, classNameMap]);
+
+      const feeAcademicYearOptions = useMemo(() => (
+        getAcademicYearOptions(Array.from(new Set((feesHook.rows || []).map((row) => String(row.academic_year || '').trim()).filter(Boolean))))
+      ), [feesHook.rows]);
+
+      const feePaymentMethodOptions = ['Cash', 'Mobile Money', 'Bank Transfer', 'Cheque'];
+
+      const visibleFeeRows = useMemo(() => {
+        let rows = feesHook.rows || [];
+        if (role === ROLE.STUDENT) {
+          const studentId = String(currentStudentDashboardRecord?.id || currentStudentDashboardRecord?.student_id || '').trim();
+          rows = rows.filter((row) => String(row.student_id || '').trim() === studentId);
+        } else if (role === ROLE.PARENT) {
+          const linkedIds = new Set((parentLinkedStudentRows || []).map((row) => String(row.id || row.student_id || '').trim()).filter(Boolean));
+          rows = rows.filter((row) => linkedIds.has(String(row.student_id || '').trim()));
+        }
+        if ((role === ROLE.ADMIN || role === ROLE.ACCOUNTS) && feeStatusFilter && feeStatusFilter !== 'All') {
+          rows = rows.filter((row) => String(row.payment_status || '').trim() === String(feeStatusFilter || '').trim());
+        }
+        return rows;
+      }, [feesHook.rows, role, currentStudentDashboardRecord, parentLinkedStudentRows, feeStatusFilter]);
+
+      const [feeStatementFilterClassId, setFeeStatementFilterClassId] = useState('');
+
+      const feeStatementClassOptions = useMemo(() => (
+        [{ value: '', label: 'Select Class' }].concat(
+          orderedClassRows
+            .map((row) => ({
+              value: String(row.id || '').trim(),
+              label: buildClassDisplay(row) || row.class_name || row.name || ''
+            }))
+            .filter((option) => option.value && option.label)
+        )
+      ), [orderedClassRows]);
+
+      const feeStatementRowsByClass = useMemo(() => {
+        if (!(role === ROLE.ADMIN || role === ROLE.ACCOUNTS) || page !== 'fee-statements') return [];
+        const selectedClassId = String(feeStatementFilterClassId || '').trim();
+        if (!selectedClassId) return [];
+
+        const classStudents = (studentRecordsRows || [])
+          .filter((student) => String(student.class_id || '').trim() === selectedClassId)
+          .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
+
+        return classStudents.map((student) => {
+          const studentId = String(student.id || student.student_id || '').trim();
+          const matchedFeeRows = (feesHook.rows || []).filter((fee) => String(fee.student_id || '').trim() === studentId);
+          const totalDue = matchedFeeRows.reduce((sum, row) => sum + Number(row.amount_due || 0), 0);
+          const totalPaid = matchedFeeRows.reduce((sum, row) => sum + Number(row.amount_paid || 0), 0);
+          const balance = totalDue - totalPaid;
+          const statementStatus = matchedFeeRows.length === 0
+            ? 'Unpaid'
+            : balance <= 0 && totalDue > 0
+              ? 'Paid'
+              : totalPaid > 0
+                ? 'Partially Paid'
+                : 'Unpaid';
+
+          return {
+            id: studentId,
+            student_id: studentId,
+            student_name: student.full_name || '-',
+            class_name: teacherAssignedClassDisplay(student),
+            total_due: totalDue,
+            total_paid: totalPaid,
+            balance,
+            payment_status: statementStatus
+          };
+        });
+      }, [role, page, feeStatementFilterClassId, studentRecordsRows, feesHook.rows]);
+
+      const openFeeStatementForStudentSummary = (summaryRow) => {
+        setCurrentStudent({
+          full_name: summaryRow.student_name,
+          class_name: summaryRow.class_name,
+          student_id: summaryRow.student_id
+        });
+        setSelectedReport('fee');
+        setPage('reports');
+      };
+
+      const openFeeEditor = (row = null) => {
+        if (!row) {
+          setFeeForm({ id: "", class_id: "", student_id: "", term_name: "Term 1", academic_year: getAcademicYearLabel(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
+          setShowFeeEditor(true);
+          return;
+        }
+        const linkedStudent = (studentRecordsRows || []).find((student) => String(student.id || '').trim() === String(row.student_id || '').trim()) || null;
+        setFeeForm({
+          id: row.id || '',
+          class_id: String(linkedStudent?.class_id || row.class_id || '').trim(),
+          student_id: String(row.student_id || '').trim(),
+          term_name: row.term_name || 'Term 1',
+          academic_year: row.academic_year || getAcademicYearLabel(),
+          amount_due: Number(row.amount_due || 0),
+          amount_paid: Number(row.amount_paid || 0),
+          payment_date: row.payment_date || todayISO(),
+          payment_method: row.payment_method || 'Cash',
+          payment_status: row.payment_status || 'Unpaid',
+          remarks: row.remarks || ''
+        });
+        setShowFeeEditor(true);
+      };
+
+      const saveFeeRecord = async () => {
+        if (!(role === ROLE.ADMIN || role === ROLE.ACCOUNTS)) return;
+        if (!feeForm.class_id) {
+          setNotice({ type: 'danger', text: 'Please select a class first.' });
+          return;
+        }
+        if (!feeForm.student_id) {
+          setNotice({ type: 'danger', text: 'Please select a student.' });
+          return;
+        }
+        const selectedStudent = (studentRecordsRows || []).find((row) => String(row.id || '').trim() === String(feeForm.student_id || '').trim()) || null;
+        if (!selectedStudent || String(selectedStudent.class_id || '').trim() !== String(feeForm.class_id || '').trim()) {
+          setNotice({ type: 'danger', text: 'The selected student does not belong to the selected class.' });
+          return;
+        }
+        const amountDue = Number(feeForm.amount_due || 0);
+        const amountPaid = Number(feeForm.amount_paid || 0);
+        const balance = amountDue - amountPaid;
+        const paymentStatus = amountPaid <= 0 ? 'Unpaid' : balance <= 0 ? 'Paid' : 'Partially Paid';
+
+        await saveEntity(
+          'fee_payments',
+          {
+            id: feeForm.id || '',
+            student_id: feeForm.student_id,
+            term_name: feeForm.term_name,
+            academic_year: feeForm.academic_year,
+            amount_due: amountDue,
+            amount_paid: amountPaid,
+            payment_date: feeForm.payment_date,
+            payment_method: feeForm.payment_method,
+            payment_status: paymentStatus,
+            remarks: feeForm.remarks || ''
+          },
+          () => {
+            setFeeForm({ id: "", class_id: "", student_id: "", term_name: "Term 1", academic_year: getAcademicYearLabel(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
+            setShowFeeEditor(false);
+          },
+          { recorded_by_profile_id: profile.id }
+        );
+      };
+
+      const openFeeStatementForRow = (row) => {
+        setCurrentStudent({
+          full_name: row.student_name,
+          class_name: row.class_name,
+          student_id: row.student_id
+        });
+        setSelectedReport('fee');
+        setPage('reports');
+      };
 
       const teacherRestrictedStudentRows = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
@@ -6018,6 +6208,7 @@
             {page === 'principal-dashboard' && (
               <div className="grid">
                 {renderWelcomeCard()}
+                {renderSelfProfilePhotoCard()}
                 <MetricCards items={[
                   { label: 'Total Students', value: mergedStudentsRows.length },
                   { label: 'Total Teachers', value: mergedTeachersRows.length },
@@ -6116,6 +6307,7 @@
             {page === 'teacher-dashboard' && (
               <div className="grid">
                 {renderWelcomeCard()}
+                {renderSelfProfilePhotoCard()}
                 <MetricCards items={[
                   { label: 'My Students', value: teacherRestrictedStudentRows.length },
                   { label: 'School Classes', value: orderedClassRows.length },
@@ -6133,7 +6325,7 @@
                   <div className="card">
                     <h3>Recent Attendance Entries</h3>
                     <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Status</th></tr></thead><tbody>
-                      {normalizedAttendanceRows.filter(x=>x.marked_by_profile_id===profile.id).slice(0,10).map((row) => <tr key={row.id}><td>{formatDate(row.attendance_date)}</td><td>{row.student_name || '-'}</td><td>{row.class_name || classNameMap[row.class_id] || '-'}</td><td>{row.status || '-'}</td></tr>)}
+                      {normalizedAttendanceRows.filter(x=>x.marked_by_profile_id===profile.id).slice(0,10).map((row) => <tr key={row.id}><td>{formatDate(row.attendance_date)}</td><td>{row.student_name || '-'}</td><td>{row.class_name || classNameMap[row.class_id] || '-'}</td><td>{renderAttendanceStatusChip(row.status)}</td></tr>)}
                       {normalizedAttendanceRows.filter(x=>x.marked_by_profile_id===profile.id).length === 0 && <tr><td colSpan="4"><div className="empty">No attendance entries recorded yet</div></td></tr>}
                     </tbody></table></div>
                   </div>
@@ -6158,7 +6350,7 @@
                 {renderWelcomeCard()}
                 {renderLinkedStudentPhotoCards()}
                 <MetricCards items={[
-                  { label: 'Linked Children', value: parentLinkedStudentRows.length },
+                  { label: 'Linked Student', value: parentLinkedStudentRows.length },
                   { label: 'Attendance Records', value: attendanceHook.rows.length },
                   { label: 'Grades Available', value: gradesHook.rows.length },
                   { label: 'Outstanding Balance', value: formatCurrency(feesHook.rows.reduce((s,r)=>s+Number(r.balance||0),0)) }
@@ -6170,7 +6362,7 @@
               <div className="grid">
                 <div className="card">
                   <h3>Linked Children Details</h3>
-                  <p className="subtle">All linked children appear here with their saved student details from the school admin records.</p>
+                  <p className="subtle">All linked student records appear here with the same saved details from the school admin Student Management section.</p>
                   {parentLinkedStudentRows.length === 0 ? (
                     <div className="empty">No linked child records were found yet.</div>
                   ) : (
@@ -6809,7 +7001,7 @@
                   )}
                 </div>
                 <div className="card">
-                  <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Status</th><th>Teacher</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name || classNameMap[r.class_id] || '-'}</td><td>{r.status}</td><td>{r.marked_by_name}</td></tr>)}</tbody></table></div>
+                  <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Status</th><th>Teacher</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name || classNameMap[r.class_id] || '-'}</td><td>{renderAttendanceStatusChip(r.status)}</td><td>{r.marked_by_name}</td></tr>)}</tbody></table></div>
                 </div>
               </div>
             )}
@@ -6841,7 +7033,7 @@
                         <thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead>
                         <tbody>
                           {principalVisibleAttendanceRows.length === 0 && <tr><td colSpan="6"><div className="empty">No attendance records found for the selected class</div></td></tr>}
-                          {principalVisibleAttendanceRows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name || classNameMap[r.class_id] || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}
+                          {principalVisibleAttendanceRows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name || classNameMap[r.class_id] || '-'}</td><td>{renderAttendanceStatusChip(r.status)}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}
                         </tbody>
                       </table>
                     </div>
@@ -6850,7 +7042,7 @@
               ) : (
               <div className="card">
                 <h3>Attendance Summary</h3>
-                <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name || classNameMap[r.class_id] || '-'}</td><td>{r.status}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}</tbody></table></div>
+                <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Status</th><th>Teacher</th><th>Remarks</th></tr></thead><tbody>{attendanceHook.rows.map(r => <tr key={r.id}><td>{formatDate(r.attendance_date)}</td><td>{r.student_name}</td><td>{r.class_name || classNameMap[r.class_id] || '-'}</td><td>{renderAttendanceStatusChip(r.status)}</td><td>{r.marked_by_name || '-'}</td><td>{r.remarks}</td></tr>)}</tbody></table></div>
               </div>
               )
             )}
@@ -6954,37 +7146,239 @@
               </div>
             )}
 
-            {(page === 'fees' || page === 'my-fees' || page === 'fee-statements') && (
+            {page === 'fees' && (
               <div className="grid">
                 {(role === ROLE.ADMIN || role === ROLE.ACCOUNTS) && (
-                  <div className="card">
-                    <h3>Fee Payment Records</h3>
-                    <div className="form-grid-3">
-                      <div className="field"><label>Student ID</label><input value={feeForm.student_id} onChange={(e)=>setFeeForm({...feeForm, student_id:e.target.value})} /></div>
-                      <div className="field"><label>Term</label><select value={feeForm.term_name} onChange={(e)=>setFeeForm({...feeForm, term_name:e.target.value})}>{termOptions.map(x => <option key={x}>{x}</option>)}</select></div>
-                      <div className="field"><label>Academic Year</label><input value={feeForm.academic_year} onChange={(e)=>setFeeForm({...feeForm, academic_year:e.target.value})} /></div>
-                      <div className="field"><label>Amount Due</label><input type="number" value={feeForm.amount_due} onChange={(e)=>setFeeForm({...feeForm, amount_due:e.target.value})} /></div>
-                      <div className="field"><label>Amount Paid</label><input type="number" value={feeForm.amount_paid} onChange={(e)=>setFeeForm({...feeForm, amount_paid:e.target.value})} /></div>
-                      <div className="field"><label>Payment Date</label><input type="date" value={feeForm.payment_date} onChange={(e)=>setFeeForm({...feeForm, payment_date:e.target.value})} /></div>
-                      <div className="field"><label>Method</label><input value={feeForm.payment_method} onChange={(e)=>setFeeForm({...feeForm, payment_method:e.target.value})} /></div>
-                      <div className="field"><label>Status</label><select value={feeForm.payment_status} onChange={(e)=>setFeeForm({...feeForm, payment_status:e.target.value})}>{paymentStatusOptions.map(x => <option key={x}>{x}</option>)}</select></div>
-                      <div className="field"><label>Remarks</label><input value={feeForm.remarks} onChange={(e)=>setFeeForm({...feeForm, remarks:e.target.value})} /></div>
+                  <>
+                    <div className="card">
+                      <div className="topbar" style={{ marginBottom: 0 }}>
+                        <div className="page-title"><h2 style={{ fontSize: 22, marginBottom: 0 }}>Fee Payments</h2></div>
+                        <div className="actions">
+                          <button className="btn secondary" onClick={() => setFeeStatusFilter('Archived')}>Archived</button>
+                          <button className="btn" onClick={() => openFeeEditor()}>+ Add Fee Record</button>
+                        </div>
+                      </div>
                     </div>
-                    <div style={{marginTop:16}}><button className="btn" onClick={()=>saveEntity('fee_payments', feeForm, ()=>setFeeForm({ id:'', student_id:'', term_name:'Term 1', academic_year:getAcademicYearLabel(), amount_due:0, amount_paid:0, payment_date:todayISO(), payment_method:'Cash', payment_status:'Unpaid', remarks:'' }), { recorded_by_profile_id: profile.id })}>Save Payment</button></div>
-                  </div>
+                    <div className="card">
+                      <div className="field-inline" style={{ maxWidth: 220 }}>
+                        <label>Filter by Status</label>
+                        <select value={feeStatusFilter} onChange={(e) => setFeeStatusFilter(e.target.value)}>
+                          {['All', 'Paid', 'Partially Paid', 'Unpaid', 'Archived'].map((value) => <option key={value} value={value}>{value}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    {showFeeEditor && (
+                      <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', display:'grid', placeItems:'center', zIndex:1200, padding:20 }}>
+                        <div className="card" style={{ width:'100%', maxWidth:700, maxHeight:'90vh', overflow:'auto' }}>
+                          <div className="topbar" style={{ marginBottom: 12 }}>
+                            <div className="page-title"><h2 style={{ fontSize: 24, marginBottom: 0 }}>{feeForm.id ? 'Edit Fee Record' : 'Add Fee Record'}</h2></div>
+                            <div className="actions"><button className="btn secondary" onClick={() => setShowFeeEditor(false)}>Cancel</button></div>
+                          </div>
+                          <div className="form-grid-3">
+                            <div className="field">
+                              <label>Class</label>
+                              <select value={feeForm.class_id} onChange={(e) => setFeeForm((prev) => ({ ...prev, class_id: e.target.value, student_id: '' }))}>
+                                {feeClassOptions.map((option) => <option key={option.value || 'empty-fee-class'} value={option.value}>{option.label}</option>)}
+                              </select>
+                            </div>
+                            <div className="field">
+                              <label>Student</label>
+                              <select value={feeForm.student_id} onChange={(e) => setFeeForm((prev) => ({ ...prev, student_id: e.target.value }))}>
+                                {feeStudentOptions.map((option) => <option key={option.value || 'empty-fee-student'} value={option.value}>{option.label}</option>)}
+                              </select>
+                            </div>
+                            <div className="field">
+                              <label>Academic Year</label>
+                              <select value={feeForm.academic_year} onChange={(e) => setFeeForm((prev) => ({ ...prev, academic_year: e.target.value }))}>
+                                {feeAcademicYearOptions.map((value) => <option key={value} value={value}>{value}</option>)}
+                              </select>
+                            </div>
+                            <div className="field">
+                              <label>Term</label>
+                              <select value={feeForm.term_name} onChange={(e) => setFeeForm((prev) => ({ ...prev, term_name: e.target.value }))}>
+                                {termOptions.map((value) => <option key={value} value={value}>{value}</option>)}
+                              </select>
+                            </div>
+                            <div className="field">
+                              <label>Amount Due (GHS)</label>
+                              <input type="number" value={feeForm.amount_due} onChange={(e) => setFeeForm((prev) => ({ ...prev, amount_due: e.target.value }))} />
+                            </div>
+                            <div className="field">
+                              <label>Amount Paid (GHS)</label>
+                              <input type="number" value={feeForm.amount_paid} onChange={(e) => setFeeForm((prev) => ({ ...prev, amount_paid: e.target.value }))} />
+                            </div>
+                            <div className="field">
+                              <label>Payment Date</label>
+                              <input type="date" value={feeForm.payment_date} onChange={(e) => setFeeForm((prev) => ({ ...prev, payment_date: e.target.value }))} />
+                            </div>
+                            <div className="field">
+                              <label>Payment Method</label>
+                              <select value={feeForm.payment_method} onChange={(e) => setFeeForm((prev) => ({ ...prev, payment_method: e.target.value }))}>
+                                {feePaymentMethodOptions.map((value) => <option key={value} value={value}>{value}</option>)}
+                              </select>
+                            </div>
+                            <div className="field" style={{ gridColumn:'1 / -1' }}>
+                              <label>Remarks</label>
+                              <input value={feeForm.remarks} onChange={(e) => setFeeForm((prev) => ({ ...prev, remarks: e.target.value }))} placeholder="Optional notes..." />
+                            </div>
+                          </div>
+                          <div className="banner info" style={{ marginTop: 14 }}>Balance and payment status are automatically calculated from Amount Due and Amount Paid.</div>
+                          <div style={{ display:'flex', justifyContent:'flex-end', gap:10, marginTop:16 }}>
+                            <button className="btn secondary" onClick={() => setShowFeeEditor(false)}>Cancel</button>
+                            <button className="btn" onClick={saveFeeRecord}>Save Record</button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
                 <div className="card">
-                  <h3>Fee Statements</h3>
-                  <div className="toolbar">
-                    <button className="btn secondary" onClick={()=>{ setSelectedReport('fee'); setPage('reports'); }}>Printable Fee Statement View</button>
-                    <button className="btn secondary" onClick={()=>exportCsv(feesHook.rows, 'fee-payments.csv')}>Export CSV</button>
+                  <div className="topbar" style={{ marginBottom: 12 }}>
+                    <div className="page-title"><h2 style={{ fontSize: 22, marginBottom: 0 }}>Fee Payments</h2></div>
+                    <div className="actions">
+                      {(role === ROLE.ADMIN || role === ROLE.ACCOUNTS) && <button className="btn secondary" onClick={() => exportCsv(visibleFeeRows, 'fee-payments.csv')}>Export CSV</button>}
+                    </div>
                   </div>
-                  <div className="table-wrap"><table><thead><tr><th>Student</th><th>Term</th><th>Year</th><th>Due</th><th>Paid</th><th>Balance</th><th>Status</th></tr></thead><tbody>{feesHook.rows.map(r => <tr key={r.id} onClick={()=>setCurrentStudent({ full_name: r.student_name, class_name: r.class_name, student_id: r.student_id })}><td>{r.student_name}</td><td>{r.term_name}</td><td>{r.academic_year}</td><td>{formatCurrency(r.amount_due)}</td><td>{formatCurrency(r.amount_paid)}</td><td>{formatCurrency(r.balance)}</td><td>{r.payment_status}</td></tr>)}</tbody></table></div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Student</th>
+                          <th>Class</th>
+                          <th>Term</th>
+                          <th>Due (GHC)</th>
+                          <th>Paid (GHC)</th>
+                          <th>Balance (GHC)</th>
+                          <th>Status</th>
+                          <th>Method</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleFeeRows.length === 0 && <tr><td colSpan="9"><div className="empty">No fee records found</div></td></tr>}
+                        {visibleFeeRows.map((r) => (
+                          <tr key={r.id}>
+                            <td>{r.student_name || '-'}</td>
+                            <td>{r.class_name || classNameMap[r.class_id] || '-'}</td>
+                            <td>{r.term_name || '-'}</td>
+                            <td>{formatCurrency(r.amount_due)}</td>
+                            <td>{formatCurrency(r.amount_paid)}</td>
+                            <td>{formatCurrency(r.balance)}</td>
+                            <td><span className={classNames('chip', String(r.payment_status || '').trim() === 'Paid' ? 'success' : String(r.payment_status || '').trim() === 'Partially Paid' ? 'warning' : String(r.payment_status || '').trim() === 'Archived' ? 'info' : 'danger')}>{r.payment_status || '-'}</span></td>
+                            <td>{r.payment_method || '-'}</td>
+                            <td>
+                              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                                <button className="btn secondary" onClick={() => openFeeStatementForRow(r)}>Print</button>
+                                {(role === ROLE.ADMIN || role === ROLE.ACCOUNTS) && <button className="btn" onClick={() => openFeeEditor(r)}>Edit</button>}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}
 
-            {page === 'reports' && <ReportsView school={school} selectedReport={selectedReport} gradeRows={gradesHook.rows.filter(r => !currentStudent || r.student_id === currentStudent.student_id)} feeRows={feesHook.rows.filter(r => !currentStudent || r.student_id === currentStudent.student_id)} currentStudent={currentStudent} />}
+            {page === 'fee-statements' && (role === ROLE.ADMIN || role === ROLE.ACCOUNTS) && (
+              <div className="grid">
+                <div className="card">
+                  <h3>Fee Statements</h3>
+                  <div className="field-inline" style={{ maxWidth: 320 }}>
+                    <label>Filter by Class</label>
+                    <select value={feeStatementFilterClassId} onChange={(e) => setFeeStatementFilterClassId(e.target.value)}>
+                      {feeStatementClassOptions.map((option) => <option key={option.value || 'empty-fee-statement-class'} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="card">
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Student Full Name</th>
+                          <th>Class</th>
+                          <th>Total Due (GHC)</th>
+                          <th>Total Paid (GHC)</th>
+                          <th>Balance (GHC)</th>
+                          <th>Statement</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {!feeStatementFilterClassId && <tr><td colSpan="7"><div className="empty">Select a class to view fee statements for students in that class.</div></td></tr>}
+                        {feeStatementFilterClassId && feeStatementRowsByClass.length === 0 && <tr><td colSpan="7"><div className="empty">No students were found in the selected class.</div></td></tr>}
+                        {feeStatementRowsByClass.map((row) => (
+                          <tr key={row.id}>
+                            <td>{row.student_name || '-'}</td>
+                            <td>{row.class_name || '-'}</td>
+                            <td>{formatCurrency(row.total_due)}</td>
+                            <td>{formatCurrency(row.total_paid)}</td>
+                            <td>{formatCurrency(row.balance)}</td>
+                            <td><span className={classNames('chip', row.payment_status === 'Paid' ? 'success' : row.payment_status === 'Partially Paid' ? 'warning' : 'danger')}>{row.payment_status}</span></td>
+                            <td>
+                              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                                <button className="btn secondary" onClick={() => openFeeStatementForStudentSummary(row)}>View</button>
+                                <button className="btn secondary" onClick={() => openFeeStatementForStudentSummary(row)}>Print</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {page === 'my-fees' && (
+              <div className="grid">
+                <div className="card">
+                  <div className="topbar" style={{ marginBottom: 12 }}>
+                    <div className="page-title"><h2 style={{ fontSize: 22, marginBottom: 0 }}>My Fees</h2></div>
+                    <div className="actions">
+                      {visibleFeeRows.length > 0 && <button className="btn secondary" onClick={() => openFeeStatementForRow(visibleFeeRows[0])}>Print Statement</button>}
+                    </div>
+                  </div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Student</th>
+                          <th>Class</th>
+                          <th>Term</th>
+                          <th>Due (GHC)</th>
+                          <th>Paid (GHC)</th>
+                          <th>Balance (GHC)</th>
+                          <th>Status</th>
+                          <th>Method</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleFeeRows.length === 0 && <tr><td colSpan="9"><div className="empty">No fee records found</div></td></tr>}
+                        {visibleFeeRows.map((r) => (
+                          <tr key={r.id}>
+                            <td>{r.student_name || '-'}</td>
+                            <td>{r.class_name || classNameMap[r.class_id] || '-'}</td>
+                            <td>{r.term_name || '-'}</td>
+                            <td>{formatCurrency(r.amount_due)}</td>
+                            <td>{formatCurrency(r.amount_paid)}</td>
+                            <td>{formatCurrency(r.balance)}</td>
+                            <td><span className={classNames('chip', String(r.payment_status || '').trim() === 'Paid' ? 'success' : String(r.payment_status || '').trim() === 'Partially Paid' ? 'warning' : String(r.payment_status || '').trim() === 'Archived' ? 'info' : 'danger')}>{r.payment_status || '-'}</span></td>
+                            <td>{r.payment_method || '-'}</td>
+                            <td><button className="btn secondary" onClick={() => openFeeStatementForRow(r)}>Print</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {page === 'reports' && <ReportsView school={school} selectedReport={selectedReport} gradeRows={gradesHook.rows.filter(r => !currentStudent || r.student_id === currentStudent.student_id)} feeRows={visibleFeeRows.filter(r => !currentStudent || r.student_id === currentStudent.student_id)} currentStudent={currentStudent} />}
 
             {page === 'chat' && (
               <div className={classNames('chat-layout', role === ROLE.ADMIN && 'monitor-only', role !== ROLE.ADMIN && role !== ROLE.TEACHER && 'no-monitor')}>
