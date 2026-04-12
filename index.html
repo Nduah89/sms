@@ -3444,6 +3444,20 @@
         trained_status: row.trained_status || 'Trained'
       });
 
+      const buildParentFormFromRow = (row) => ({
+        ...buildManagedForm('parent'),
+        id: row.id || '',
+        profile_id: row.profile_id || '',
+        role_name: 'parent',
+        full_name: row.full_name || '',
+        email: row.email || '',
+        phone: row.phone || row.profile_phone || '',
+        username: row.username || '',
+        account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
+        force_password_change: String(row.force_password_change ?? true),
+        relationship_to_student: row.relationship_to_student || ''
+      });
+
       const buildPrincipalFormFromRow = (row) => ({
         ...buildManagedForm('principal'),
         profile_id: row.profile_id || '',
@@ -3562,6 +3576,26 @@
 
         return [...rowsFromParents, ...fallbackParents].sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
       }, [parentsHook.rows, parentLinksRows, studentLookup, classNameMap, mergedStudentsRows]);
+
+      const realParentRows = useMemo(() => {
+        const linkedInfoMap = new Map((computedParentsRows || []).map((row) => [
+          String(row.id || '').trim(),
+          row
+        ]));
+        return (parentsHook.rows || [])
+          .map((row) => {
+            const linked = linkedInfoMap.get(String(row.id || '').trim()) || {};
+            return {
+              ...row,
+              role_name: 'parent',
+              profile_id: row.profile_id || '',
+              class_name: linked.linked_class_names || '',
+              linked_student_names: linked.linked_student_names || '',
+              linked_class_names: linked.linked_class_names || ''
+            };
+          })
+          .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
+      }, [parentsHook.rows, computedParentsRows]);
 
       const teacherEntityRow = useMemo(() => {
         if (role !== ROLE.TEACHER || !profile?.id) return null;
@@ -5463,40 +5497,7 @@
 
       const roleScopedManagedUsers = useMemo(() => {
         if (userForm.role_name === 'parent') {
-          const normalized = (value) => String(value || '').trim().toLowerCase();
-          const parentManagedRows = (managedUsersRows || []).filter((row) => row.role_name === 'parent');
-          return [...computedParentsRows]
-            .map((row) => {
-              const directManaged = parentManagedRows.find((managedRow) =>
-                String(managedRow.profile_id || '').trim() === String(row.profile_id || '').trim()
-              ) || null;
-
-              const matchedManaged = directManaged || parentManagedRows.find((managedRow) => {
-                const sameName = normalized(managedRow.full_name) && normalized(managedRow.full_name) === normalized(row.full_name);
-                const managedPhone = normalized(managedRow.phone || managedRow.profile_phone || '');
-                const managedEmail = normalized(managedRow.email || '');
-                const rowPhone = normalized(row.phone || '');
-                const rowEmail = normalized(row.email || '');
-                const samePhone = managedPhone && rowPhone && managedPhone === rowPhone;
-                const sameEmail = managedEmail && rowEmail && managedEmail === rowEmail;
-                const crossMatch = managedPhone && rowEmail && managedPhone === rowEmail;
-                const reverseCrossMatch = managedEmail && rowPhone && managedEmail === rowPhone;
-                return sameName && (samePhone || sameEmail || crossMatch || reverseCrossMatch);
-              }) || null;
-
-              const resolvedProfileId = [
-                matchedManaged?.profile_id,
-                row.profile_id
-              ].find((value) => isUuid(value)) || '';
-
-              return {
-                ...row,
-                ...(matchedManaged || {}),
-                role_name: 'parent',
-                profile_id: resolvedProfileId,
-                class_name: row.linked_class_names || row.class_name || ''
-              };
-            })
+          return [...realParentRows]
             .filter((row) => isUuid(row.profile_id))
             .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
         }
@@ -5516,7 +5517,7 @@
         return [...managedUsersRows]
           .filter((row) => row.role_name === userForm.role_name)
           .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
-      }, [managedUsersRows, computedParentsRows, accountsHook.rows, userForm.role_name]);
+      }, [managedUsersRows, realParentRows, accountsHook.rows, userForm.role_name]);
 
       const selectedManagedUser = useMemo(() => {
         return roleScopedManagedUsers.find((row) => row.profile_id === userForm.profile_id)
@@ -6315,14 +6316,40 @@
             )}
 
             {page === 'parents' && (
-              <div className="card">
-                <h3>Parents</h3>
-                <p className="subtle">This section is view only. Parent full name and contact are populated from linked student records, and student name and class links refresh automatically when the student record or link changes.</p>
-                <div className="table-wrap"><table><thead><tr><th>Parent Full Name</th><th>Contact</th><th>Linked Student Full Name</th><th>Class Assigned</th></tr></thead><tbody>
-                  {computedParentsRows.length === 0 && <tr><td colSpan="4"><div className="empty">No linked parent records found</div></td></tr>}
-                  {computedParentsRows.map(parent => <tr key={parent.id}><td>{parent.full_name || '-'}</td><td>{parent.phone || parent.email || '-'}</td><td>{parent.linked_student_names || '-'}</td><td>{parent.linked_class_names || '-'}</td></tr>)}
-                </tbody></table></div>
-              </div>
+              <GenericCrudPage
+                title="Parent Management"
+                description="Add, edit, and permanently delete parent records. These parent records are saved to Supabase and linked to real profile accounts, so they can be used directly from User Accounts & Credentials to generate usernames and passwords."
+                columns={[
+                  { key: 'full_name', label: 'Parent Full Name' },
+                  { key: 'phone', label: 'Phone' },
+                  { key: 'email', label: 'Email' },
+                  { key: 'linked_student_names', label: 'Linked Student Full Name' },
+                  { key: 'linked_class_names', label: 'Class Assigned' },
+                  { key: 'account_status', label: 'Account', render: (_, row) => <span className={classNames('chip', normalizeAccountStatus(row.account_status || row.status || 'active') === 'active' ? 'success' : normalizeAccountStatus(row.account_status || row.status || 'active') === 'archived' ? 'warning' : 'danger')}>{normalizeAccountStatus(row.account_status || row.status || 'active')}</span> }
+                ]}
+                rows={realParentRows}
+                loading={parentsHook.loading}
+                formState={parentForm}
+                setFormState={setParentForm}
+                fields={[
+                  { key: 'full_name', label: 'Parent Full Name' },
+                  { key: 'phone', label: 'Phone' },
+                  { key: 'email', label: 'Email', type: 'email' },
+                  { key: 'username', label: 'Username' },
+                  { key: 'relationship_to_student', label: 'Relationship To Student' },
+                  { key: 'account_status', label: 'Account Status', type: 'select', options: statusOptions },
+                  { key: 'force_password_change', label: 'Force First Login Password Change', type: 'select', options: yesNoOptions }
+                ]}
+                onSave={() => saveManagedUserRecord(parentForm, setParentForm, 'parent')}
+                onDelete={(id, row) => handleDeleteManagedUser(row)}
+                onEdit={(row) => setParentForm(buildParentFormFromRow(row))}
+                rowActions={(row) => canSchoolAdminManageUsers ? <>
+                  <button className="btn secondary" onClick={() => openManagedUserCredentials(row)}>User Accounts</button>
+                  <button className="btn warning" onClick={() => handleProvisionManagedUser(row)}>{String(row.auth_user_id || '').trim() ? 'Reset Login' : 'Create Login'}</button>
+                </> : null}
+              >
+                <div className="footer-note">Linked student names and linked classes are refreshed from student and parent link records after save.</div>
+              </GenericCrudPage>
             )}
 
             {page === 'accounts-staff' && (
