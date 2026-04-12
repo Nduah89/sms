@@ -4913,11 +4913,23 @@
       const chatContactOptions = useMemo(() => {
         if (!profile?.id) return [];
         const optionsMap = new Map();
+        const resolveClassLabel = (classId, fallbackRow = null) => {
+          const normalizedClassId = String(classId || '').trim();
+          if (!normalizedClassId) return '';
+          const classRow = orderedClassRows.find((row) => String(row.id || '').trim() === normalizedClassId) || null;
+          return String(buildClassDisplay(classRow) || classNameMap[normalizedClassId] || teacherAssignedClassDisplay(fallbackRow || {}) || '').trim();
+        };
         const addContact = (entry, note = '') => {
-          if (!entry?.profile_id || String(entry.profile_id).trim() === String(profile.id || '').trim()) return;
-          const existing = optionsMap.get(String(entry.profile_id).trim()) || {};
-          optionsMap.set(String(entry.profile_id).trim(), {
+          const profileId = String(entry?.profile_id || '').trim();
+          const classId = String(entry?.class_id || '').trim();
+          if (!profileId || profileId === String(profile.id || '').trim()) return;
+          const mapKey = [profileId, String(entry?.role_name || '').trim().toLowerCase(), classId || 'no-class'].join('::');
+          const existing = optionsMap.get(mapKey) || {};
+          optionsMap.set(mapKey, {
             ...entry,
+            profile_id: profileId,
+            class_id: classId || null,
+            class_name: String(entry?.class_name || '').trim(),
             note: existing.note || note || entry.note || ''
           });
         };
@@ -4925,7 +4937,8 @@
         if (role === ROLE.STUDENT) {
           if (currentStudentIsJhs && currentStudentClassId) {
             (studentRecordsRows || []).forEach((student) => {
-              if (String(student.class_id || '').trim() !== currentStudentClassId) return;
+              const studentClassId = String(student.class_id || '').trim();
+              if (studentClassId !== currentStudentClassId) return;
               const permission = chatPermissionByStudentProfileId.get(String(student.profile_id || '').trim());
               const isAllowed = permission ? permission.is_allowed !== false : true;
               if (!isAllowed) return;
@@ -4933,7 +4946,8 @@
                 profile_id: String(student.profile_id || '').trim(),
                 full_name: student.full_name || 'Student',
                 role_name: 'student',
-                class_name: teacherAssignedClassDisplay(student),
+                class_id: studentClassId,
+                class_name: resolveClassLabel(studentClassId, student),
                 note: 'Same class JHS student'
               }, 'Same class JHS student');
             });
@@ -4946,7 +4960,8 @@
               profile_id: teacherProfileId,
               full_name: teacher.full_name || 'Teacher',
               role_name: 'teacher',
-              class_name: Array.from(classIds).map((classId) => classNameMap[classId]).filter(Boolean).join(', '),
+              class_id: currentStudentClassId,
+              class_name: resolveClassLabel(currentStudentClassId, teacher),
               note: 'Assigned teacher for your class'
             }, 'Assigned teacher for your class');
           });
@@ -4958,13 +4973,14 @@
             const teacherProfileId = String(teacher.profile_id || '').trim();
             const classIds = teacherProfileToClassIds.get(teacherProfileId) || new Set();
             Array.from(classIds).forEach((classId) => {
-              if (!linkedClassIds.has(classId)) return;
+              const normalizedClassId = String(classId || '').trim();
+              if (!linkedClassIds.has(normalizedClassId)) return;
               addContact({
                 profile_id: teacherProfileId,
                 full_name: teacher.full_name || 'Teacher',
                 role_name: 'teacher',
-                class_id: classId,
-                class_name: classNameMap[classId] || teacherAssignedClassDisplay(teacher),
+                class_id: normalizedClassId,
+                class_name: resolveClassLabel(normalizedClassId, teacher),
                 note: 'Teacher for linked student class'
               }, 'Teacher for linked student class');
             });
@@ -4972,13 +4988,32 @@
         }
 
         if (role === ROLE.PRINCIPAL) {
-          (mergedTeachersRows || []).forEach((teacher) => addContact({
-            profile_id: String(teacher.profile_id || '').trim(),
-            full_name: teacher.full_name || 'Teacher',
-            role_name: 'teacher',
-            class_name: teacherAssignedClassDisplay(teacher),
-            note: 'Teacher in your school'
-          }, 'Teacher in your school'));
+          (mergedTeachersRows || []).forEach((teacher) => {
+            const teacherProfileId = String(teacher.profile_id || '').trim();
+            const classIds = Array.from(teacherProfileToClassIds.get(teacherProfileId) || []);
+            if (!classIds.length) {
+              addContact({
+                profile_id: teacherProfileId,
+                full_name: teacher.full_name || 'Teacher',
+                role_name: 'teacher',
+                class_id: null,
+                class_name: '',
+                note: 'Teacher in your school'
+              }, 'Teacher in your school');
+              return;
+            }
+            classIds.forEach((classId) => {
+              const normalizedClassId = String(classId || '').trim();
+              addContact({
+                profile_id: teacherProfileId,
+                full_name: teacher.full_name || 'Teacher',
+                role_name: 'teacher',
+                class_id: normalizedClassId,
+                class_name: resolveClassLabel(normalizedClassId, teacher),
+                note: 'Teacher in your school'
+              }, 'Teacher in your school');
+            });
+          });
         }
 
         if (role === ROLE.TEACHER) {
@@ -4986,29 +5021,37 @@
             profile_id: String(principalRow.profile_id || '').trim(),
             full_name: principalRow.full_name || 'Principal',
             role_name: 'principal',
+            class_id: null,
+            class_name: '',
             note: 'Principal direct chat'
           }, 'Principal direct chat'));
 
-          (teacherRestrictedStudentRows || []).forEach((student) => addContact({
-            profile_id: String(student.profile_id || '').trim(),
-            full_name: student.full_name || 'Student',
-            role_name: 'student',
-            class_name: teacherAssignedClassDisplay(student),
-            note: 'Student in your school class'
-          }, 'Student in your school class'));
+          (teacherRestrictedStudentRows || []).forEach((student) => {
+            const studentClassId = String(student.class_id || '').trim();
+            addContact({
+              profile_id: String(student.profile_id || '').trim(),
+              full_name: student.full_name || 'Student',
+              role_name: 'student',
+              class_id: studentClassId || null,
+              class_name: resolveClassLabel(studentClassId, student),
+              note: 'Student in your school class'
+            }, 'Student in your school class');
+          });
 
           (parentsHook.rows || []).forEach((parentRow) => {
             const parentProfileId = String(parentRow.profile_id || '').trim();
-            const linkedClassIds = parentProfileToLinkedClassIds.get(parentProfileId) || new Set();
-            const matches = Array.from(linkedClassIds).some((classId) => teacherAccessibleClassIds.includes(classId));
-            if (!matches) return;
-            addContact({
-              profile_id: parentProfileId,
-              full_name: parentRow.full_name || 'Parent',
-              role_name: 'parent',
-              class_name: Array.from(linkedClassIds).map((classId) => classNameMap[classId]).filter(Boolean).join(', '),
-              note: 'Parent linked to your class'
-            }, 'Parent linked to your class');
+            const linkedClassIds = Array.from(parentProfileToLinkedClassIds.get(parentProfileId) || []).map((classId) => String(classId || '').trim()).filter(Boolean);
+            linkedClassIds.forEach((classId) => {
+              if (!teacherAccessibleClassIds.includes(classId)) return;
+              addContact({
+                profile_id: parentProfileId,
+                full_name: parentRow.full_name || 'Parent',
+                role_name: 'parent',
+                class_id: classId,
+                class_name: resolveClassLabel(classId, parentRow),
+                note: 'Parent linked to your class'
+              }, 'Parent linked to your class');
+            });
           });
         }
 
@@ -5017,9 +5060,11 @@
           const aRole = roleOrder[String(a.role_name || '').toLowerCase()] || 9;
           const bRole = roleOrder[String(b.role_name || '').toLowerCase()] || 9;
           if (aRole !== bRole) return aRole - bRole;
+          const classCompare = String(a.class_name || '').localeCompare(String(b.class_name || ''));
+          if (classCompare !== 0) return classCompare;
           return String(a.full_name || '').localeCompare(String(b.full_name || ''));
         });
-      }, [profile?.id, role, currentStudentIsJhs, currentStudentClassId, studentRecordsRows, mergedTeachersRows, principalsHook.rows, teacherRestrictedStudentRows, teacherAccessibleClassIds, classNameMap, parentProfileToLinkedClassIds, chatPermissionByStudentProfileId]);
+      }, [profile?.id, role, currentStudentIsJhs, currentStudentClassId, studentRecordsRows, mergedTeachersRows, principalsHook.rows, teacherRestrictedStudentRows, teacherAccessibleClassIds, classNameMap, parentProfileToLinkedClassIds, chatPermissionByStudentProfileId, orderedClassRows]);
 
       const studentChatClassOptions = useMemo(() => {
         if (role !== ROLE.STUDENT || !currentStudentIsJhs || !currentStudentClassId) return [];
