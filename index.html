@@ -2149,7 +2149,7 @@
         const welcomePhotoLabel = welcomeContext.role_name === 'student'
           ? 'Student Picture'
           : 'Profile Picture';
-        const hideAdminAuditLines = ['student', 'teacher', 'principal'].includes(welcomeContext.role_name);
+        const hideAdminAuditLines = ['student', 'teacher', 'principal', 'parent'].includes(welcomeContext.role_name);
 
         return (
           <div className="card" style={{ marginBottom: 18 }}>
@@ -2174,7 +2174,7 @@
                 {!hideAdminAuditLines && <p><strong>Created by Admin:</strong> {welcomeContext.created_by_name || 'Not recorded'}</p>}
                 {!hideAdminAuditLines && <p><strong>Created on:</strong> {welcomeContext.created_at ? formatDate(welcomeContext.created_at) : '-'}</p>}
                 {!hideAdminAuditLines && <p><strong>Last edited by Admin:</strong> {welcomeContext.last_updated_by_name || welcomeContext.created_by_name || 'Not recorded'}</p>}
-                <p><strong>Last updated on:</strong> {welcomeContext.last_updated_at ? formatDate(welcomeContext.last_updated_at) : (welcomeContext.created_at ? formatDate(welcomeContext.created_at) : '-')}</p>
+                {!hideAdminAuditLines && <p><strong>Last updated on:</strong> {welcomeContext.last_updated_at ? formatDate(welcomeContext.last_updated_at) : (welcomeContext.created_at ? formatDate(welcomeContext.created_at) : '-')}</p>}
               </div>
               <div>
                 {welcomeContext.role_name === 'student' && (
@@ -2199,7 +2199,6 @@
                     <p><strong>Relationship:</strong> {info.relationship_to_student || 'Not set'}</p>
                     <p><strong>Phone:</strong> {info.phone || welcomeContext.profile_phone || 'Not set'}</p>
                     <p><strong>Email:</strong> {info.email || welcomeContext.email || 'Not set'}</p>
-                    <p><strong>Linked Students:</strong> {listFromArray(info.linked_student_names)}</p>
                   </>
                 )}
                 {welcomeContext.role_name === 'principal' && (
@@ -3456,7 +3455,7 @@
         account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
         force_password_change: String(row.force_password_change ?? true),
         relationship_to_student: row.relationship_to_student || '',
-        linked_student_name: String(row.relationship_to_student || row.linked_student_names || '').split(',')[0].trim()
+        linked_student_name: String(row.linked_student_names || '').split(',')[0].trim()
       });
 
       const buildPrincipalFormFromRow = (row) => ({
@@ -3606,6 +3605,7 @@
           const parentPhone = String(student.parent_contact || '').trim();
           const studentName = String(student.full_name || '').trim();
           const className = String(student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '').trim();
+          const relationshipValue = String(student.relationship_to_student || '').trim();
           if (!parentName) return;
           const key = `${normalized(parentName)}::${normalized(parentPhone)}`;
           const existing = map.get(key) || {
@@ -3613,10 +3613,12 @@
             phone: parentPhone,
             email: '',
             linked_students: [],
-            linked_classes: []
+            linked_classes: [],
+            linked_relationships: []
           };
           if (studentName && !existing.linked_students.includes(studentName)) existing.linked_students.push(studentName);
           if (className && !existing.linked_classes.includes(className)) existing.linked_classes.push(className);
+          if (relationshipValue && !existing.linked_relationships.includes(relationshipValue)) existing.linked_relationships.push(relationshipValue);
           map.set(key, existing);
         });
         return Array.from(map.values()).sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
@@ -3641,6 +3643,15 @@
           (selectedParentLinkedSource?.linked_students || []).map((studentName) => ({
             value: studentName,
             label: studentName
+          }))
+        )
+      ), [selectedParentLinkedSource]);
+
+      const parentRelationshipOptions = useMemo(() => (
+        [{ value: '', label: 'Select Relationship To Student' }].concat(
+          (selectedParentLinkedSource?.linked_relationships || []).map((relationshipValue) => ({
+            value: relationshipValue,
+            label: relationshipValue
           }))
         )
       ), [selectedParentLinkedSource]);
@@ -6147,12 +6158,55 @@
                 {renderWelcomeCard()}
                 {renderLinkedStudentPhotoCards()}
                 <MetricCards items={[
-                  { label: 'Linked Children', value: [...new Set(feesHook.rows.map(x=>x.student_id))].length },
+                  { label: 'Linked Children', value: parentLinkedStudentRows.length },
                   { label: 'Attendance Records', value: attendanceHook.rows.length },
                   { label: 'Grades Available', value: gradesHook.rows.length },
                   { label: 'Outstanding Balance', value: formatCurrency(feesHook.rows.reduce((s,r)=>s+Number(r.balance||0),0)) }
                 ]} />
               </>
+            )}
+
+            {page === 'children' && role === ROLE.PARENT && (
+              <div className="grid">
+                <div className="card">
+                  <h3>Linked Children Details</h3>
+                  <p className="subtle">All linked children appear here with their saved student details from the school admin records.</p>
+                  {parentLinkedStudentRows.length === 0 ? (
+                    <div className="empty">No linked child records were found yet.</div>
+                  ) : (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Picture</th>
+                            <th>Full Name</th>
+                            <th>Student No</th>
+                            <th>Assigned Class</th>
+                            <th>Gender</th>
+                            <th>Date of Birth</th>
+                            <th>Parent Full Name</th>
+                            <th>Parent Contact</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {parentLinkedStudentRows.map((row) => (
+                            <tr key={row.id}>
+                              <td>{renderRecordPhotoThumb(row.student_photo_url || null, row.full_name || 'Student Photo')}</td>
+                              <td>{row.full_name || '-'}</td>
+                              <td>{row.student_no || '-'}</td>
+                              <td>{teacherAssignedClassDisplay(row)}</td>
+                              <td>{row.gender || '-'}</td>
+                              <td>{formatDate(row.date_of_birth)}</td>
+                              <td>{row.parent_full_name || '-'}</td>
+                              <td>{row.parent_contact || '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
 
             {page === 'accounts-dashboard' && (
@@ -6379,7 +6433,7 @@
                           full_name: nextName,
                           phone: source?.phone || '',
                           linked_student_name: source?.linked_students?.[0] || '',
-                          relationship_to_student: source?.linked_students?.[0] || ''
+                          relationship_to_student: source?.linked_relationships?.[0] || ''
                         }));
                       }}>
                         {parentNameSelectOptions.map((option) => <option key={option.value || 'empty-parent-name'} value={option.value}>{option.label}</option>)}
@@ -6398,13 +6452,24 @@
                       <input value={parentForm.username || ''} onChange={(e) => setParentForm((prev) => ({ ...prev, username: e.target.value }))} />
                     </div>
                     <div className="field">
+                      <label>Relationship To Student</label>
+                      <select value={parentForm.relationship_to_student || ''} onChange={(e) => {
+                        const nextRelationship = e.target.value;
+                        setParentForm((prev) => ({
+                          ...prev,
+                          relationship_to_student: nextRelationship
+                        }));
+                      }}>
+                        {parentRelationshipOptions.map((option) => <option key={option.value || 'empty-relationship'} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="field">
                       <label>Linked Student Name</label>
-                      <select value={parentForm.linked_student_name || parentForm.relationship_to_student || ''} onChange={(e) => {
+                      <select value={parentForm.linked_student_name || ''} onChange={(e) => {
                         const nextStudentName = e.target.value;
                         setParentForm((prev) => ({
                           ...prev,
-                          linked_student_name: nextStudentName,
-                          relationship_to_student: nextStudentName
+                          linked_student_name: nextStudentName
                         }));
                       }}>
                         {parentLinkedStudentOptions.map((option) => <option key={option.value || 'empty-linked-student'} value={option.value}>{option.label}</option>)}
