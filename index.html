@@ -3746,14 +3746,16 @@
         const profilePhone = normalized(profile?.phone || profile?.profile_phone || '');
         const profileEmail = normalized(profile?.email || '');
         const profileName = normalized(profile?.full_name || welcomeContext?.full_name || '');
-        const parentManagedRow = (managedUsersRows || []).find((row) =>
-          String(row.role_name || '').trim().toLowerCase() === 'parent'
-          && String(row.profile_id || '').trim() === profileId
-        ) || null;
 
         return (
           (realParentRows || []).find((row) => String(row.profile_id || '').trim() === profileId)
           || (parentsHook.rows || []).find((row) => String(row.profile_id || '').trim() === profileId)
+          || (computedParentsRows || []).find((row) => {
+            const rowName = normalized(row.full_name || '');
+            const rowPhone = normalized(row.phone || '');
+            const rowEmail = normalized(row.email || '');
+            return (profileName && rowName === profileName) || (profilePhone && rowPhone === profilePhone) || (profileEmail && rowEmail === profileEmail);
+          })
           || (realParentRows || []).find((row) => {
             const rowName = normalized(row.full_name || '');
             const rowPhone = normalized(row.phone || row.profile_phone || '');
@@ -3766,22 +3768,15 @@
             const rowEmail = normalized(row.email || '');
             return (profileName && rowName === profileName) || (profilePhone && rowPhone === profilePhone) || (profileEmail && rowEmail === profileEmail);
           })
-          || parentManagedRow
           || null
         );
-      }, [role, profile?.id, profile?.phone, profile?.profile_phone, profile?.email, profile?.full_name, parentsHook.rows, realParentRows, managedUsersRows, welcomeContext?.full_name]);
+      }, [role, profile?.id, profile?.phone, profile?.profile_phone, profile?.email, profile?.full_name, parentsHook.rows, realParentRows, computedParentsRows, welcomeContext?.full_name]);
 
       const parentLinkedStudentRows = useMemo(() => {
         if (role !== ROLE.PARENT) return [];
         const normalized = (value) => String(value || '').trim().toLowerCase();
 
         const parentName = normalized(parentEntityRow?.full_name || profile?.full_name || welcomeContext?.full_name || '');
-        const parentLinkedNames = new Set(
-          String(parentEntityRow?.linked_student_names || '')
-            .split(',')
-            .map((value) => normalized(value))
-            .filter(Boolean)
-        );
         const contactValues = new Set([
           normalized(parentEntityRow?.phone || ''),
           normalized(parentEntityRow?.profile_phone || ''),
@@ -3793,31 +3788,53 @@
         const linkedStudentIds = new Set((parentLinksRows || [])
           .filter((link) => {
             const linkParentId = String(link.parent_id || '').trim();
-            return linkParentId
-              && (
-                (parentEntityRow?.id && linkParentId === String(parentEntityRow.id || '').trim())
-                || (parentEntityRow?.profile_id && linkParentId === String(parentEntityRow.profile_id || '').trim())
-              );
+            return linkParentId && (
+              (parentEntityRow?.id && linkParentId === String(parentEntityRow.id || '').trim())
+              || (parentEntityRow?.profile_id && linkParentId === String(parentEntityRow.profile_id || '').trim())
+            );
           })
           .map((link) => String(link.student_id || '').trim())
           .filter(Boolean));
 
+        const linkedStudentNamesFromParent = new Set(
+          String(parentEntityRow?.linked_student_names || '')
+            .split(',')
+            .map((value) => normalized(value))
+            .filter(Boolean)
+        );
+
+        const computedParentMatch = (computedParentsRows || []).find((row) => {
+          const rowName = normalized(row.full_name || '');
+          const rowPhone = normalized(row.phone || '');
+          const rowEmail = normalized(row.email || '');
+          return (parentName && rowName === parentName)
+            || (rowPhone && contactValues.has(rowPhone))
+            || (rowEmail && contactValues.has(rowEmail));
+        }) || null;
+
+        const linkedStudentNamesFromComputedParent = new Set(
+          String(computedParentMatch?.linked_student_names || '')
+            .split(',')
+            .map((value) => normalized(value))
+            .filter(Boolean)
+        );
+
         const rows = (studentRecordsRows || []).filter((student) => {
           const studentId = String(student.id || student.student_id || '').trim();
-          if (linkedStudentIds.has(studentId)) return true;
-
           const studentName = normalized(student.full_name || '');
           const studentParentName = normalized(student.parent_full_name || '');
           const studentParentContact = normalized(student.parent_contact || '');
 
-          return (parentLinkedNames.size && parentLinkedNames.has(studentName))
+          return linkedStudentIds.has(studentId)
+            || (studentName && linkedStudentNamesFromParent.has(studentName))
+            || (studentName && linkedStudentNamesFromComputedParent.has(studentName))
             || (parentName && studentParentName === parentName)
             || (studentParentContact && contactValues.has(studentParentContact));
         });
 
         return [...new Map(rows.map((row) => [String(row.id || row.student_id || ''), row])).values()]
           .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
-      }, [role, parentEntityRow, parentLinksRows, profile?.full_name, profile?.phone, profile?.profile_phone, profile?.email, studentRecordsRows, welcomeContext?.full_name]);
+      }, [role, parentEntityRow, parentLinksRows, profile?.full_name, profile?.phone, profile?.profile_phone, profile?.email, studentRecordsRows, computedParentsRows, welcomeContext?.full_name]);
 
       const renderLinkedStudentPhotoCards = () => {
         if (role !== ROLE.PARENT) return null;
