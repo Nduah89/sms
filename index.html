@@ -1924,28 +1924,11 @@
         }
         return String(raw || '').trim();
       };
-      const normalizeTeacherMainClassName = (raw) => normalizeMainClassName(raw);
-
-      const expandSchoolManagedClassRowsFromValue = (value) => {
-        const rawValue = String(value || '').trim();
-        if (!rawValue) return [];
-        const directIdMatch = orderedClassRows.find((row) => String(row.id || '').trim() === rawValue) || null;
-        if (directIdMatch) return [directIdMatch];
-
-        const normalizedName = normalizeMainClassName(rawValue);
-        if (normalizedName) {
-          const exactMatches = orderedClassRows.filter((row) =>
-            normalizeMainClassName(row.class_name || row.name || row.main_class_name || '') === normalizedName
-          );
-          if (exactMatches.length) return exactMatches;
-        }
-
-        const compactValue = rawValue.toLowerCase().replace(/\s+/g, ' ').trim();
-        if (compactValue === 'jhs' || compactValue === 'jhs 1-3' || compactValue === 'jhs1-3') {
-          return orderedClassRows.filter((row) => /^JHS [123]$/i.test(normalizeMainClassName(row.class_name || row.name || row.main_class_name || '')));
-        }
-
-        return [];
+      const normalizeTeacherMainClassName = (raw) => {
+        const normalized = normalizeMainClassName(raw);
+        if (!normalized) return '';
+        if (normalized.startsWith('JHS')) return 'JHS';
+        return normalized;
       };
       const getClassSectionValue = (row) => {
         const section = String(row?.section || row?.class_section || '').trim().toUpperCase();
@@ -3244,6 +3227,31 @@
         };
       };
 
+      const orderedClassRows = useMemo(() => (
+        [...(classesHook.rows || [])].sort((a, b) => {
+          const aName = normalizeMainClassName(a.name || a.class_name || '');
+          const bName = normalizeMainClassName(b.name || b.class_name || '');
+          const aRank = classRankMap[aName] ?? 999;
+          const bRank = classRankMap[bName] ?? 999;
+          if (aRank !== bRank) return aRank - bRank;
+          const sectionOrder = { None: 0, A: 1, B: 2, C: 3 };
+          const aSection = getClassSectionValue(a);
+          const bSection = getClassSectionValue(b);
+          return (sectionOrder[aSection] ?? 99) - (sectionOrder[bSection] ?? 99);
+        })
+      ), [classesHook.rows]);
+
+      const buildClassDisplay = (row) => {
+        if (!row) return '';
+        return normalizeMainClassName(row.class_name || row.name || row.main_class_name || '') || row.class_name || row.name || row.main_class_name || '';
+      };
+
+      const classOptions = useMemo(() => [{ value: '', label: 'Select Class' }, ...orderedClassRows.map(c => ({ value: c.id, label: buildClassDisplay(c) || c.name }))], [orderedClassRows]);
+      const schoolManagedClassOptions = useMemo(() => [{ value: '', label: 'Select Class' }, ...orderedClassRows.map(c => ({ value: c.id, label: buildClassDisplay(c) || c.class_name || c.name }))], [orderedClassRows]);
+      const teacherMainClassOptions = useMemo(() => schoolManagedClassOptions, [schoolManagedClassOptions]);
+      const studentClassSectionOptions = useMemo(() => classCategoryOptions, []);
+      const classNameMap = useMemo(() => Object.fromEntries(orderedClassRows.map(c => [c.id, buildClassDisplay(c) || c.class_name || c.name])), [orderedClassRows]);
+
       const resolveSchoolManagedClassRow = (primaryValue, fallbackMainClassName = '', fallbackSection = 'None') => {
         const directValue = String(primaryValue || '').trim();
         const normalizedFallbackMainClass = normalizeMainClassName(fallbackMainClassName);
@@ -3323,54 +3331,6 @@
         }))
       ), [teachersHook.rows, teachersRawMap]);
 
-      const orderedClassRows = useMemo(() => (
-        [...(classesHook.rows || [])].sort((a, b) => {
-          const aName = normalizeMainClassName(a.name || a.class_name || '');
-          const bName = normalizeMainClassName(b.name || b.class_name || '');
-          const aRank = classRankMap[aName] ?? 999;
-          const bRank = classRankMap[bName] ?? 999;
-          if (aRank !== bRank) return aRank - bRank;
-          const sectionOrder = { None: 0, A: 1, B: 2, C: 3 };
-          const aSection = getClassSectionValue(a);
-          const bSection = getClassSectionValue(b);
-          return (sectionOrder[aSection] ?? 99) - (sectionOrder[bSection] ?? 99);
-        })
-      ), [classesHook.rows]);
-
-      const buildClassDisplay = (row) => {
-        if (!row) return '';
-        return normalizeMainClassName(row.class_name || row.name || row.main_class_name || '') || row.class_name || row.name || row.main_class_name || '';
-      };
-
-      const classOptions = useMemo(() => [{ value: '', label: 'Select Class' }, ...orderedClassRows.map(c => ({ value: c.id, label: buildClassDisplay(c) || c.name }))], [orderedClassRows]);
-      const schoolManagedClassOptions = useMemo(() => [{ value: '', label: 'Select Class' }, ...orderedClassRows.map(c => ({ value: c.id, label: buildClassDisplay(c) || c.class_name || c.name }))], [orderedClassRows]);
-      const teacherMainClassOptions = useMemo(() => schoolManagedClassOptions, [schoolManagedClassOptions]);
-      const studentClassSectionOptions = useMemo(() => classCategoryOptions, []);
-      const classNameMap = useMemo(() => Object.fromEntries(orderedClassRows.map(c => [c.id, buildClassDisplay(c) || c.class_name || c.name])), [orderedClassRows]);
-      const getSchoolManagedClassLabel = (classId, fallbackValue = '') => {
-        const normalizedClassId = String(classId || '').trim();
-        const linkedClassRow = orderedClassRows.find((entry) => String(entry.id || '').trim() === normalizedClassId) || null;
-        return String(
-          buildClassDisplay(linkedClassRow)
-          || classNameMap[normalizedClassId]
-          || normalizeMainClassName(fallbackValue)
-          || fallbackValue
-          || ''
-        ).trim();
-      };
-      const buildClassOptionsFromIds = (ids, emptyLabel = 'All Classes') => {
-        const options = [{ value: '', label: emptyLabel }];
-        const seen = new Set();
-        (ids || []).forEach((value) => {
-          const classId = String(value || '').trim();
-          if (!classId || seen.has(classId)) return;
-          const label = getSchoolManagedClassLabel(classId);
-          if (!label) return;
-          seen.add(classId);
-          options.push({ value: classId, label });
-        });
-        return options;
-      };
       const teacherAssignedClassDisplay = (row) => {
         const source = buildClassDisplay(orderedClassRows.find((entry) => String(entry.id || '').trim() === String(row?.class_id || '').trim()) || null)
           || classNameMap[row?.class_id]
@@ -3739,30 +3699,42 @@
       const teacherAccessibleClassIds = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
         const resolvedIds = new Set();
-        const addValue = (value) => {
-          const rows = expandSchoolManagedClassRowsFromValue(value);
-          rows.forEach((row) => {
-            const classId = String(row?.id || '').trim();
-            if (classId) resolvedIds.add(classId);
-          });
+        const addId = (value) => {
+          const id = String(value || '').trim();
+          if (!id) return;
+          const linkedClassRow = orderedClassRows.find((row) => String(row.id || '').trim() === id) || null;
+          if (linkedClassRow?.id) {
+            resolvedIds.add(String(linkedClassRow.id || '').trim());
+            return;
+          }
+          if (classNameMap[id]) resolvedIds.add(id);
+        };
+        const addClassLabel = (value) => {
+          const normalizedName = normalizeTeacherMainClassName(value);
+          if (!normalizedName) return;
+          const linkedClassRow = orderedClassRows.find((row) => normalizeTeacherMainClassName(row.class_name || row.name || '') === normalizedName) || null;
+          if (linkedClassRow?.id) resolvedIds.add(String(linkedClassRow.id || '').trim());
         };
 
-        (teacherAssignedClassIds || []).forEach(addValue);
-        (Array.isArray(teacherEntityRow?.assigned_class_ids) ? teacherEntityRow.assigned_class_ids : []).forEach(addValue);
-        addValue(teacherEntityRow?.class_id);
-        addValue(teacherEntityRow?.teacher_main_class_name);
-        addValue(teacherEntityRow?.assigned_class);
-        addValue(teacherEntityRow?.class_name);
+        (teacherAssignedClassIds || []).forEach(addId);
+        (Array.isArray(teacherEntityRow?.assigned_class_ids) ? teacherEntityRow.assigned_class_ids : []).forEach(addId);
+        addId(teacherEntityRow?.class_id);
+        addId(teacherEntityRow?.teacher_main_class_name);
+        addId(teacherEntityRow?.assigned_class);
+        addClassLabel(teacherEntityRow?.teacher_main_class_name);
+        addClassLabel(teacherEntityRow?.assigned_class);
+        addClassLabel(teacherEntityRow?.class_name);
 
         if (!resolvedIds.size) {
           (studentRecordsRows || []).forEach((student) => {
             const classId = String(student.class_id || '').trim();
-            if (classId) resolvedIds.add(classId);
+            const classLabel = String(classNameMap[classId] || student.student_main_class_name || student.class_name || '').trim();
+            if (classId && classLabel) resolvedIds.add(classId);
           });
         }
 
         return Array.from(resolvedIds);
-      }, [role, teacherAssignedClassIds, teacherEntityRow, studentRecordsRows, orderedClassRows]);
+      }, [role, teacherAssignedClassIds, teacherEntityRow, orderedClassRows, classNameMap, studentRecordsRows]);
 
       const teacherStudentRecordsRows = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
@@ -3784,18 +3756,36 @@
       }, [role, teacherStudentRecordsRows, teacherAccessibleClassIds]);
 
       const teacherAttendanceClassOptions = useMemo(() => {
+        const options = [{ value: '', label: 'Select Class' }];
+        const seen = new Set();
         const classIds = (teacherAccessibleClassIds || []).length
           ? teacherAccessibleClassIds
           : Array.from(new Set((teacherRestrictedStudentRows || []).map((student) => String(student.class_id || '').trim()).filter(Boolean)));
-        return buildClassOptionsFromIds(classIds, 'Select Class');
+        classIds.forEach((classId) => {
+          if (!classId || seen.has(classId)) return;
+          seen.add(classId);
+          const linkedClassRow = orderedClassRows.find((row) => String(row.id || '').trim() === classId) || null;
+          const fallbackStudent = teacherRestrictedStudentRows.find((student) => String(student.class_id || '').trim() === classId) || null;
+          const label = String(buildClassDisplay(linkedClassRow) || classNameMap[classId] || fallbackStudent?.student_main_class_name || fallbackStudent?.class_name || '').trim();
+          if (!label) return;
+          options.push({ value: classId, label });
+        });
+        return options;
       }, [teacherAccessibleClassIds, teacherRestrictedStudentRows, orderedClassRows, classNameMap]);
 
       const teacherStudentRecordClassOptions = useMemo(() => {
-        const classIds = (teacherAccessibleClassIds || []).length
-          ? teacherAccessibleClassIds
-          : Array.from(new Set((teacherStudentRecordsRows || []).map((student) => String(student.class_id || '').trim()).filter(Boolean)));
-        return buildClassOptionsFromIds(classIds, 'All Classes');
-      }, [teacherAccessibleClassIds, teacherStudentRecordsRows, orderedClassRows, classNameMap]);
+        const options = [{ value: '', label: 'All Classes' }];
+        const seen = new Set();
+        orderedClassRows.forEach((row) => {
+          const classId = String(row?.id || '').trim();
+          if (!classId || seen.has(classId)) return;
+          seen.add(classId);
+          const label = String(buildClassDisplay(row) || classNameMap[classId] || row?.class_name || row?.name || '').trim();
+          if (!label) return;
+          options.push({ value: classId, label });
+        });
+        return options;
+      }, [orderedClassRows, classNameMap]);
 
       const teacherVisibleStudentRecordsRows = useMemo(() => {
         const selectedClassId = String(teacherStudentRecordsFilterClassId || '').trim();
@@ -3813,14 +3803,17 @@
       }, [teacherStudentRecordsRows, teacherStudentRecordsFilterClassId, linkedParentDetailsByStudentId, fallbackParentDetailsByStudentId]);
 
       const principalStudentRecordClassOptions = useMemo(() => {
-        const classIds = Array.from(new Set(
-          []
-            .concat((orderedClassRows || []).map((row) => String(row?.id || '').trim()))
-            .concat((studentRecordsRows || []).map((row) => String(row?.class_id || '').trim()))
-            .filter(Boolean)
-        ));
-        return buildClassOptionsFromIds(classIds, 'All Classes');
-      }, [orderedClassRows, studentRecordsRows, classNameMap]);
+        const seen = new Set();
+        const options = [{ value: '', label: 'All Classes' }];
+        orderedClassRows.forEach((row) => {
+          const classId = String(row?.id || '').trim();
+          const label = String(buildClassDisplay(row) || classNameMap[classId] || row?.class_name || row?.name || '').trim();
+          if (!classId || !label || seen.has(classId)) return;
+          seen.add(classId);
+          options.push({ value: classId, label });
+        });
+        return options;
+      }, [orderedClassRows, classNameMap]);
 
       const principalVisibleStudentRecordsRows = useMemo(() => {
         const selectedClassId = String(principalStudentRecordsFilterClassId || '').trim();
@@ -3838,15 +3831,24 @@
       }, [studentRecordsRows, principalStudentRecordsFilterClassId, linkedParentDetailsByStudentId, fallbackParentDetailsByStudentId]);
 
       const principalAttendanceClassOptions = useMemo(() => {
-        const classIds = Array.from(new Set(
-          []
-            .concat((orderedClassRows || []).map((row) => String(row?.id || '').trim()))
-            .concat((attendanceHook.rows || []).map((row) => String(row?.class_id || '').trim()))
-            .concat((studentRecordsRows || []).map((row) => String(row?.class_id || '').trim()))
-            .filter(Boolean)
-        ));
-        return buildClassOptionsFromIds(classIds, 'All Classes');
-      }, [orderedClassRows, attendanceHook.rows, studentRecordsRows, classNameMap]);
+        const options = [{ value: '', label: 'All Classes' }];
+        const seen = new Set();
+        (classesHook.rows || []).forEach((row) => {
+          const classId = String(row?.id || '').trim();
+          const label = String(row?.name || row?.class_name || '').trim();
+          if (!classId || !label || seen.has(classId)) return;
+          seen.add(classId);
+          options.push({ value: classId, label });
+        });
+        (attendanceHook.rows || []).forEach((row) => {
+          const classId = String(row?.class_id || '').trim();
+          const label = String(row?.class_name || classNameMap[classId] || '').trim();
+          if (!classId || !label || seen.has(classId)) return;
+          seen.add(classId);
+          options.push({ value: classId, label });
+        });
+        return options;
+      }, [classesHook.rows, attendanceHook.rows, classNameMap]);
 
       const principalVisibleAttendanceRows = useMemo(() => {
         const selectedClassId = String(principalAttendanceFilterClassId || '').trim();
@@ -3895,13 +3897,18 @@
         const addForProfile = (teacherProfileId, classValue) => {
           const profileId = String(teacherProfileId || '').trim();
           if (!profileId) return;
-          const classRows = expandSchoolManagedClassRowsFromValue(classValue);
-          if (!classRows.length) return;
+          let resolvedClassId = String(classValue || '').trim();
+          if (!resolvedClassId) return;
+          let linkedClassRow = orderedClassRows.find((row) => String(row.id || '').trim() === resolvedClassId) || null;
+          if (!linkedClassRow) {
+            const normalizedClassName = normalizeTeacherMainClassName(resolvedClassId);
+            if (normalizedClassName) {
+              linkedClassRow = orderedClassRows.find((row) => normalizeTeacherMainClassName(row.class_name || row.name || '') === normalizedClassName) || null;
+            }
+          }
+          if (!linkedClassRow?.id) return;
           if (!map.has(profileId)) map.set(profileId, new Set());
-          classRows.forEach((linkedClassRow) => {
-            const classId = String(linkedClassRow?.id || '').trim();
-            if (classId) map.get(profileId).add(classId);
-          });
+          map.get(profileId).add(String(linkedClassRow.id || '').trim());
         };
         (mergedTeachersRows || []).forEach((teacherRow) => {
           const teacherProfileId = String(teacherRow.profile_id || '').trim();
@@ -4256,24 +4263,32 @@
       const teacherJhsMonitorClassIds = useMemo(() => {
         if (role !== ROLE.TEACHER) return [];
         const resolvedIds = new Set();
-        const addValue = (value) => {
-          expandSchoolManagedClassRowsFromValue(value).forEach((row) => {
-            const classId = String(row?.id || '').trim();
-            const label = getSchoolManagedClassLabel(classId, row?.class_name || row?.name || '');
-            if (classId && isJhsClassLabel(label)) resolvedIds.add(classId);
-          });
+        const addId = (value) => {
+          const id = String(value || '').trim();
+          if (!id) return;
+          const row = orderedClassRows.find((item) => String(item.id || '').trim() === id) || null;
+          const label = String(buildClassDisplay(row) || classNameMap[id] || '').trim();
+          if (label && isJhsClassLabel(label)) {
+            resolvedIds.add(id);
+          }
+        };
+        const addName = (value) => {
+          const normalizedName = normalizeTeacherMainClassName(value);
+          if (!normalizedName) return;
+          const row = orderedClassRows.find((item) => normalizeTeacherMainClassName(item.class_name || item.name || '') === normalizedName) || null;
+          if (row?.id) addId(row.id);
         };
 
-        (teacherAccessibleClassIds || []).forEach(addValue);
-        (Array.isArray(teacherEntityRow?.assigned_class_ids) ? teacherEntityRow.assigned_class_ids : []).forEach(addValue);
-        addValue(teacherEntityRow?.class_id);
-        addValue(teacherEntityRow?.teacher_main_class_name);
-        addValue(teacherEntityRow?.assigned_class);
+        (teacherAccessibleClassIds || []).forEach(addId);
+        (Array.isArray(teacherEntityRow?.assigned_class_ids) ? teacherEntityRow.assigned_class_ids : []).forEach(addId);
+        addId(teacherEntityRow?.class_id);
+        addName(teacherEntityRow?.teacher_main_class_name);
+        addName(teacherEntityRow?.assigned_class);
 
         if (!resolvedIds.size) {
           (teacherRestrictedStudentRows || []).forEach((student) => {
             const classId = String(student.class_id || '').trim();
-            const classLabel = getSchoolManagedClassLabel(classId, student.student_main_class_name || student.class_name || '');
+            const classLabel = String(student.student_main_class_name || student.class_name || classNameMap[classId] || '').trim();
             if (classId && isJhsClassLabel(classLabel)) {
               resolvedIds.add(classId);
             }
