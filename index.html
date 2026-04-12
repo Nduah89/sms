@@ -4803,29 +4803,29 @@
 
       const principalStudentClassLookup = useMemo(() => {
         const map = new Map();
-        (mergedStudentsRows || []).forEach((student) => {
+        (studentRecordsRows || []).forEach((student) => {
           const studentKey = String(student.student_id || student.id || '').trim();
           if (!studentKey) return;
           const mainClassValue = String(student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '').trim();
           map.set(studentKey, mainClassValue);
         });
         return map;
-      }, [mergedStudentsRows, classNameMap]);
+      }, [studentRecordsRows, classNameMap]);
 
       const principalClassFilterOptions = useMemo(() => (
         [{ value: '', label: 'All Main Classes' }].concat(
           Array.from(new Set(
-            (mergedStudentsRows || [])
+            (studentRecordsRows || [])
               .map((student) => String(student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '').trim())
               .filter(Boolean)
           ))
             .sort((a, b) => a.localeCompare(b))
             .map((value) => ({ value, label: value }))
         )
-      ), [mergedStudentsRows, classNameMap]);
+      ), [studentRecordsRows, classNameMap]);
 
       const principalStudentFilterOptions = useMemo(() => {
-        const filteredStudents = (mergedStudentsRows || []).filter((student) => {
+        const filteredStudents = (studentRecordsRows || []).filter((student) => {
           if (!principalPerformanceFilter.class_name) return true;
           const mainClassValue = String(student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '').trim();
           return mainClassValue === principalPerformanceFilter.class_name;
@@ -4845,7 +4845,7 @@
         return [{ value: '', label: 'All Students' }].concat(
           Array.from(seen.values()).sort((a, b) => a.label.localeCompare(b.label))
         );
-      }, [mergedStudentsRows, principalPerformanceFilter.class_name, classNameMap]);
+      }, [studentRecordsRows, principalPerformanceFilter.class_name, classNameMap]);
 
       const principalAcademicYearOptions = useMemo(() => (
         ['All Years'].concat(
@@ -5506,7 +5506,7 @@
       const teacherDisplayGradeRows = useMemo(() => {
         const filteredRows = (teacherGradeRows || []).filter((row) => {
           const rowClassId = String(row.class_id || '').trim();
-          const resolvedStudentClassId = String((mergedStudentsRows.find((student) => String(student.id || '') === String(row.student_id || '')) || {}).class_id || '').trim();
+          const resolvedStudentClassId = String((studentRecordsRows.find((student) => String(student.id || '') === String(row.student_id || '')) || {}).class_id || '').trim();
           const effectiveClassId = rowClassId || resolvedStudentClassId;
           if (gradeForm.filter_class_name && effectiveClassId !== String(gradeForm.filter_class_name || '').trim()) return false;
           if (gradeForm.term_name && String(row.term_name || '') !== gradeForm.term_name) return false;
@@ -5514,7 +5514,7 @@
           return true;
         });
         return buildDisplayGradeRows(filteredRows, principalStudentClassLookup, currentSchoolCategory);
-      }, [teacherGradeRows, gradeForm.filter_class_name, gradeForm.term_name, gradeForm.academic_year, principalStudentClassLookup, mergedStudentsRows, currentSchoolCategory]);
+      }, [teacherGradeRows, gradeForm.filter_class_name, gradeForm.term_name, gradeForm.academic_year, principalStudentClassLookup, studentRecordsRows, currentSchoolCategory]);
 
       const principalDisplayPerformanceRows = useMemo(() => (
         buildDisplayGradeRows(principalPerformanceRows, principalStudentClassLookup, currentSchoolCategory)
@@ -5992,8 +5992,8 @@
                   <div className="card">
                     <h3>Recent Attendance Entries</h3>
                     <div className="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Status</th></tr></thead><tbody>
-                      {attendanceHook.rows.filter(x=>x.marked_by_profile_id===profile.id).slice(0,10).map((row) => <tr key={row.id}><td>{formatDate(row.attendance_date)}</td><td>{row.student_name || '-'}</td><td>{row.class_name || classNameMap[row.class_id] || '-'}</td><td>{row.status || '-'}</td></tr>)}
-                      {attendanceHook.rows.filter(x=>x.marked_by_profile_id===profile.id).length === 0 && <tr><td colSpan="4"><div className="empty">No attendance entries recorded yet</div></td></tr>}
+                      {normalizedAttendanceRows.filter(x=>x.marked_by_profile_id===profile.id).slice(0,10).map((row) => <tr key={row.id}><td>{formatDate(row.attendance_date)}</td><td>{row.student_name || '-'}</td><td>{row.class_name || classNameMap[row.class_id] || '-'}</td><td>{row.status || '-'}</td></tr>)}
+                      {normalizedAttendanceRows.filter(x=>x.marked_by_profile_id===profile.id).length === 0 && <tr><td colSpan="4"><div className="empty">No attendance entries recorded yet</div></td></tr>}
                     </tbody></table></div>
                   </div>
                 </div>
