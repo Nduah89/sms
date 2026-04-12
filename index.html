@@ -1958,6 +1958,8 @@
         return [schoolCode, rolePrefix, nameToken, tail].filter(Boolean).join('.').slice(0, 28);
       };
 
+      const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
+
       const isPresenceActive = (presenceRow) => {
         if (!presenceRow?.is_online) return false;
         const lastSeen = presenceRow?.last_seen_at ? new Date(presenceRow.last_seen_at).getTime() : 0;
@@ -2711,6 +2713,10 @@
         const profileId = row.profile_id || row.id;
         if (!profileId) {
           setNotice({ type: 'danger', text: 'No linked profile was found for this record.' });
+          return;
+        }
+        if (!isUuid(profileId)) {
+          setNotice({ type: 'danger', text: 'This parent entry is not linked to a valid profile account yet. Save the parent properly in the Parents section first, then generate the login from User Accounts & Credentials.' });
           return;
         }
 
@@ -5457,14 +5463,41 @@
 
       const roleScopedManagedUsers = useMemo(() => {
         if (userForm.role_name === 'parent') {
+          const normalized = (value) => String(value || '').trim().toLowerCase();
+          const parentManagedRows = (managedUsersRows || []).filter((row) => row.role_name === 'parent');
           return [...computedParentsRows]
-            .map((row) => ({
-              ...row,
-              role_name: 'parent',
-              profile_id: row.profile_id || row.id || '',
-              class_name: row.linked_class_names || row.class_name || ''
-            }))
-            .filter((row) => String(row.profile_id || '').trim())
+            .map((row) => {
+              const directManaged = parentManagedRows.find((managedRow) =>
+                String(managedRow.profile_id || '').trim() === String(row.profile_id || '').trim()
+              ) || null;
+
+              const matchedManaged = directManaged || parentManagedRows.find((managedRow) => {
+                const sameName = normalized(managedRow.full_name) && normalized(managedRow.full_name) === normalized(row.full_name);
+                const managedPhone = normalized(managedRow.phone || managedRow.profile_phone || '');
+                const managedEmail = normalized(managedRow.email || '');
+                const rowPhone = normalized(row.phone || '');
+                const rowEmail = normalized(row.email || '');
+                const samePhone = managedPhone && rowPhone && managedPhone === rowPhone;
+                const sameEmail = managedEmail && rowEmail && managedEmail === rowEmail;
+                const crossMatch = managedPhone && rowEmail && managedPhone === rowEmail;
+                const reverseCrossMatch = managedEmail && rowPhone && managedEmail === rowPhone;
+                return sameName && (samePhone || sameEmail || crossMatch || reverseCrossMatch);
+              }) || null;
+
+              const resolvedProfileId = [
+                matchedManaged?.profile_id,
+                row.profile_id
+              ].find((value) => isUuid(value)) || '';
+
+              return {
+                ...row,
+                ...(matchedManaged || {}),
+                role_name: 'parent',
+                profile_id: resolvedProfileId,
+                class_name: row.linked_class_names || row.class_name || ''
+              };
+            })
+            .filter((row) => isUuid(row.profile_id))
             .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
         }
 
@@ -5720,6 +5753,10 @@
       const saveCredentialControls = async () => {
         if (!selectedManagedUser?.profile_id) {
           setNotice({ type: 'danger', text: 'Select an existing user first.' });
+          return false;
+        }
+        if (!isUuid(selectedManagedUser.profile_id)) {
+          setNotice({ type: 'danger', text: 'The selected parent is not linked to a valid profile account yet. Save the parent properly in the Parents section first.' });
           return false;
         }
         const { error: profileError } = await supabaseClient
