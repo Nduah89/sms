@@ -2151,7 +2151,7 @@
         const welcomePhotoLabel = welcomeContext.role_name === 'student'
           ? 'Student Picture'
           : 'Profile Picture';
-        const hideAdminAuditLines = ['student', 'teacher', 'principal', 'parent'].includes(welcomeContext.role_name);
+        const hideAdminAuditLines = ['student', 'teacher', 'principal', 'parent', 'accounts_office'].includes(welcomeContext.role_name);
 
         return (
           <div className="card" style={{ marginBottom: 18 }}>
@@ -3916,65 +3916,6 @@
         return rows;
       }, [feesHook.rows, role, currentStudentDashboardRecord, parentLinkedStudentRows, feeStatusFilter]);
 
-      const [feeStatementFilterClassId, setFeeStatementFilterClassId] = useState('');
-
-      const feeStatementClassOptions = useMemo(() => (
-        [{ value: '', label: 'Select Class' }].concat(
-          orderedClassRows
-            .map((row) => ({
-              value: String(row.id || '').trim(),
-              label: buildClassDisplay(row) || row.class_name || row.name || ''
-            }))
-            .filter((option) => option.value && option.label)
-        )
-      ), [orderedClassRows]);
-
-      const feeStatementRowsByClass = useMemo(() => {
-        if (!(role === ROLE.ADMIN || role === ROLE.ACCOUNTS) || page !== 'fee-statements') return [];
-        const selectedClassId = String(feeStatementFilterClassId || '').trim();
-        if (!selectedClassId) return [];
-
-        const classStudents = (studentRecordsRows || [])
-          .filter((student) => String(student.class_id || '').trim() === selectedClassId)
-          .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
-
-        return classStudents.map((student) => {
-          const studentId = String(student.id || student.student_id || '').trim();
-          const matchedFeeRows = (feesHook.rows || []).filter((fee) => String(fee.student_id || '').trim() === studentId);
-          const totalDue = matchedFeeRows.reduce((sum, row) => sum + Number(row.amount_due || 0), 0);
-          const totalPaid = matchedFeeRows.reduce((sum, row) => sum + Number(row.amount_paid || 0), 0);
-          const balance = totalDue - totalPaid;
-          const statementStatus = matchedFeeRows.length === 0
-            ? 'Unpaid'
-            : balance <= 0 && totalDue > 0
-              ? 'Paid'
-              : totalPaid > 0
-                ? 'Partially Paid'
-                : 'Unpaid';
-
-          return {
-            id: studentId,
-            student_id: studentId,
-            student_name: student.full_name || '-',
-            class_name: teacherAssignedClassDisplay(student),
-            total_due: totalDue,
-            total_paid: totalPaid,
-            balance,
-            payment_status: statementStatus
-          };
-        });
-      }, [role, page, feeStatementFilterClassId, studentRecordsRows, feesHook.rows]);
-
-      const openFeeStatementForStudentSummary = (summaryRow) => {
-        setCurrentStudent({
-          full_name: summaryRow.student_name,
-          class_name: summaryRow.class_name,
-          student_id: summaryRow.student_id
-        });
-        setSelectedReport('fee');
-        setPage('reports');
-      };
-
       const openFeeEditor = (row = null) => {
         if (!row) {
           setFeeForm({ id: "", class_id: "", student_id: "", term_name: "Term 1", academic_year: getAcademicYearLabel(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
@@ -4000,6 +3941,9 @@
 
       const saveFeeRecord = async () => {
         if (!(role === ROLE.ADMIN || role === ROLE.ACCOUNTS)) return;
+
+        setNotice({ type: '', text: '' });
+
         if (!feeForm.class_id) {
           setNotice({ type: 'danger', text: 'Please select a class first.' });
           return;
@@ -4008,36 +3952,48 @@
           setNotice({ type: 'danger', text: 'Please select a student.' });
           return;
         }
+
         const selectedStudent = (studentRecordsRows || []).find((row) => String(row.id || '').trim() === String(feeForm.student_id || '').trim()) || null;
         if (!selectedStudent || String(selectedStudent.class_id || '').trim() !== String(feeForm.class_id || '').trim()) {
           setNotice({ type: 'danger', text: 'The selected student does not belong to the selected class.' });
           return;
         }
+
         const amountDue = Number(feeForm.amount_due || 0);
         const amountPaid = Number(feeForm.amount_paid || 0);
-        const balance = amountDue - amountPaid;
-        const paymentStatus = amountPaid <= 0 ? 'Unpaid' : balance <= 0 ? 'Paid' : 'Partially Paid';
+        const paymentStatus = amountPaid <= 0 ? 'Unpaid' : amountPaid >= amountDue && amountDue > 0 ? 'Paid' : 'Partially Paid';
 
-        await saveEntity(
-          'fee_payments',
-          {
-            id: feeForm.id || '',
-            student_id: feeForm.student_id,
-            term_name: feeForm.term_name,
-            academic_year: feeForm.academic_year,
-            amount_due: amountDue,
-            amount_paid: amountPaid,
-            payment_date: feeForm.payment_date,
-            payment_method: feeForm.payment_method,
-            payment_status: paymentStatus,
-            remarks: feeForm.remarks || ''
-          },
-          () => {
-            setFeeForm({ id: "", class_id: "", student_id: "", term_name: "Term 1", academic_year: getAcademicYearLabel(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
-            setShowFeeEditor(false);
-          },
-          { recorded_by_profile_id: profile.id }
-        );
+        const payload = {
+          student_id: String(feeForm.student_id || '').trim(),
+          term_name: feeForm.term_name || 'Term 1',
+          academic_year: feeForm.academic_year || getAcademicYearLabel(),
+          amount_due: amountDue,
+          amount_paid: amountPaid,
+          payment_date: feeForm.payment_date || todayISO(),
+          payment_method: feeForm.payment_method || 'Cash',
+          payment_status: paymentStatus,
+          remarks: feeForm.remarks || '',
+          recorded_by_profile_id: profile.id
+        };
+
+        try {
+          const query = feeForm.id
+            ? supabaseClient.from('fee_payments').update(payload).eq('id', feeForm.id)
+            : supabaseClient.from('fee_payments').insert(payload);
+
+          const res = await query;
+          if (res?.error) {
+            setNotice({ type: 'danger', text: res.error.message || 'Failed to save fee record.' });
+            return;
+          }
+
+          setFeeForm({ id: "", class_id: "", student_id: "", term_name: "Term 1", academic_year: getAcademicYearLabel(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
+          setShowFeeEditor(false);
+          setNotice({ type: 'success', text: feeForm.id ? 'Fee record updated successfully.' : 'Fee record saved successfully.' });
+          await refreshAll();
+        } catch (err) {
+          setNotice({ type: 'danger', text: err?.message || 'Failed to save fee record.' });
+        }
       };
 
       const openFeeStatementForRow = (row) => {
@@ -7146,7 +7102,7 @@
               </div>
             )}
 
-            {page === 'fees' && (
+            {(page === 'fees' || page === 'my-fees' || page === 'fee-statements') && (
               <div className="grid">
                 {(role === ROLE.ADMIN || role === ROLE.ACCOUNTS) && (
                   <>
@@ -7174,6 +7130,7 @@
                             <div className="page-title"><h2 style={{ fontSize: 24, marginBottom: 0 }}>{feeForm.id ? 'Edit Fee Record' : 'Add Fee Record'}</h2></div>
                             <div className="actions"><button className="btn secondary" onClick={() => setShowFeeEditor(false)}>Cancel</button></div>
                           </div>
+                          {notice?.text ? <div className={classNames('banner', notice.type || 'info')} style={{ marginBottom: 14 }}>{notice.text}</div> : null}
                           <div className="form-grid-3">
                             <div className="field">
                               <label>Class</label>
@@ -7234,9 +7191,10 @@
                 )}
                 <div className="card">
                   <div className="topbar" style={{ marginBottom: 12 }}>
-                    <div className="page-title"><h2 style={{ fontSize: 22, marginBottom: 0 }}>Fee Payments</h2></div>
+                    <div className="page-title"><h2 style={{ fontSize: 22, marginBottom: 0 }}>{role === ROLE.STUDENT ? 'My Fees' : role === ROLE.PARENT ? 'My Fees' : 'Fee Payments'}</h2></div>
                     <div className="actions">
                       {(role === ROLE.ADMIN || role === ROLE.ACCOUNTS) && <button className="btn secondary" onClick={() => exportCsv(visibleFeeRows, 'fee-payments.csv')}>Export CSV</button>}
+                      {(role === ROLE.STUDENT || role === ROLE.PARENT) && visibleFeeRows.length > 0 && <button className="btn secondary" onClick={() => openFeeStatementForRow(visibleFeeRows[0])}>Print Statement</button>}
                     </div>
                   </div>
                   <div className="table-wrap">
@@ -7251,7 +7209,7 @@
                           <th>Balance (GHC)</th>
                           <th>Status</th>
                           <th>Method</th>
-                          <th>Actions</th>
+                          {(role === ROLE.ADMIN || role === ROLE.ACCOUNTS || role === ROLE.STUDENT || role === ROLE.PARENT) && <th>Actions</th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -7272,103 +7230,6 @@
                                 {(role === ROLE.ADMIN || role === ROLE.ACCOUNTS) && <button className="btn" onClick={() => openFeeEditor(r)}>Edit</button>}
                               </div>
                             </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {page === 'fee-statements' && (role === ROLE.ADMIN || role === ROLE.ACCOUNTS) && (
-              <div className="grid">
-                <div className="card">
-                  <h3>Fee Statements</h3>
-                  <div className="field-inline" style={{ maxWidth: 320 }}>
-                    <label>Filter by Class</label>
-                    <select value={feeStatementFilterClassId} onChange={(e) => setFeeStatementFilterClassId(e.target.value)}>
-                      {feeStatementClassOptions.map((option) => <option key={option.value || 'empty-fee-statement-class'} value={option.value}>{option.label}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div className="card">
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Student Full Name</th>
-                          <th>Class</th>
-                          <th>Total Due (GHC)</th>
-                          <th>Total Paid (GHC)</th>
-                          <th>Balance (GHC)</th>
-                          <th>Statement</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {!feeStatementFilterClassId && <tr><td colSpan="7"><div className="empty">Select a class to view fee statements for students in that class.</div></td></tr>}
-                        {feeStatementFilterClassId && feeStatementRowsByClass.length === 0 && <tr><td colSpan="7"><div className="empty">No students were found in the selected class.</div></td></tr>}
-                        {feeStatementRowsByClass.map((row) => (
-                          <tr key={row.id}>
-                            <td>{row.student_name || '-'}</td>
-                            <td>{row.class_name || '-'}</td>
-                            <td>{formatCurrency(row.total_due)}</td>
-                            <td>{formatCurrency(row.total_paid)}</td>
-                            <td>{formatCurrency(row.balance)}</td>
-                            <td><span className={classNames('chip', row.payment_status === 'Paid' ? 'success' : row.payment_status === 'Partially Paid' ? 'warning' : 'danger')}>{row.payment_status}</span></td>
-                            <td>
-                              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                                <button className="btn secondary" onClick={() => openFeeStatementForStudentSummary(row)}>View</button>
-                                <button className="btn secondary" onClick={() => openFeeStatementForStudentSummary(row)}>Print</button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {page === 'my-fees' && (
-              <div className="grid">
-                <div className="card">
-                  <div className="topbar" style={{ marginBottom: 12 }}>
-                    <div className="page-title"><h2 style={{ fontSize: 22, marginBottom: 0 }}>My Fees</h2></div>
-                    <div className="actions">
-                      {visibleFeeRows.length > 0 && <button className="btn secondary" onClick={() => openFeeStatementForRow(visibleFeeRows[0])}>Print Statement</button>}
-                    </div>
-                  </div>
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Student</th>
-                          <th>Class</th>
-                          <th>Term</th>
-                          <th>Due (GHC)</th>
-                          <th>Paid (GHC)</th>
-                          <th>Balance (GHC)</th>
-                          <th>Status</th>
-                          <th>Method</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {visibleFeeRows.length === 0 && <tr><td colSpan="9"><div className="empty">No fee records found</div></td></tr>}
-                        {visibleFeeRows.map((r) => (
-                          <tr key={r.id}>
-                            <td>{r.student_name || '-'}</td>
-                            <td>{r.class_name || classNameMap[r.class_id] || '-'}</td>
-                            <td>{r.term_name || '-'}</td>
-                            <td>{formatCurrency(r.amount_due)}</td>
-                            <td>{formatCurrency(r.amount_paid)}</td>
-                            <td>{formatCurrency(r.balance)}</td>
-                            <td><span className={classNames('chip', String(r.payment_status || '').trim() === 'Paid' ? 'success' : String(r.payment_status || '').trim() === 'Partially Paid' ? 'warning' : String(r.payment_status || '').trim() === 'Archived' ? 'info' : 'danger')}>{r.payment_status || '-'}</span></td>
-                            <td>{r.payment_method || '-'}</td>
-                            <td><button className="btn secondary" onClick={() => openFeeStatementForRow(r)}>Print</button></td>
                           </tr>
                         ))}
                       </tbody>
