@@ -3815,6 +3815,29 @@
         return options;
       }, [orderedClassRows, classNameMap]);
 
+      const normalizedAttendanceRows = useMemo(() => (
+        (attendanceHook.rows || []).map((row) => {
+          const resolvedClassRow = resolveSchoolManagedClassRow(
+            row.class_id,
+            row.class_name || '',
+            row.class_section || row.section || 'None'
+          );
+          const resolvedClassId = String(resolvedClassRow?.id || row.class_id || '').trim();
+          const resolvedClassName = String(
+            buildClassDisplay(resolvedClassRow)
+            || classNameMap[resolvedClassId]
+            || normalizeMainClassName(row.class_name || '')
+            || row.class_name
+            || ''
+          ).trim();
+          return {
+            ...row,
+            class_id: resolvedClassId,
+            class_name: resolvedClassName || row.class_name || ''
+          };
+        })
+      ), [attendanceHook.rows, orderedClassRows, classNameMap]);
+
       const principalVisibleStudentRecordsRows = useMemo(() => {
         const selectedClassId = String(principalStudentRecordsFilterClassId || '').trim();
         const rows = !selectedClassId
@@ -3833,29 +3856,22 @@
       const principalAttendanceClassOptions = useMemo(() => {
         const options = [{ value: '', label: 'All Classes' }];
         const seen = new Set();
-        (classesHook.rows || []).forEach((row) => {
+        orderedClassRows.forEach((row) => {
           const classId = String(row?.id || '').trim();
-          const label = String(row?.name || row?.class_name || '').trim();
-          if (!classId || !label || seen.has(classId)) return;
-          seen.add(classId);
-          options.push({ value: classId, label });
-        });
-        (attendanceHook.rows || []).forEach((row) => {
-          const classId = String(row?.class_id || '').trim();
-          const label = String(row?.class_name || classNameMap[classId] || '').trim();
+          const label = String(buildClassDisplay(row) || classNameMap[classId] || row?.class_name || row?.name || '').trim();
           if (!classId || !label || seen.has(classId)) return;
           seen.add(classId);
           options.push({ value: classId, label });
         });
         return options;
-      }, [classesHook.rows, attendanceHook.rows, classNameMap]);
+      }, [orderedClassRows, classNameMap]);
 
       const principalVisibleAttendanceRows = useMemo(() => {
         const selectedClassId = String(principalAttendanceFilterClassId || '').trim();
-        const rows = attendanceHook.rows || [];
+        const rows = normalizedAttendanceRows || [];
         if (!selectedClassId) return rows;
         return rows.filter((row) => String(row.class_id || '').trim() === selectedClassId);
-      }, [attendanceHook.rows, principalAttendanceFilterClassId]);
+      }, [normalizedAttendanceRows, principalAttendanceFilterClassId]);
 
       const principalFilteredAttendanceOverview = useMemo(() => {
         const rows = principalVisibleAttendanceRows || [];
