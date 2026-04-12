@@ -3965,7 +3965,6 @@
 
         const payload = {
           school_id: selectedStudent?.school_id || school?.id || profile?.school_id || null,
-          class_id: String(selectedStudent?.class_id || feeForm.class_id || '').trim() || null,
           student_id: String(feeForm.student_id || '').trim(),
           term_name: feeForm.term_name || 'Term 1',
           academic_year: feeForm.academic_year || getAcademicYearLabel(),
