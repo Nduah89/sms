@@ -1213,18 +1213,40 @@
       const [rows, setRows] = useState([]);
       const [loading, setLoading] = useState(false);
       const [error, setError] = useState("");
+      const lastQueryBuilderRef = React.useRef(null);
 
       const fetchRows = async (queryBuilder) => {
+        if (queryBuilder) lastQueryBuilderRef.current = queryBuilder;
         setLoading(true);
         setError("");
         let query = supabaseClient.from(table).select(select);
-        if (queryBuilder) query = queryBuilder(query);
+        const activeBuilder = queryBuilder || lastQueryBuilderRef.current;
+        if (activeBuilder) query = activeBuilder(query);
         const { data, error } = await query;
         if (error) setError(error.message);
         setRows(data || []);
         setLoading(false);
         return { data, error };
       };
+
+      useEffect(() => {
+        const channel = supabaseClient
+          .channel(`rt:${table}:${Math.random().toString(36).slice(2)}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table }, () => {
+            fetchRows();
+          })
+          .subscribe();
+
+        const fallbackTimer = window.setInterval(() => {
+          if (document.visibilityState === 'hidden') return;
+          fetchRows();
+        }, table === 'chat_messages' ? 1800 : 5000);
+
+        return () => {
+          try { window.clearInterval(fallbackTimer); } catch {}
+          try { supabaseClient.removeChannel(channel); } catch {}
+        };
+      }, [table, select]);
 
       return { rows, setRows, loading, error, fetchRows };
     }
@@ -1784,6 +1806,8 @@
       const mediaRecorderChunksRef = useRef([]);
       const mediaRecorderStreamRef = useRef(null);
       const mediaRecordingTimerRef = useRef(null);
+      const chatAudioContextRef = useRef(null);
+      const seenIncomingChatIdsRef = useRef(new Set());
       useEffect(() => {
         if (role !== ROLE.PRINCIPAL) return;
         if (['classes', 'reports'].includes(page)) {
@@ -1872,6 +1896,32 @@
         if (profile?.id && targetProfileId && String(profile.id) === targetProfileId) {
           setSelfPresenceState(isOnline ? 'online' : 'offline');
         }
+      };
+
+      const playChatSound = (kind = 'sent') => {
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (!AudioCtx) return;
+          if (!chatAudioContextRef.current) {
+            chatAudioContextRef.current = new AudioCtx();
+          }
+          const ctx = chatAudioContextRef.current;
+          if (ctx.state === 'suspended') {
+            try { ctx.resume(); } catch {}
+          }
+          const oscillator = ctx.createOscillator();
+          const gainNode = ctx.createGain();
+          oscillator.type = kind === 'received' ? 'triangle' : 'sine';
+          oscillator.frequency.setValueAtTime(kind === 'received' ? 880 : 660, ctx.currentTime);
+          oscillator.frequency.exponentialRampToValueAtTime(kind === 'received' ? 660 : 880, ctx.currentTime + 0.12);
+          gainNode.gain.setValueAtTime(0.0001, ctx.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.01);
+          gainNode.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+          oscillator.connect(gainNode);
+          gainNode.connect(ctx.destination);
+          oscillator.start();
+          oscillator.stop(ctx.currentTime + 0.2);
+        } catch {}
       };
 
       const markUserActivity = (force = false) => {
@@ -4581,15 +4631,16 @@
 
       const parentChatClassOptions = useMemo(() => {
         if (role !== ROLE.PARENT) return [];
-        const map = new Map();
-        (parentLinkedStudentRows || []).forEach((student) => {
-          const classId = String(student.class_id || '').trim();
-          const label = String(classNameMap[classId] || teacherAssignedClassDisplay(student) || '').trim();
-          if (!classId || !label) return;
-          if (!map.has(classId)) map.set(classId, { value: classId, label });
-        });
-        return [{ value: '', label: 'All Linked Classes' }, ...Array.from(map.values()).sort((a, b) => String(a.label || '').localeCompare(String(b.label || '')))];
-      }, [role, parentLinkedStudentRows, classNameMap]);
+        const linkedClassIds = new Set((parentLinkedStudentRows || []).map((student) => String(student.class_id || '').trim()).filter(Boolean));
+        const options = orderedClassRows
+          .filter((row) => linkedClassIds.has(String(row.id || '').trim()))
+          .map((row) => ({
+            value: String(row.id || '').trim(),
+            label: buildClassDisplay(row) || row.class_name || row.name || ''
+          }))
+          .filter((option) => option.value && option.label);
+        return [{ value: '', label: 'All Linked Classes' }, ...options];
+      }, [role, parentLinkedStudentRows, orderedClassRows]);
 
       const parentTeacherChatRecipientOptions = useMemo(() => {
         if (role !== ROLE.PARENT) return [];
@@ -4710,6 +4761,27 @@
       }, [unreadChatMessages, profile?.id]);
 
       const chatUnreadCount = useMemo(() => unreadChatMessages.length, [unreadChatMessages]);
+
+      useEffect(() => {
+        const currentProfileId = String(profile?.id || '').trim();
+        if (!currentProfileId) return;
+        const seenIds = seenIncomingChatIdsRef.current;
+        const incomingMessages = currentConversationMessages.filter((message) => String(message.sender_profile_id || '').trim() !== currentProfileId);
+        if (!seenIds.size) {
+          incomingMessages.forEach((message) => seenIds.add(String(message.id || '').trim()));
+          return;
+        }
+        let played = false;
+        incomingMessages.forEach((message) => {
+          const id = String(message.id || '').trim();
+          if (!id || seenIds.has(id)) return;
+          seenIds.add(id);
+          if (!played) {
+            playChatSound('received');
+            played = true;
+          }
+        });
+      }, [currentConversationMessages, profile?.id]);
 
       const markChatSeen = () => {
         if (!chatLastSeenKey) return;
@@ -4992,6 +5064,7 @@
         setChatForm((current) => ({ ...current, message_text: '' }));
         setShowEmojiPanel(false);
         setNotice({ type: 'success', text: messageKind === 'audio' ? 'Audio message sent.' : 'Message sent.' });
+        playChatSound('sent');
         await refreshAll();
         markChatSeen();
       };
