@@ -1669,7 +1669,7 @@
         id: "", profile_id: "", role_name: roleName, full_name: "", email: "", username: "", phone: "", account_status: "active", force_password_change: 'true', temporary_password: "",
         class_id: "", student_main_class_name: "", student_class_section: "None", teacher_main_class_name: "", gender: "Male", date_of_birth: "", guardian_contact: "", address: "", student_no: "", staff_no: "",
         subject_specialty: "", qualification: "", assigned_subjects: [], assigned_class_ids: [], relationship_to_student: "",
-        parent_full_name: "", parent_contact: "", emis_code: "", ghana_card: "", trained_status: "Trained", student_photo_url: ""
+        linked_student_name: "", parent_full_name: "", parent_contact: "", emis_code: "", ghana_card: "", trained_status: "Trained", student_photo_url: ""
       });
       const [studentForm, setStudentForm] = useState(buildManagedForm('student'));
       const [teacherForm, setTeacherForm] = useState(buildManagedForm('teacher'));
@@ -3455,7 +3455,8 @@
         username: row.username || '',
         account_status: normalizeAccountStatus(row.account_status || row.status || 'active'),
         force_password_change: String(row.force_password_change ?? true),
-        relationship_to_student: row.relationship_to_student || ''
+        relationship_to_student: row.relationship_to_student || '',
+        linked_student_name: String(row.relationship_to_student || row.linked_student_names || '').split(',')[0].trim()
       });
 
       const buildPrincipalFormFromRow = (row) => ({
@@ -3596,6 +3597,53 @@
           })
           .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
       }, [parentsHook.rows, computedParentsRows]);
+
+      const parentLinkedSourceRows = useMemo(() => {
+        const normalized = (value) => String(value || '').trim().toLowerCase();
+        const map = new Map();
+        (studentRecordsRows || []).forEach((student) => {
+          const parentName = String(student.parent_full_name || '').trim();
+          const parentPhone = String(student.parent_contact || '').trim();
+          const studentName = String(student.full_name || '').trim();
+          const className = String(student.student_main_class_name || classNameMap[student.class_id] || student.class_name || '').trim();
+          if (!parentName) return;
+          const key = `${normalized(parentName)}::${normalized(parentPhone)}`;
+          const existing = map.get(key) || {
+            full_name: parentName,
+            phone: parentPhone,
+            email: '',
+            linked_students: [],
+            linked_classes: []
+          };
+          if (studentName && !existing.linked_students.includes(studentName)) existing.linked_students.push(studentName);
+          if (className && !existing.linked_classes.includes(className)) existing.linked_classes.push(className);
+          map.set(key, existing);
+        });
+        return Array.from(map.values()).sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
+      }, [studentRecordsRows, classNameMap]);
+
+      const selectedParentLinkedSource = useMemo(() => {
+        const normalized = (value) => String(value || '').trim().toLowerCase();
+        return (parentLinkedSourceRows || []).find((row) => normalized(row.full_name) === normalized(parentForm.full_name)) || null;
+      }, [parentLinkedSourceRows, parentForm.full_name]);
+
+      const parentNameSelectOptions = useMemo(() => (
+        [{ value: '', label: 'Select Parent Full Name' }].concat(
+          (parentLinkedSourceRows || []).map((row) => ({
+            value: row.full_name,
+            label: row.full_name
+          }))
+        )
+      ), [parentLinkedSourceRows]);
+
+      const parentLinkedStudentOptions = useMemo(() => (
+        [{ value: '', label: 'Select Linked Student Name' }].concat(
+          (selectedParentLinkedSource?.linked_students || []).map((studentName) => ({
+            value: studentName,
+            label: studentName
+          }))
+        )
+      ), [selectedParentLinkedSource]);
 
       const teacherEntityRow = useMemo(() => {
         if (role !== ROLE.TEACHER || !profile?.id) return null;
@@ -6316,40 +6364,97 @@
             )}
 
             {page === 'parents' && (
-              <GenericCrudPage
-                title="Parent Management"
-                description="Add, edit, and permanently delete parent records. These parent records are saved to Supabase and linked to real profile accounts, so they can be used directly from User Accounts & Credentials to generate usernames and passwords."
-                columns={[
-                  { key: 'full_name', label: 'Parent Full Name' },
-                  { key: 'phone', label: 'Phone' },
-                  { key: 'email', label: 'Email' },
-                  { key: 'linked_student_names', label: 'Linked Student Full Name' },
-                  { key: 'linked_class_names', label: 'Class Assigned' },
-                  { key: 'account_status', label: 'Account', render: (_, row) => <span className={classNames('chip', normalizeAccountStatus(row.account_status || row.status || 'active') === 'active' ? 'success' : normalizeAccountStatus(row.account_status || row.status || 'active') === 'archived' ? 'warning' : 'danger')}>{normalizeAccountStatus(row.account_status || row.status || 'active')}</span> }
-                ]}
-                rows={realParentRows}
-                loading={parentsHook.loading}
-                formState={parentForm}
-                setFormState={setParentForm}
-                fields={[
-                  { key: 'full_name', label: 'Parent Full Name' },
-                  { key: 'phone', label: 'Phone' },
-                  { key: 'email', label: 'Email', type: 'email' },
-                  { key: 'username', label: 'Username' },
-                  { key: 'relationship_to_student', label: 'Relationship To Student' },
-                  { key: 'account_status', label: 'Account Status', type: 'select', options: statusOptions },
-                  { key: 'force_password_change', label: 'Force First Login Password Change', type: 'select', options: yesNoOptions }
-                ]}
-                onSave={() => saveManagedUserRecord(parentForm, setParentForm, 'parent')}
-                onDelete={(id, row) => handleDeleteManagedUser(row)}
-                onEdit={(row) => setParentForm(buildParentFormFromRow(row))}
-                rowActions={(row) => canSchoolAdminManageUsers ? <>
-                  <button className="btn secondary" onClick={() => openManagedUserCredentials(row)}>User Accounts</button>
-                  <button className="btn warning" onClick={() => handleProvisionManagedUser(row)}>{String(row.auth_user_id || '').trim() ? 'Reset Login' : 'Create Login'}</button>
-                </> : null}
-              >
-                <div className="footer-note">Linked student names and linked classes are refreshed from student and parent link records after save.</div>
-              </GenericCrudPage>
+              <div className="grid">
+                <div className="card">
+                  <h3 style={{marginTop:0}}>Parent Management</h3>
+                  <p className="subtle">Select the parent full name from the names already linked inside Student Management. The linked student name and phone number will stay aligned with that student side data, and the saved parent becomes a real profile record for User Accounts & Credentials.</p>
+                  <div className="form-grid-3">
+                    <div className="field">
+                      <label>Parent Full Name</label>
+                      <select value={parentForm.full_name} onChange={(e) => {
+                        const nextName = e.target.value;
+                        const source = (parentLinkedSourceRows || []).find((row) => String(row.full_name || '') === String(nextName || '')) || null;
+                        setParentForm((prev) => ({
+                          ...prev,
+                          full_name: nextName,
+                          phone: source?.phone || '',
+                          linked_student_name: source?.linked_students?.[0] || '',
+                          relationship_to_student: source?.linked_students?.[0] || ''
+                        }));
+                      }}>
+                        {parentNameSelectOptions.map((option) => <option key={option.value || 'empty-parent-name'} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label>Phone Number</label>
+                      <input value={parentForm.phone || ''} onChange={(e) => setParentForm((prev) => ({ ...prev, phone: e.target.value }))} />
+                    </div>
+                    <div className="field">
+                      <label>Email</label>
+                      <input type="email" value={parentForm.email || ''} onChange={(e) => setParentForm((prev) => ({ ...prev, email: e.target.value }))} />
+                    </div>
+                    <div className="field">
+                      <label>Username</label>
+                      <input value={parentForm.username || ''} onChange={(e) => setParentForm((prev) => ({ ...prev, username: e.target.value }))} />
+                    </div>
+                    <div className="field">
+                      <label>Linked Student Name</label>
+                      <select value={parentForm.linked_student_name || parentForm.relationship_to_student || ''} onChange={(e) => {
+                        const nextStudentName = e.target.value;
+                        setParentForm((prev) => ({
+                          ...prev,
+                          linked_student_name: nextStudentName,
+                          relationship_to_student: nextStudentName
+                        }));
+                      }}>
+                        {parentLinkedStudentOptions.map((option) => <option key={option.value || 'empty-linked-student'} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label>Account Status</label>
+                      <select value={parentForm.account_status} onChange={(e) => setParentForm((prev) => ({ ...prev, account_status: e.target.value }))}>
+                        {statusOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label>Force First Login Password Change</label>
+                      <select value={String(parentForm.force_password_change)} onChange={(e) => setParentForm((prev) => ({ ...prev, force_password_change: e.target.value }))}>
+                        {yesNoOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{display:'flex', gap:10, marginTop:16, flexWrap:'wrap'}}>
+                    <button className="btn" onClick={() => saveManagedUserRecord(parentForm, setParentForm, 'parent')}>Save</button>
+                  </div>
+                  <div className="footer-note" style={{marginTop:12}}>When you select a parent from Student Management linked data, the phone number and linked student name are aligned from that student side source so the parent record can be saved as a real profile and then used under User Accounts & Credentials.</div>
+                </div>
+                <div className="card">
+                  <div className="topbar" style={{marginBottom: 12}}>
+                    <div className="page-title"><h2 style={{fontSize: 22, marginBottom: 0}}>Parent Management List</h2></div>
+                  </div>
+                  <div className="table-wrap"><table><thead><tr>
+                    <th>Parent Full Name</th><th>Phone</th><th>Email</th><th>Linked Student Full Name</th><th>Class Assigned</th><th>Account</th><th>Actions</th>
+                  </tr></thead><tbody>
+                    {realParentRows.length === 0 && <tr><td colSpan="7"><div className="empty">No records found</div></td></tr>}
+                    {realParentRows.map((row) => <tr key={row.id}>
+                      <td>{row.full_name || '-'}</td>
+                      <td>{row.phone || row.profile_phone || '-'}</td>
+                      <td>{row.email || '-'}</td>
+                      <td>{row.linked_student_names || row.relationship_to_student || '-'}</td>
+                      <td>{row.linked_class_names || '-'}</td>
+                      <td><span className={classNames('chip', normalizeAccountStatus(row.account_status || row.status || 'active') === 'active' ? 'success' : normalizeAccountStatus(row.account_status || row.status || 'active') === 'archived' ? 'warning' : 'danger')}>{normalizeAccountStatus(row.account_status || row.status || 'active')}</span></td>
+                      <td>
+                        <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                          <button className="btn secondary" onClick={() => setParentForm(buildParentFormFromRow(row))}>Edit</button>
+                          <button className="btn danger" onClick={() => handleDeleteManagedUser(row)}>Delete</button>
+                          <button className="btn secondary" onClick={() => openManagedUserCredentials(row)}>User Accounts</button>
+                          <button className="btn warning" onClick={() => handleProvisionManagedUser(row)}>{String(row.auth_user_id || '').trim() ? 'Reset Login' : 'Create Login'}</button>
+                        </div>
+                      </td>
+                    </tr>)}
+                  </tbody></table></div>
+                </div>
+              </div>
             )}
 
             {page === 'accounts-staff' && (
