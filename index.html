@@ -59,7 +59,21 @@
     }
     .nav-btn:hover, .nav-btn.active { background: rgba(255,255,255,0.08); }
     .main { padding: 24px; overflow-x: hidden; }
-    .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      background: rgba(248, 250, 252, 0.96);
+      backdrop-filter: blur(10px);
+      padding: 10px 0 12px;
+      border-bottom: 1px solid rgba(226, 232, 240, 0.85);
+    }
     .topbar .page-title h2 { margin: 0 0 4px; font-size: 28px; }
     .topbar .actions { display: flex; gap: 10px; flex-wrap: wrap; }
     .btn {
@@ -692,7 +706,11 @@
       }
       .cards-4, .cards-3, .cards-2, .form-grid, .form-grid-3, .two { grid-template-columns: 1fr; }
       .main { padding: 14px; }
-      .topbar { margin-bottom: 14px; }
+      .topbar {
+        margin-bottom: 14px;
+        top: 0;
+        padding: 10px 0 12px;
+      }
       .topbar .page-title h2 { font-size: 24px; }
       .topbar .actions {
         display: grid;
@@ -798,6 +816,9 @@
       }
       .main {
         padding: 10px;
+      }
+      .topbar {
+        padding: 8px 0 10px;
       }
       .page-title h1,
       .page-title h2,
