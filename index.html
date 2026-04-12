@@ -98,6 +98,25 @@
     .chip.warning { background: #fef3c7; color: #92400e; }
     .chip.danger { background: #fee2e2; color: #991b1b; }
     .chip.info { background: #dbeafe; color: #1d4ed8; }
+    .fee-amount { font-weight: 700; }
+    .fee-amount.due { color: #b45309; }
+    .fee-amount.paid { color: #15803d; }
+    .fee-amount.balance { color: #b91c1c; }
+    .fee-amount.zero-balance { color: #15803d; }
+    .chat-action-icon {
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      width:34px;
+      height:34px;
+      border-radius:999px;
+      background: rgba(255,255,255,0.14);
+      border: 1px solid rgba(255,255,255,0.18);
+      color:#fff;
+      font-size:16px;
+      flex: 0 0 auto;
+      margin-left: 8px;
+    }
     .split { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 16px; }
     .auth-shell {
       min-height: 100vh;
@@ -1671,11 +1690,11 @@
               <p><strong>Student:</strong> {currentStudent?.full_name || 'N/A'}</p>
               <p><strong>Class:</strong> {currentStudent?.class_name || 'N/A'}</p>
               <div className="table-wrap"><table><thead><tr><th>Term</th><th>Academic Year</th><th>Amount Due</th><th>Amount Paid</th><th>Balance</th><th>Status</th><th>Payment Date</th><th>Method</th></tr></thead><tbody>
-                {feeRows.map(r => <tr key={r.id}><td>{r.term_name}</td><td>{r.academic_year}</td><td>{formatCurrency(r.amount_due)}</td><td>{formatCurrency(r.amount_paid)}</td><td>{formatCurrency(r.balance)}</td><td>{r.payment_status}</td><td>{formatDate(r.payment_date)}</td><td>{r.payment_method}</td></tr>)}
+                {feeRows.map(r => <tr key={r.id}><td>{r.term_name}</td><td>{r.academic_year}</td><td>{renderFeeAmount('due', r.amount_due)}</td><td>{renderFeeAmount('paid', r.amount_paid)}</td><td>{renderFeeAmount('balance', r.balance)}</td><td>{r.payment_status}</td><td>{formatDate(r.payment_date)}</td><td>{r.payment_method}</td></tr>)}
               </tbody></table></div>
-              <p><strong>Total Due:</strong> {formatCurrency(feeDue)}</p>
-              <p><strong>Total Paid:</strong> {formatCurrency(feePaid)}</p>
-              <p><strong>Outstanding Balance:</strong> {formatCurrency(feeDue - feePaid)}</p>
+              <p><strong>Total Due:</strong> {renderFeeAmount('due', feeDue)}</p>
+              <p><strong>Total Paid:</strong> {renderFeeAmount('paid', feePaid)}</p>
+              <p><strong>Outstanding Balance:</strong> {renderFeeAmount('balance', feeDue - feePaid)}</p>
             </div>
           )}
         </div>
@@ -1754,6 +1773,7 @@
       const [chatForm, setChatForm] = useState({ recipient_profile_id: "", message_text: "" });
       const [studentChatClassId, setStudentChatClassId] = useState('');
       const [chatMonitorClassId, setChatMonitorClassId] = useState('');
+      const [parentChatClassId, setParentChatClassId] = useState('');
       const [chatMonitorSearch, setChatMonitorSearch] = useState('');
       const [chatLastSeenAt, setChatLastSeenAt] = useState(0);
       const [showEmojiPanel, setShowEmojiPanel] = useState(false);
@@ -2294,6 +2314,12 @@
               : 'info';
         const label = normalizedStatus ? normalizedStatus.charAt(0).toUpperCase() + normalizedStatus.slice(1) : '-';
         return <span className={classNames('chip', chipClass)}>{label}</span>;
+      };
+
+      const renderFeeAmount = (kind, value) => {
+        const numericValue = Number(value || 0);
+        const kindClass = kind === 'balance' && numericValue === 0 ? 'zero-balance' : kind;
+        return <span className={classNames('fee-amount', kindClass)}>{formatCurrency(numericValue)}</span>;
       };
 
       const renderRecordPhotoThumb = (photoUrl, altLabel = 'Photo', size = 56) => (
@@ -4463,15 +4489,17 @@
           (mergedTeachersRows || []).forEach((teacher) => {
             const teacherProfileId = String(teacher.profile_id || '').trim();
             const classIds = teacherProfileToClassIds.get(teacherProfileId) || new Set();
-            const matches = Array.from(classIds).some((classId) => linkedClassIds.has(classId));
-            if (!matches) return;
-            addContact({
-              profile_id: teacherProfileId,
-              full_name: teacher.full_name || 'Teacher',
-              role_name: 'teacher',
-              class_name: Array.from(classIds).map((classId) => classNameMap[classId]).filter(Boolean).join(', '),
-              note: 'Teacher for linked child class'
-            }, 'Teacher for linked child class');
+            Array.from(classIds).forEach((classId) => {
+              if (!linkedClassIds.has(classId)) return;
+              addContact({
+                profile_id: teacherProfileId,
+                full_name: teacher.full_name || 'Teacher',
+                role_name: 'teacher',
+                class_id: classId,
+                class_name: classNameMap[classId] || teacherAssignedClassDisplay(teacher),
+                note: 'Teacher for linked student class'
+              }, 'Teacher for linked student class');
+            });
           });
         }
 
@@ -4550,6 +4578,40 @@
         if (!selectedClassId) return [];
         return chatContactOptions.filter((contact) => String(contact.role_name || '').trim().toLowerCase() === 'student' && String(contact.class_id || '').trim() === selectedClassId);
       }, [role, currentStudentIsJhs, studentChatClassId, currentStudentClassId, chatContactOptions]);
+
+      const parentChatClassOptions = useMemo(() => {
+        if (role !== ROLE.PARENT) return [];
+        const map = new Map();
+        (parentLinkedStudentRows || []).forEach((student) => {
+          const classId = String(student.class_id || '').trim();
+          const label = String(classNameMap[classId] || teacherAssignedClassDisplay(student) || '').trim();
+          if (!classId || !label) return;
+          if (!map.has(classId)) map.set(classId, { value: classId, label });
+        });
+        return [{ value: '', label: 'All Linked Classes' }, ...Array.from(map.values()).sort((a, b) => String(a.label || '').localeCompare(String(b.label || '')))];
+      }, [role, parentLinkedStudentRows, classNameMap]);
+
+      const parentTeacherChatRecipientOptions = useMemo(() => {
+        if (role !== ROLE.PARENT) return [];
+        return chatContactOptions.filter((contact) => {
+          if (String(contact.role_name || '').trim().toLowerCase() !== 'teacher') return false;
+          const selectedClassId = String(parentChatClassId || '').trim();
+          if (!selectedClassId) return true;
+          return String(contact.class_id || '').trim() === selectedClassId;
+        });
+      }, [role, chatContactOptions, parentChatClassId]);
+
+      useEffect(() => {
+        if (role === ROLE.PARENT) {
+          const validIds = new Set(parentTeacherChatRecipientOptions.map((contact) => String(contact.profile_id || '').trim()).filter(Boolean));
+          const currentRecipientId = String(chatForm.recipient_profile_id || '').trim();
+          if (currentRecipientId && validIds.has(currentRecipientId)) return;
+          const fallbackRecipientId = String(parentTeacherChatRecipientOptions[0]?.profile_id || '').trim();
+          if (!fallbackRecipientId) return;
+          setChatForm((current) => ({ ...current, recipient_profile_id: fallbackRecipientId }));
+          return;
+        }
+      }, [role, parentTeacherChatRecipientOptions, chatForm.recipient_profile_id]);
 
       useEffect(() => {
         if (role !== ROLE.STUDENT) return;
@@ -7355,9 +7417,9 @@
                             <td>{r.student_name || '-'}</td>
                             <td>{r.class_name || classNameMap[r.class_id] || '-'}</td>
                             <td>{r.term_name || '-'}</td>
-                            <td>{formatCurrency(r.amount_due)}</td>
-                            <td>{formatCurrency(r.amount_paid)}</td>
-                            <td>{formatCurrency(r.balance)}</td>
+                            <td>{renderFeeAmount('due', r.amount_due)}</td>
+                            <td>{renderFeeAmount('paid', r.amount_paid)}</td>
+                            <td>{renderFeeAmount('balance', r.balance)}</td>
                             <td><span className={classNames('chip', String(r.payment_status || '').trim() === 'Paid' ? 'success' : String(r.payment_status || '').trim() === 'Partially Paid' ? 'warning' : String(r.payment_status || '').trim() === 'Archived' ? 'info' : 'danger')}>{r.payment_status || '-'}</span></td>
                             <td>{r.payment_method || '-'}</td>
                             <td>
@@ -7411,6 +7473,16 @@
                         </div>
                       </div>
                     )}
+                    {role === ROLE.PARENT && (
+                      <div className="toolbar" style={{ marginBottom: 14 }}>
+                        <div className="field-inline">
+                          <label>Filter Teacher by Class</label>
+                          <select value={parentChatClassId} onChange={(event) => setParentChatClassId(event.target.value)}>
+                            {parentChatClassOptions.length === 0 ? <option value="">No Linked Class</option> : parentChatClassOptions.map((option) => <option key={option.value || 'parent-chat-class-all'} value={option.value}>{option.label}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    )}
                     {role === ROLE.TEACHER && (
                       <div className="toolbar" style={{ marginBottom: 14 }}>
                         <div className="field-inline">
@@ -7441,11 +7513,11 @@
                       />
                     </div>
                     <div className="chat-contacts">
-                      {chatContactOptions.filter((contact) => {
+                      {(role === ROLE.PARENT ? parentTeacherChatRecipientOptions : chatContactOptions).filter((contact) => {
                         const q = String(chatMonitorSearch || '').trim().toLowerCase();
                         if (!q) return true;
                         return [contact.full_name, contact.role_name, contact.class_name, contact.note].some((value) => String(value || '').toLowerCase().includes(q));
-                      }).length === 0 ? <div className="empty">No chat contacts are available for this account yet.</div> : chatContactOptions.filter((contact) => {
+                      }).length === 0 ? <div className="empty">No chat contacts are available for this account yet.</div> : (role === ROLE.PARENT ? parentTeacherChatRecipientOptions : chatContactOptions).filter((contact) => {
                         const q = String(chatMonitorSearch || '').trim().toLowerCase();
                         if (!q) return true;
                         return [contact.full_name, contact.role_name, contact.class_name, contact.note].some((value) => String(value || '').toLowerCase().includes(q));
@@ -7456,7 +7528,7 @@
                         const initials = String(contact.full_name || 'U').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'U';
                         const isOnline = isPresenceActive(contactPresence);
                         return (
-                          <button key={contactId} className={classNames('chat-contact-btn', String(chatForm.recipient_profile_id || '').trim() === contactId && 'active')} onClick={() => setChatForm((current) => ({ ...current, recipient_profile_id: contactId }))}>
+                          <button key={`${contactId}-${String(contact.class_id || '')}`} className={classNames('chat-contact-btn', String(chatForm.recipient_profile_id || '').trim() === contactId && 'active')} onClick={() => setChatForm((current) => ({ ...current, recipient_profile_id: contactId }))}>
                             <div className="chat-contact-row">
                               <div className="chat-avatar sm">{initials}</div>
                               <div style={{ flex:1, minWidth:0 }}>
@@ -7470,6 +7542,7 @@
                                 </div>
                                 <div className="chat-contact-snippet">{contact.note || chatTypeLabel(deriveChatTypeFromRoles(role, contact.role_name))}</div>
                               </div>
+                              {role === ROLE.PARENT ? <span className="chat-action-icon" aria-hidden="true">💬</span> : null}
                             </div>
                           </button>
                         );
