@@ -59,21 +59,7 @@
     }
     .nav-btn:hover, .nav-btn.active { background: rgba(255,255,255,0.08); }
     .main { padding: 24px; overflow-x: hidden; }
-    .topbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-bottom: 20px;
-      position: sticky;
-      top: 0;
-      z-index: 30;
-      background: rgba(248, 250, 252, 0.96);
-      backdrop-filter: blur(10px);
-      padding: 10px 0 12px;
-      border-bottom: 1px solid rgba(226, 232, 240, 0.85);
-    }
+    .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
     .topbar .page-title h2 { margin: 0 0 4px; font-size: 28px; }
     .topbar .actions { display: flex; gap: 10px; flex-wrap: wrap; }
     .btn {
@@ -521,24 +507,16 @@
       gap: 12px;
       padding: 12px 14px;
       margin-bottom: 12px;
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,0.10);
-      background: linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.08));
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.12);
       color: #fff;
       font-weight: 800;
       cursor: pointer;
-      box-shadow: 0 10px 22px rgba(15,23,42,0.16);
-      backdrop-filter: blur(8px);
+      box-shadow: 0 12px 28px rgba(15,23,42,0.12);
     }
     .mobile-nav-toggle .mobile-nav-icon { font-size: 18px; line-height: 1; }
     .mobile-nav-panel { display: contents; }
-    .mobile-sidebar-overlay {
-      display: none;
-    }
-    .main > .topbar > .mobile-nav-toggle {
-      display: none;
-    }
-
     .empty { padding: 30px; text-align: center; color: var(--text-soft); }
     .printable { background: var(--card); padding: 24px; border-radius: 18px; border: 1px solid var(--line); }
     .chat-box { height: 520px; overflow: auto; border: 1px solid rgba(255,255,255,0.48); border-radius: 30px; padding: 18px; background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(244,247,255,0.94)); box-shadow: 0 22px 50px rgba(80, 90, 140, 0.12); backdrop-filter: blur(14px); }
@@ -635,43 +613,18 @@
       .auth-register-scroll { max-height: none; overflow: visible; }
     }
     @media (max-width: 880px) {
-      .mobile-sidebar-overlay {
-        display: block;
-        position: fixed;
-        inset: 0;
-        background: rgba(2, 6, 23, 0.5);
-        backdrop-filter: blur(2px);
-        z-index: 35;
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.2s ease;
-      }
-      .mobile-sidebar-overlay.show {
-        opacity: 1;
-        pointer-events: auto;
-      }
-      .main > .topbar > .mobile-nav-toggle {
-        display: inline-flex;
-        width: auto;
-        margin-bottom: 0;
-      }
-      .sidebar > .mobile-nav-toggle {
-        display: none;
-      }
       .app-shell { grid-template-columns: 1fr; }
       .sidebar {
         position: fixed;
         left: 0;
         top: 0;
-        bottom: 0;
         transform: translateX(-100%);
-        width: min(310px, calc(100vw - 28px));
-        transition: transform 0.24s ease;
+        width: min(300px, calc(100vw - 20px));
+        transition: 0.25s ease;
         z-index: 40;
         padding: 12px;
         border-radius: 0 18px 18px 0;
-        box-shadow: 0 24px 60px rgba(15,23,42,0.34);
-        overflow-y: auto;
+        box-shadow: 0 20px 50px rgba(15,23,42,0.32);
       }
       .sidebar.open { transform: translateX(0); }
       .mobile-nav-toggle { display: inline-flex; }
@@ -681,58 +634,10 @@
         flex-direction: column;
         gap: 12px;
       }
-      .brand {
-        margin-bottom: 16px;
-      }
-      .brand-badge {
-        width: 42px;
-        height: 42px;
-      }
-      .sidebar h1 {
-        font-size: 20px;
-        line-height: 1.08;
-      }
-      .nav-group {
-        margin-bottom: 12px;
-        padding: 10px;
-        border-radius: 14px;
-        background: rgba(255,255,255,0.04);
-        border: 1px solid rgba(255,255,255,0.05);
-      }
-      .nav-btn {
-        padding: 11px 12px;
-        border-radius: 12px;
-        margin-bottom: 8px;
-      }
+      .nav-group { margin-bottom: 12px; }
+      .nav-btn { padding: 11px 12px; border-radius: 12px; }
       .cards-4, .cards-3, .cards-2, .form-grid, .form-grid-3, .two { grid-template-columns: 1fr; }
-      .main { padding: 14px; }
-      .topbar {
-        margin-bottom: 14px;
-        top: 0;
-        padding: 10px 0 12px;
-      }
-      .topbar .page-title h2 { font-size: 24px; }
-      .topbar .actions {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        width: 100%;
-      }
-      .topbar .actions .btn { width: 100%; }
-      .card {
-        border-radius: 18px;
-        padding: 15px;
-      }
-      .metric { font-size: 22px; }
-      .chat-layout,
-      .chat-layout.no-monitor,
-      .chat-layout.monitor-only {
-        grid-template-columns: 1fr !important;
-      }
-      .chat-sidebar,
-      .chat-thread-panel,
-      .chat-monitor-panel {
-        border-radius: 20px;
-      }
+      .main { padding: 16px; }
     }
     
     @media (max-width: 1100px) {
@@ -743,6 +648,28 @@
     }
 
     @media (max-width: 900px) {
+      .app-shell {
+        grid-template-columns: 1fr;
+      }
+      .sidebar {
+        position: sticky;
+        top: 0;
+        z-index: 40;
+        border-radius: 0 0 18px 18px;
+        padding: 14px;
+      }
+      .main {
+        padding: 14px;
+      }
+      .topbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+      }
+      .topbar .actions {
+        width: 100%;
+        justify-content: space-between;
+      }
       .grid,
       .cards-2,
       .cards-3,
@@ -763,9 +690,19 @@
       .field-inline {
         flex: 1 1 100%;
       }
+      .metric {
+        font-size: 24px;
+      }
+      .card {
+        border-radius: 20px;
+      }
       .table-wrap {
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
+      }
+      th, td {
+        padding: 10px 12px;
+        font-size: 13px;
       }
       .chat-contacts,
       .chat-monitor-list {
@@ -776,13 +713,18 @@
         min-height: 360px;
         height: 360px;
       }
+      .chat-compose-panel,
+      .chat-thread-topbar,
+      .chat-contact-btn {
+        border-radius: 18px;
+      }
       .auth-card {
         grid-template-columns: 1fr;
         min-height: auto;
         border-radius: 24px;
       }
       .auth-left {
-        min-height: 500px;
+        min-height: 520px;
         border-right: 0;
         border-bottom: 1px solid rgba(15, 23, 42, 0.04);
       }
@@ -790,11 +732,11 @@
         padding: 22px 18px 24px;
       }
       .auth-visual {
-        min-height: 430px;
+        min-height: 480px;
       }
       .auth-scene {
         inset: 110px 0 0 0;
-        transform: scale(0.76);
+        transform: scale(0.82);
         transform-origin: top center;
       }
       .auth-panel {
@@ -804,6 +746,12 @@
       .auth-surface-tabs {
         max-width: 100%;
       }
+      .nav-shell {
+        width: 100%;
+      }
+      .nav-group {
+        grid-template-columns: 1fr;
+      }
     }
 
     @media (max-width: 640px) {
@@ -812,13 +760,9 @@
       }
       body {
         font-size: 14px;
-        background: #f4f7fb;
       }
       .main {
-        padding: 10px;
-      }
-      .topbar {
-        padding: 8px 0 10px;
+        padding: 12px;
       }
       .page-title h1,
       .page-title h2,
@@ -907,14 +851,14 @@
         height: 300px;
       }
       .auth-shell {
-        padding: 8px;
+        padding: 10px;
       }
       .auth-card {
         border-radius: 22px;
       }
       .auth-left {
-        padding: 20px 16px 8px;
-        min-height: 340px;
+        padding: 22px 18px 10px;
+        min-height: 430px;
       }
       .auth-right {
         padding: 16px 14px 22px;
@@ -936,11 +880,11 @@
         line-height: 1.5;
       }
       .auth-visual {
-        min-height: 260px;
+        min-height: 360px;
       }
       .auth-scene {
-        inset: 72px 0 0 0;
-        transform: scale(0.42);
+        inset: 90px 0 0 0;
+        transform: scale(0.56);
         transform-origin: top center;
       }
       .auth-surface-tabs {
@@ -2685,7 +2629,7 @@
 
           const presenceResult = await setCurrentPresence(true);
           markPresenceLocally(p.id, true, presenceResult?.data?.last_seen_at || new Date().toISOString());
-          await (p?.school_id ? profilesPresenceHook.fetchRows((q)=>q.eq('school_id', p.school_id)) : profilesPresenceHook.fetchRows());
+          await reloadSchoolScopedData(p);
         } catch (err) {
           console.error('loadCore failed:', err);
           setProfile(null);
@@ -2701,17 +2645,7 @@
         if (!profile) return;
         if (tabVisibilityRef.current) return;
         if (Date.now() < suppressAutoReloadUntilRef.current) return;
-        await Promise.all([
-          studentsHook.fetchRows(), studentsRawHook.fetchRows(), teachersHook.fetchRows(), teachersRawHook.fetchRows(), parentsHook.fetchRows(), parentLinksHook.fetchRows(), accountsHook.fetchRows(), principalsHook.fetchRows(),
-          classesHook.fetchRows(), subjectsHook.fetchRows((q)=>q.order('subject_name')), subjectAssignmentsHook.fetchRows(), attendanceHook.fetchRows(), gradesHook.fetchRows(), feesHook.fetchRows(),
-          schoolsHook.fetchRows((q)=>q.order('created_at', { ascending:false })), schoolAdminRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), userLoginRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })), managedUsersHook.fetchRows((q)=>q.order('full_name')), registrationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
-          auditHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(100)), notificationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
-          timetableHook.fetchRows((q)=>q.order('day_of_week')),
-          (profile?.school_id ? chatHook.fetchRows((q)=>q.eq('school_id', profile.school_id).order('created_at', { ascending:false }).limit(1000)) : chatHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(1000))),
-          (profile?.school_id ? chatPermissionsHook.fetchRows((q)=>q.eq('school_id', profile.school_id).order('updated_at', { ascending:false })) : chatPermissionsHook.fetchRows((q)=>q.order('updated_at', { ascending:false }))),
-          chatMessageHidesHook.fetchRows((q)=>q.eq('profile_id', profile.id).order('created_at', { ascending:false })),
-          (profile?.school_id ? profilesPresenceHook.fetchRows((q)=>q.eq('school_id', profile.school_id)) : profilesPresenceHook.fetchRows())
-        ]);
+        await reloadSchoolScopedData(profile);
         if (profile?.school_id) {
           const { data: schoolData } = await supabaseClient
             .from('schools')
@@ -2724,6 +2658,44 @@
         await syncCurrentProfilePhoto(profile?.id);
       };
 
+
+      const reloadSchoolScopedData = async (activeProfile = profile) => {
+        if (!activeProfile) return;
+        const activeSchoolId = String(activeProfile?.school_id || '').trim();
+        const schoolScoped = !!activeSchoolId;
+
+        await Promise.all([
+          schoolScoped ? studentsHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('full_name')) : studentsHook.fetchRows((q)=>q.order('full_name')),
+          schoolScoped ? studentsRawHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('full_name')) : studentsRawHook.fetchRows((q)=>q.order('full_name')),
+          schoolScoped ? teachersHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('full_name')) : teachersHook.fetchRows((q)=>q.order('full_name')),
+          schoolScoped ? teachersRawHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('full_name')) : teachersRawHook.fetchRows((q)=>q.order('full_name')),
+          schoolScoped ? parentsHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('full_name')) : parentsHook.fetchRows((q)=>q.order('full_name')),
+          schoolScoped ? parentLinksHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('created_at', { ascending:false })) : parentLinksHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
+          schoolScoped ? accountsHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('full_name')) : accountsHook.fetchRows((q)=>q.order('full_name')),
+          schoolScoped ? principalsHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('full_name')) : principalsHook.fetchRows((q)=>q.order('full_name')),
+          schoolScoped ? classesHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('class_name')) : classesHook.fetchRows((q)=>q.order('class_name')),
+          schoolScoped ? subjectsHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('subject_name')) : subjectsHook.fetchRows((q)=>q.order('subject_name')),
+          schoolScoped ? subjectAssignmentsHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('created_at', { ascending:false })) : subjectAssignmentsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
+          schoolScoped ? attendanceHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('attendance_date', { ascending:false })) : attendanceHook.fetchRows((q)=>q.order('attendance_date', { ascending:false })),
+          schoolScoped ? gradesHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('created_at', { ascending:false })) : gradesHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
+          schoolScoped ? feesHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('payment_date', { ascending:false })) : feesHook.fetchRows((q)=>q.order('payment_date', { ascending:false })),
+          schoolScoped ? managedUsersHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('full_name')) : managedUsersHook.fetchRows((q)=>q.order('full_name')),
+          schoolScoped ? notificationsHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('created_at', { ascending:false })) : notificationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
+          schoolScoped ? timetableHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('day_of_week')) : timetableHook.fetchRows((q)=>q.order('day_of_week')),
+          schoolScoped ? userLoginRefsHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('issued_at', { ascending:false })) : userLoginRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })),
+          schoolScoped ? chatHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('created_at', { ascending:false }).limit(1000)) : chatHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(1000)),
+          schoolScoped ? chatPermissionsHook.fetchRows((q)=>q.eq('school_id', activeSchoolId).order('updated_at', { ascending:false })) : chatPermissionsHook.fetchRows((q)=>q.order('updated_at', { ascending:false })),
+          chatMessageHidesHook.fetchRows((q)=>q.eq('profile_id', activeProfile.id).order('created_at', { ascending:false })),
+          schoolScoped ? profilesPresenceHook.fetchRows((q)=>q.eq('school_id', activeSchoolId)) : profilesPresenceHook.fetchRows()
+        ]);
+
+        await Promise.all([
+          schoolsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
+          schoolAdminRefsHook.fetchRows((q)=>q.order('issued_at', { ascending:false })),
+          registrationsHook.fetchRows((q)=>q.order('created_at', { ascending:false })),
+          auditHook.fetchRows((q)=>q.order('created_at', { ascending:false }).limit(100)),
+        ]);
+      };
 
       const loadWelcomeContext = async () => {
         if (!profile || !showManagedWelcome) {
@@ -6906,16 +6878,12 @@
       }
 
       return (
-        <>
-          <div className={classNames('mobile-sidebar-overlay', mobileOpen && 'show')} onClick={() => setMobileOpen(false)} />
-          <div className="app-shell">
-            <Sidebar role={role} page={page} setPage={setPage} user={profile} school={school} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} chatUnreadCount={chatUnreadCount} onLogout={async()=>{ if (profile?.id) markPresenceLocally(profile.id, false, new Date().toISOString()); setSelfPresenceState('offline'); await signOut(); setProfile(null); setWelcomeContext(null); }} />
+        <div className="app-shell">
+          <Sidebar role={role} page={page} setPage={setPage} user={profile} school={school} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} chatUnreadCount={chatUnreadCount} onLogout={async()=>{ if (profile?.id) markPresenceLocally(profile.id, false, new Date().toISOString()); setSelfPresenceState('offline'); await signOut(); setProfile(null); setWelcomeContext(null); }} />
           <main className="main">
             <div className="topbar">
-              <button type="button" className="btn secondary mobile-nav-toggle" onClick={() => setMobileOpen(!mobileOpen)}>
-                <span>{mobileOpen ? 'Close Menu' : 'Menu'}</span>
-              </button>
               <div className="page-title">
+                <div className="actions"><button className="btn secondary mobile-nav-toggle" onClick={() => setMobileOpen(!mobileOpen)}>Menu</button></div>
                 <h2>{getPageLabel(page, role) || "Dashboard"}</h2>
                 <div className="subtle">{school?.name ? `${school.name} (${currentSchoolCategory} • ${currentSchoolGradingSystem})` : 'System Administration'}</div>
               </div>
@@ -8435,8 +8403,7 @@
               </div>
             )}
           </main>
-          </div>
-        </>
+        </div>
       );
     }
 
