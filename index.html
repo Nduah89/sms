@@ -988,6 +988,111 @@
       }
     }
 
+
+    .nav-label-icon, .nav-item-icon, .page-title-icon, .metric-icon, .section-title-icon, .btn-icon, .logout-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .nav-item-label, .page-title-text, .metric-label-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .nav-item-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(56,189,248,0.30), rgba(168,85,247,0.34), rgba(244,114,182,0.26));
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08), 0 8px 18px rgba(15,23,42,0.16);
+      font-size: 15px;
+      flex: 0 0 auto;
+    }
+    .page-title-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(37,99,235,0.14), rgba(124,58,237,0.16), rgba(236,72,153,0.14));
+      border: 1px solid rgba(99,102,241,0.14);
+      box-shadow: 0 10px 24px rgba(79,70,229,0.10);
+      font-size: 23px;
+      flex: 0 0 auto;
+    }
+    .page-title-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 4px;
+    }
+    .metric-label-row {
+      font-weight: 700;
+      color: var(--text-soft);
+    }
+    .metric-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(250,204,21,0.18), rgba(236,72,153,0.14), rgba(59,130,246,0.16));
+      border: 1px solid rgba(99,102,241,0.10);
+      font-size: 18px;
+      box-shadow: 0 10px 22px rgba(79,70,229,0.10);
+      flex: 0 0 auto;
+    }
+    .brand-badge {
+      background: linear-gradient(135deg, rgba(56,189,248,0.22), rgba(168,85,247,0.26), rgba(244,114,182,0.22));
+      box-shadow: 0 10px 24px rgba(15,23,42,0.18);
+    }
+    .nav-btn {
+      position: relative;
+      overflow: hidden;
+    }
+    .nav-btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(120deg, rgba(255,255,255,0.06), transparent 38%, rgba(255,255,255,0.08));
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      pointer-events: none;
+    }
+    .nav-btn:hover::after, .nav-btn.active::after { opacity: 1; }
+    .btn {
+      background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary-2) 72%, white 8%));
+      box-shadow: 0 14px 30px rgba(37, 99, 235, 0.20);
+    }
+    .btn.secondary {
+      background: linear-gradient(180deg, #ffffff, #f8fbff);
+    }
+    .btn.success {
+      background: linear-gradient(135deg, var(--success), color-mix(in srgb, var(--success) 78%, white 10%));
+    }
+    .btn.warning {
+      background: linear-gradient(135deg, var(--warning), color-mix(in srgb, var(--warning) 78%, white 8%));
+    }
+    .btn.danger {
+      background: linear-gradient(135deg, var(--danger), color-mix(in srgb, var(--danger) 76%, white 8%));
+    }
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(249,250,255,0.96));
+    }
+    .section-title-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .section-title-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(59,130,246,0.15), rgba(168,85,247,0.16), rgba(250,204,21,0.16));
+      box-shadow: 0 10px 22px rgba(79,70,229,0.09);
+      font-size: 18px;
+    }
+
     @media print {
       html, body {
         background: #ffffff !important;
@@ -1182,6 +1287,76 @@
       }
       if (role === ROLE.TEACHER && key === "students") return "Student Records";
       return PAGE_LABELS[key] || key;
+    }
+
+
+    const PAGE_ICONS = {
+      'super-dashboard': '🛡️',
+      schools: '🏫',
+      approvals: '✅',
+      licenses: '📜',
+      'system-control': '🧠',
+      'audit-log': '📋',
+      users: '👥',
+      'school-logo': '🎨',
+      students: '🎓',
+      teachers: '🧑‍🏫',
+      parents: '👨‍👩‍👧',
+      'accounts-staff': '💼',
+      principals: '👔',
+      classes: '🏷️',
+      subjects: '📚',
+      attendance: '🗓️',
+      grades: '📝',
+      timetable: '⏰',
+      fees: '💳',
+      reports: '📈',
+      chat: '💬',
+      notifications: '🔔',
+      'principal-dashboard': '🏛️',
+      'attendance-summary': '📅',
+      'performance-summary': '🏆',
+      'teacher-dashboard': '🧑‍🏫',
+      'student-dashboard': '🌟',
+      'parent-dashboard': '👪',
+      'accounts-dashboard': '💰',
+      'my-grades': '📄',
+      'my-attendance': '🕒',
+      'my-fees': '💵',
+      children: '🧒',
+      'fee-statements': '🧾'
+    };
+
+    function getPageIcon(key, role) {
+      if (role === ROLE.ADMIN && key === 'chat') return '🛰️';
+      if (role === ROLE.ADMIN && key === 'school-logo') return '🖼️';
+      if (role === ROLE.TEACHER && key === 'students') return '🗂️';
+      return PAGE_ICONS[key] || '✨';
+    }
+
+    function getMetricIcon(label = '') {
+      const text = String(label || '').toLowerCase();
+      if (text.includes('school')) return '🏫';
+      if (text.includes('student')) return '🎓';
+      if (text.includes('teacher')) return '🧑‍🏫';
+      if (text.includes('parent')) return '👪';
+      if (text.includes('class')) return '🏷️';
+      if (text.includes('subject')) return '📚';
+      if (text.includes('attendance')) return '🗓️';
+      if (text.includes('performance') || text.includes('grade')) return '🏆';
+      if (text.includes('fee') || text.includes('payment') || text.includes('revenue') || text.includes('balance')) return '💰';
+      if (text.includes('approval')) return '✅';
+      if (text.includes('license')) return '📜';
+      if (text.includes('account')) return '👥';
+      if (text.includes('notification')) return '🔔';
+      if (text.includes('chat') || text.includes('message')) return '💬';
+      if (text.includes('timetable')) return '⏰';
+      if (text.includes('audit')) return '📋';
+      return '✨';
+    }
+
+    function SectionTitle({ icon = '✨', children, style = {} }) {
+      return <h3 style={{ marginTop: 0, ...style }}><span className="section-title-row"><span className="section-title-icon">{icon}</span><span>{children}</span></span></h3>;
     }
 
     const genderOptions = ["Male", "Female"];
@@ -1953,7 +2128,7 @@
       const renderNavButton = (key) => (
         <button key={key} className={classNames("nav-btn", page === key && "active")} onClick={() => { setPage(key); setMobileOpen(false); }}>
           <span className="nav-btn-inner">
-            <span>{getPageLabel(key, role)}</span>
+            <span className="nav-item-label"><span className="nav-item-icon">{getPageIcon(key, role)}</span><span>{getPageLabel(key, role)}</span></span>
             {key === 'chat' && chatUnreadCount > 0 ? <span className="nav-badge">{chatUnreadCount}</span> : null}
           </span>
         </button>
@@ -1993,7 +2168,7 @@
             </div>
             <div className="nav-group">
               <div className="nav-label">Session</div>
-              <button className="nav-btn" onClick={onLogout}>Logout</button>
+              <button className="nav-btn" onClick={onLogout}><span className="nav-btn-inner"><span className="nav-item-label"><span className="nav-item-icon logout-icon">🚪</span><span>Logout</span></span></span></button>
             </div>
           </div>
         </aside>
@@ -2005,7 +2180,7 @@
         <div className="grid cards-4">
           {items.map((item, idx) => (
             <div className="card" key={idx}>
-              <div className="subtle">{item.label}</div>
+              <div className="metric-label-row"><span className="metric-icon">{item.icon || getMetricIcon(item.label)}</span><span>{item.label}</span></div>
               <div className="metric">{item.value}</div>
               {item.note && <div className="footer-note">{item.note}</div>}
             </div>
@@ -2016,10 +2191,11 @@
 
     function GenericCrudPage({ title, description, columns, rows, formState, setFormState, onSave, onDelete, onEdit, loading, filters, children, extraActions, rowActions, fields }) {
       const renderedFields = fields || Object.keys(formState).map((key) => ({ key, label: key.replace(/_/g, " "), type: "text" }));
+      const crudTitleIcon = getMetricIcon(title);
       return (
         <div className="grid">
           <div className="card">
-            <h3 style={{marginTop:0}}>{title}</h3>
+            <SectionTitle icon={crudTitleIcon}>{title}</SectionTitle>
             <p className="subtle">{description}</p>
             {filters}
             <div className="form-grid-3">
@@ -7020,7 +7196,7 @@
             <div className="topbar">
               <div className="page-title">
                 <div className="actions"><button className="btn secondary mobile-nav-toggle" onClick={() => setMobileOpen(!mobileOpen)}>Menu</button></div>
-                <h2>{getPageLabel(page, role) || "Dashboard"}</h2>
+                <div className="page-title-row"><span className="page-title-icon">{getPageIcon(page, role)}</span><h2 style={{margin:0}}>{getPageLabel(page, role) || "Dashboard"}</h2></div>
                 <div className="subtle">{school?.name ? `${school.name} (${currentSchoolCategory} • ${currentSchoolGradingSystem})` : 'System Administration'}</div>
               </div>
               <div className="actions">
@@ -7043,13 +7219,13 @@
                 ]} />
                 <div className="split">
                   <div className="card">
-                    <h3>Schools Overview</h3>
+                    <SectionTitle icon="🏫">Schools Overview</SectionTitle>
                     <div className="table-wrap"><table><thead><tr><th>Category</th><th>School</th><th>Code</th><th>Status</th><th>License</th><th>End Date</th><th>Admin Login Reference</th><th>Actions</th></tr></thead><tbody>
                       {schoolsHook.rows.map(s => { const ref = schoolAdminRefMap[s.id]; const linkedRegistration = registrationByCreatedSchoolId[String(s.id || '')] || registrationBySchoolCode[String(s.school_code || '').toUpperCase()] || null; const schoolCategoryLabel = resolveSchoolCategory(s.school_category || linkedRegistration?.school_category); return <tr key={s.id}><td>{schoolCategoryLabel}</td><td>{s.name}</td><td>{s.school_code}</td><td><span className={classNames('chip', s.approval_status==='approved' ? 'success' : s.approval_status==='pending' ? 'warning' : 'danger')}>{s.approval_status}</span></td><td>{s.license_state}</td><td>{formatDate(s.license_end_date)}</td><td>{ref ? <div className="subtle"><div><strong>{ref.admin_email}</strong></div><div>Temp: {ref.temporary_password}</div><div>Issued: {formatDate(ref.issued_at)}</div><div style={{marginTop:6}}><button className="btn secondary" onClick={()=>copyText(buildSchoolAdminReferenceText(s), 'School admin credentials copied to clipboard')}>Copy</button></div></div> : <span className="subtle">No credentials saved yet</span>}</td><td><div style={{display:'flex', gap:8, flexWrap:'wrap'}}>{s.approval_status === 'approved' && <button className="btn" onClick={()=>handleProvisionSchoolAdmin(s.id)}>{ref ? 'Reset Admin Login' : 'Create Admin Login'}</button>}<button className="btn secondary" onClick={()=>handleLicenseUpdate(s.id, 1, true)}>1 Month Trial</button><button className="btn success" onClick={()=>handleLicenseUpdate(s.id, 1, false)}>+1 Year</button><button className="btn warning" onClick={()=>handleSchoolLock(s.id, true, false)}>Usage Lock</button><button className="btn danger" onClick={()=>handleSchoolLock(s.id, true, true)}>Full Lock</button></div></td></tr>})}
                     </tbody></table></div>
                   </div>
                   <div className="card">
-                    <h3>Global System Control</h3>
+                    <SectionTitle icon="🧠">Global System Control</SectionTitle>
                     <p className="subtle">Use with care. Global system shutdown disables all school activity except Super Admin access.</p>
                     <button className="btn danger" onClick={()=>withNotice(async()=>supabaseClient.rpc('set_global_system_shutdown', { p_shutdown: true }), 'Global shutdown enabled')}>Shutdown Entire System</button>
                     <button className="btn secondary" style={{marginLeft:8}} onClick={()=>withNotice(async()=>supabaseClient.rpc('set_global_system_shutdown', { p_shutdown: false }), 'Global shutdown disabled')}>Restore System</button>
@@ -8088,12 +8264,12 @@
                 <div className="card">
                   <div className="topbar" style={{ marginBottom: 0 }}>
                     <div className="page-title">
-                      <h2 style={{ fontSize: 22, marginBottom: 0 }}>Timetable</h2>
+                      <div className="page-title-row"><span className="page-title-icon">⏰</span><h2 style={{ fontSize: 22, marginBottom: 0 }}>Timetable</h2></div>
                       <div className="subtle">{role === ROLE.ADMIN ? 'School admin can add and manage class timetable entries from a popup form.' : 'View the saved class timetable for this school.'}</div>
                     </div>
                     {role === ROLE.ADMIN && (
                       <div className="actions">
-                        <button className="btn" onClick={() => openTimetableEditor()}>+ Add Class Timetable</button>
+                        <button className="btn" onClick={() => openTimetableEditor()}>✨ Add Class Timetable</button>
                       </div>
                     )}
                   </div>
