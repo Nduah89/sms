@@ -1113,7 +1113,7 @@
 
     const NAV_BY_ROLE = {
       [ROLE.SUPER_ADMIN]: ["super-dashboard", "schools", "approvals", "licenses", "system-control", "audit-log"],
-      [ROLE.ADMIN]: ["users", "school-logo", "students", "teachers", "parents", "accounts-staff", "principals", "classes", "subjects", "chat", "audit-log"],
+      [ROLE.ADMIN]: ["users", "school-logo", "students", "teachers", "parents", "accounts-staff", "principals", "classes", "subjects", "timetable", "chat", "audit-log"],
       [ROLE.PRINCIPAL]: ["principal-dashboard", "students", "teachers", "attendance-summary", "performance-summary", "timetable", "chat", "notifications"],
       [ROLE.TEACHER]: ["teacher-dashboard", "attendance", "grades", "timetable", "students", "chat", "notifications"],
       [ROLE.STUDENT]: ["student-dashboard", "my-grades", "my-attendance", "my-fees", "timetable", "chat", "notifications"],
@@ -1168,6 +1168,7 @@
       "principals",
       "classes",
       "subjects",
+      "timetable",
       "chat",
       "school-logo"
     ];
@@ -1187,6 +1188,7 @@
     const attendanceOptions = ["Present", "Absent", "Late"];
     const paymentStatusOptions = ["Paid", "Partially Paid", "Unpaid"];
     const termOptions = ["Term 1", "Term 2", "Term 3"];
+    const timetableDayOptions = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
     const SCHOOL_LOGIN_ALLOWED_ROLES = new Set(["admin", "principal", "teacher", "student", "parent", "accounts_office"]);
 
 
@@ -2207,6 +2209,8 @@
       const [feeStatusFilter, setFeeStatusFilter] = useState('All');
       const [showFeeEditor, setShowFeeEditor] = useState(false);
       const [showGradeEditor, setShowGradeEditor] = useState(false);
+      const [timetableForm, setTimetableForm] = useState({ id: '', class_id: '', day_of_week: 'Monday', start_time: '', end_time: '', subject_id: '', teacher_profile_id: '' });
+      const [showTimetableEditor, setShowTimetableEditor] = useState(false);
       const [notificationForm, setNotificationForm] = useState({ id: "", title: "", message: "", audience_role: "all" });
       const [chatForm, setChatForm] = useState({ recipient_profile_id: "", message_text: "" });
       const [studentChatTab, setStudentChatTab] = useState('students');
@@ -4573,6 +4577,113 @@
         return rows;
       }, [feesHook.rows, role, currentStudentDashboardRecord, parentLinkedStudentRows, feeStatusFilter]);
 
+      const openTimetableEditor = (row = null) => {
+        if (row) {
+          const matchingTeacher = timetableTeacherRows.find((teacherRow) => {
+            const teacherProfileId = String(teacherRow.profile_id || teacherRow.id || '').trim();
+            return teacherProfileId && (
+              teacherProfileId === String(row.teacher_profile_id || '').trim()
+              || teacherProfileId === String(row.teacher_id || '').trim()
+              || String(teacherRow.full_name || '').trim() === String(row.teacher_name || '').trim()
+            );
+          }) || null;
+          const matchingSubject = schoolSubjectRows.find((subjectRow) =>
+            String(subjectRow.id || '').trim() === String(row.subject_id || '').trim()
+            || String(subjectRow.subject_name || '').trim() === String(row.subject_name || '').trim()
+          ) || null;
+          const matchingClass = orderedClassRows.find((classRow) =>
+            String(classRow.id || '').trim() === String(row.class_id || '').trim()
+            || String(buildClassDisplay(classRow) || '').trim() === String(row.class_name || '').trim()
+          ) || null;
+
+          setTimetableForm({
+            id: row.id || '',
+            class_id: String(matchingClass?.id || row.class_id || '').trim(),
+            day_of_week: row.day_of_week || 'Monday',
+            start_time: row.start_time || row.start || '',
+            end_time: row.end_time || row.end || '',
+            subject_id: String(matchingSubject?.id || row.subject_id || '').trim(),
+            teacher_profile_id: String(matchingTeacher?.profile_id || matchingTeacher?.id || row.teacher_profile_id || row.teacher_id || '').trim()
+          });
+        } else {
+          setTimetableForm({ id: '', class_id: '', day_of_week: 'Monday', start_time: '', end_time: '', subject_id: '', teacher_profile_id: '' });
+        }
+        setShowTimetableEditor(true);
+        setNotice({ type: '', text: '' });
+      };
+
+      const saveTimetableEntry = async () => {
+        if (role !== ROLE.ADMIN) {
+          setNotice({ type: 'danger', text: 'Only the school admin can manage timetable entries.' });
+          return;
+        }
+        if (!school?.id) {
+          setNotice({ type: 'danger', text: 'School context was not found. Please log in again.' });
+          return;
+        }
+        if (!timetableForm.class_id || !timetableForm.day_of_week || !timetableForm.start_time || !timetableForm.end_time || !timetableForm.subject_id || !timetableForm.teacher_profile_id) {
+          setNotice({ type: 'danger', text: 'Class, day, period time, subject, and teacher are all required.' });
+          return;
+        }
+        if (String(timetableForm.start_time) >= String(timetableForm.end_time)) {
+          setNotice({ type: 'danger', text: 'End time must be later than start time.' });
+          return;
+        }
+
+        const selectedClass = orderedClassRows.find((row) => String(row.id || '').trim() === String(timetableForm.class_id || '').trim()) || null;
+        const selectedSubject = schoolSubjectRows.find((row) => String(row.id || '').trim() === String(timetableForm.subject_id || '').trim()) || null;
+        const selectedTeacher = timetableTeacherRows.find((row) => String(row.profile_id || row.id || '').trim() === String(timetableForm.teacher_profile_id || '').trim()) || null;
+
+        const basePayload = {
+          school_id: school.id,
+          class_id: timetableForm.class_id,
+          day_of_week: timetableForm.day_of_week,
+          start_time: timetableForm.start_time,
+          end_time: timetableForm.end_time
+        };
+
+        const candidatePayloads = [
+          { ...basePayload, subject_id: timetableForm.subject_id, teacher_profile_id: timetableForm.teacher_profile_id },
+          { ...basePayload, subject_id: timetableForm.subject_id, teacher_id: selectedTeacher?.id || timetableForm.teacher_profile_id },
+          { ...basePayload, subject_id: timetableForm.subject_id, teacher_profile_id: timetableForm.teacher_profile_id, class_name: buildClassDisplay(selectedClass), subject_name: selectedSubject?.subject_name || '', teacher_name: selectedTeacher?.full_name || '' },
+          { ...basePayload, subject_name: selectedSubject?.subject_name || '', teacher_name: selectedTeacher?.full_name || '', class_name: buildClassDisplay(selectedClass) },
+          { ...basePayload, subject: selectedSubject?.subject_name || '', teacher: selectedTeacher?.full_name || '', class_name: buildClassDisplay(selectedClass) }
+        ];
+
+        setNotice({ type: '', text: '' });
+        let lastError = null;
+
+        for (const candidate of candidatePayloads) {
+          try {
+            const payload = { ...candidate };
+            Object.keys(payload).forEach((key) => {
+              if (payload[key] == null || payload[key] === '') delete payload[key];
+            });
+            const res = timetableForm.id
+              ? await supabaseClient.from('timetable').update(payload).eq('id', timetableForm.id).eq('school_id', school.id).select()
+              : await supabaseClient.from('timetable').insert(payload).select();
+
+            if (!res?.error) {
+              setTimetableForm({ id: '', class_id: '', day_of_week: 'Monday', start_time: '', end_time: '', subject_id: '', teacher_profile_id: '' });
+              setShowTimetableEditor(false);
+              await timetableHook.fetchRows((q) => q.eq('school_id', school.id).order('day_of_week'));
+              await refreshAll();
+              setNotice({ type: 'success', text: timetableForm.id ? 'Timetable entry updated successfully.' : 'Timetable entry added successfully.' });
+              return;
+            }
+
+            lastError = res.error;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+
+        setNotice({
+          type: 'danger',
+          text: lastError?.message || 'Failed to save timetable entry. Please check the timetable table columns and policies.'
+        });
+      };
+
       const openFeeEditor = (row = null) => {
         if (!row) {
           setFeeForm({ id: "", class_id: "", student_id: "", term_name: "Term 1", academic_year: getAcademicYearLabel(), amount_due: 0, amount_paid: 0, payment_date: todayISO(), payment_method: "Cash", payment_status: "Unpaid", remarks: "" });
@@ -6597,6 +6708,31 @@
         );
       }, [schoolSubjectRows]);
 
+      const timetableClassOptions = useMemo(() => ([
+        { value: '', label: 'Select Class' },
+        ...orderedClassRows.map((row) => ({ value: row.id, label: buildClassDisplay(row) || row.class_name || row.name || '-' }))
+      ]), [orderedClassRows]);
+
+      const timetableTeacherRows = useMemo(() => (
+        [...(mergedTeachersRows || [])]
+          .filter((row) => String(row.profile_id || row.id || '').trim())
+          .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')))
+      ), [mergedTeachersRows]);
+
+      const timetableTeacherOptions = useMemo(() => ([
+        { value: '', label: 'Select Teacher' },
+        ...timetableTeacherRows.map((row) => ({ value: String(row.profile_id || row.id || ''), label: row.full_name || row.username || row.email || 'Teacher' }))
+      ]), [timetableTeacherRows]);
+
+      const schoolTimetableRows = useMemo(() => (
+        [...(timetableHook.rows || [])].sort((a, b) => {
+          const dayRank = timetableDayOptions.indexOf(String(a.day_of_week || ''));
+          const compareDay = (dayRank === -1 ? 999 : dayRank) - ((timetableDayOptions.indexOf(String(b.day_of_week || '')) === -1 ? 999 : timetableDayOptions.indexOf(String(b.day_of_week || ''))));
+          if (compareDay !== 0) return compareDay;
+          return String(a.start_time || '').localeCompare(String(b.start_time || ''));
+        })
+      ), [timetableHook.rows]);
+
       const teacherGradeRows = useMemo(() => {
         if (role !== ROLE.TEACHER) return gradesHook.rows || [];
         return (gradesHook.rows || []).filter((row) => String(row.teacher_profile_id || '') === String(profile?.id || ''));
@@ -7948,9 +8084,116 @@
             )}
 
             {page === 'timetable' && (
-              <div className="card">
-                <h3>Timetable</h3>
-                <div className="table-wrap"><table><thead><tr><th>Class</th><th>Day</th><th>Start</th><th>End</th><th>Subject</th><th>Teacher</th></tr></thead><tbody>{timetableHook.rows.map(r => <tr key={r.id}><td>{r.class_name}</td><td>{r.day_of_week}</td><td>{r.start_time}</td><td>{r.end_time}</td><td>{r.subject_name}</td><td>{r.teacher_name}</td></tr>)}</tbody></table></div>
+              <div className="grid">
+                <div className="card">
+                  <div className="topbar" style={{ marginBottom: 0 }}>
+                    <div className="page-title">
+                      <h2 style={{ fontSize: 22, marginBottom: 0 }}>Timetable</h2>
+                      <div className="subtle">{role === ROLE.ADMIN ? 'School admin can add and manage class timetable entries from a popup form.' : 'View the saved class timetable for this school.'}</div>
+                    </div>
+                    {role === ROLE.ADMIN && (
+                      <div className="actions">
+                        <button className="btn" onClick={() => openTimetableEditor()}>+ Add Class Timetable</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {showTimetableEditor && role === ROLE.ADMIN && (
+                  <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', display:'grid', placeItems:'center', zIndex:1200, padding:20 }}>
+                    <div className="card" style={{ width:'100%', maxWidth:760, maxHeight:'90vh', overflow:'auto' }}>
+                      <div className="topbar" style={{ marginBottom: 12 }}>
+                        <div className="page-title"><h2 style={{ fontSize: 24, marginBottom: 0 }}>{timetableForm.id ? 'Edit Class Timetable' : 'Add Class Timetable'}</h2></div>
+                        <div className="actions"><button className="btn secondary" onClick={() => setShowTimetableEditor(false)}>Cancel</button></div>
+                      </div>
+                      {notice?.text ? <div className={classNames('banner', notice.type || 'info')} style={{ marginBottom: 14 }}>{notice.text}</div> : null}
+                      <div className="form-grid-3">
+                        <div className="field">
+                          <label>Class</label>
+                          <select value={timetableForm.class_id} onChange={(e) => setTimetableForm((prev) => ({ ...prev, class_id: e.target.value }))}>
+                            {timetableClassOptions.map((option) => <option key={option.value || 'empty-timetable-class'} value={option.value}>{option.label}</option>)}
+                          </select>
+                        </div>
+                        <div className="field">
+                          <label>Day</label>
+                          <select value={timetableForm.day_of_week} onChange={(e) => setTimetableForm((prev) => ({ ...prev, day_of_week: e.target.value }))}>
+                            {timetableDayOptions.map((value) => <option key={value} value={value}>{value}</option>)}
+                          </select>
+                        </div>
+                        <div className="field">
+                          <label>Subject</label>
+                          <select value={timetableForm.subject_id} onChange={(e) => setTimetableForm((prev) => ({ ...prev, subject_id: e.target.value }))}>
+                            {schoolSubjectOptions.map((option) => <option key={option.value || 'empty-timetable-subject'} value={option.value}>{option.label}</option>)}
+                          </select>
+                        </div>
+                        <div className="field">
+                          <label>Period Start Time</label>
+                          <input type="time" value={timetableForm.start_time} onChange={(e) => setTimetableForm((prev) => ({ ...prev, start_time: e.target.value }))} />
+                        </div>
+                        <div className="field">
+                          <label>Period End Time</label>
+                          <input type="time" value={timetableForm.end_time} onChange={(e) => setTimetableForm((prev) => ({ ...prev, end_time: e.target.value }))} />
+                        </div>
+                        <div className="field">
+                          <label>Teacher</label>
+                          <select value={timetableForm.teacher_profile_id} onChange={(e) => setTimetableForm((prev) => ({ ...prev, teacher_profile_id: e.target.value }))}>
+                            {timetableTeacherOptions.map((option) => <option key={option.value || 'empty-timetable-teacher'} value={option.value}>{option.label}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="topbar" style={{ marginTop: 18, marginBottom: 0 }}>
+                        <div className="subtle">Subject and teacher choices come directly from the school admin managed subject and teacher records.</div>
+                        <div className="actions">
+                          <button className="btn secondary" onClick={() => setShowTimetableEditor(false)}>Close</button>
+                          <button className="btn" onClick={saveTimetableEntry}>{timetableForm.id ? 'Update Timetable' : 'Save Timetable'}</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="card">
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Class</th>
+                          <th>Day</th>
+                          <th>Period Start</th>
+                          <th>Period End</th>
+                          <th>Subject</th>
+                          <th>Teacher</th>
+                          {role === ROLE.ADMIN && <th>Actions</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {schoolTimetableRows.map((r) => (
+                          <tr key={r.id}>
+                            <td>{r.class_name || classNameMap[r.class_id] || '-'}</td>
+                            <td>{r.day_of_week || '-'}</td>
+                            <td>{r.start_time || '-'}</td>
+                            <td>{r.end_time || '-'}</td>
+                            <td>{r.subject_name || '-'}</td>
+                            <td>{r.teacher_name || '-'}</td>
+                            {role === ROLE.ADMIN && (
+                              <td>
+                                <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                                  <button className="btn secondary" onClick={() => openTimetableEditor(r)}>Edit</button>
+                                  <button className="btn danger" onClick={() => deleteEntity('timetable', r.id)}>Delete</button>
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                        {schoolTimetableRows.length === 0 && (
+                          <tr>
+                            <td colSpan={role === ROLE.ADMIN ? 7 : 6}><div className="empty">No timetable entries have been added yet.</div></td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             )}
 
