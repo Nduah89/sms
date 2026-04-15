@@ -1704,15 +1704,38 @@
     }
 
     function chatRuleDescription(role) {
-      if (role === ROLE.STUDENT) return 'Students can chat with JHS classmates in the same class and with their teachers.';
-      if (role === ROLE.PARENT) return 'Parents can chat with teachers connected to their child or children.';
-      if (role === ROLE.TEACHER) return 'Teachers can chat directly with their principal, students, and parents, and can monitor student to student chats in their school classes.';
-      if (role === ROLE.PRINCIPAL) return 'Principals can chat directly with teachers only.';
-      if (role === ROLE.ADMIN) return 'School admins can monitor student to student chats, filter by class, allow or disallow students, and permanently delete student to student messages.';
+      if (role === ROLE.STUDENT) return 'Students can use live chat with classmates in the same class and with teachers assigned to that class. They can edit only their own sent messages and hide only messages they receive.';
+      if (role === ROLE.PARENT) return 'Parents can use live chat only with teachers linked to their child class and can select teachers by class.';
+      if (role === ROLE.TEACHER) return 'Teachers can switch between live chat and student monitor mode. Live chat supports principal, student, and parent conversations. Teachers can edit only their own sent messages and hide only messages they receive.';
+      if (role === ROLE.PRINCIPAL) return 'Principals can use live chat only with teachers in the school.';
+      if (role === ROLE.ADMIN) return 'School admins can switch between live chat, student monitor, and access control. Only school admins can permanently delete student messages and ban or restore student chat.';
       return 'System chat is available for permitted school roles.';
     }
 
-    function VirtualizedChatList({ messages, currentProfileId, canDeleteForMe, onDeleteForMe, canPermanentDelete, onPermanentDelete, getPresenceStateLabel, isPresenceActive, resolveProfileMeta }) {
+    function getChatWorkspaceTabs(role) {
+      if (role === ROLE.ADMIN) return [
+        { value: 'live', label: 'Live Chat' },
+        { value: 'monitor', label: 'Monitor All' },
+        { value: 'access', label: 'Access Control' }
+      ];
+      if (role === ROLE.TEACHER) return [
+        { value: 'live', label: 'Live Chat' },
+        { value: 'monitor', label: 'Monitor All' }
+      ];
+      if (role === ROLE.STUDENT) return [
+        { value: 'live', label: 'Live Chat' },
+        { value: 'rules', label: 'Chat Rules' }
+      ];
+      if (role === ROLE.PARENT) return [
+        { value: 'live', label: 'Live Chat' }
+      ];
+      if (role === ROLE.PRINCIPAL) return [
+        { value: 'live', label: 'Live Chat' }
+      ];
+      return [{ value: 'live', label: 'Live Chat' }];
+    }
+
+    function VirtualizedChatList({ messages, currentProfileId, canHideMessage, onHideMessage, canEditMessage, onEditMessage, canPermanentDelete, onPermanentDelete, getPresenceStateLabel, isPresenceActive, resolveProfileMeta }) {
       const containerRef = useRef(null);
       const [scrollTop, setScrollTop] = useState(0);
       const rowHeight = 168;
@@ -1775,10 +1798,15 @@
                           {message.class_name ? `Class: ${message.class_name} | ` : ''}
                           {new Date(message.created_at).toLocaleString()}
                         </div>
-                        {(canDeleteForMe || canPermanentDelete) && (
+                        {((canHideMessage && canHideMessage(message)) || (canEditMessage && canEditMessage(message)) || canPermanentDelete) && (
                           <div className="chat-message-actions">
-                            {canDeleteForMe && (
-                              <button className="icon-btn" onClick={() => onDeleteForMe(message)}>Delete for Me</button>
+                            {canEditMessage && canEditMessage(message) && (
+                              <button className="icon-btn" onClick={() => onEditMessage(message)}>Edit Message</button>
+                            )}
+                            {canHideMessage && canHideMessage(message) && (
+                              <button className="icon-btn" onClick={() => onHideMessage(message)}>
+                                {String(message.sender_profile_id || '') === String(currentProfileId || '') ? 'Delete Sent for Me' : 'Delete Received for Me'}
+                              </button>
                             )}
                             {canPermanentDelete && message.chat_type === 'student_student' && (
                               <button className="icon-btn danger" onClick={() => onPermanentDelete(message)}>Delete Permanently</button>
@@ -2389,8 +2417,12 @@
       const [showTimetableEditor, setShowTimetableEditor] = useState(false);
       const [notificationForm, setNotificationForm] = useState({ id: "", title: "", message: "", audience_role: "all" });
       const [chatForm, setChatForm] = useState({ recipient_profile_id: "", message_text: "" });
+      const [adminChatMode, setAdminChatMode] = useState('live');
+      const [teacherChatMode, setTeacherChatMode] = useState('live');
+      const [studentChatMode, setStudentChatMode] = useState('live');
+      const [teacherLiveChatTab, setTeacherLiveChatTab] = useState('students');
       const [studentChatTab, setStudentChatTab] = useState('students');
-      const [teacherChatTab, setTeacherChatTab] = useState('students');
+      const [chatEditingMessageId, setChatEditingMessageId] = useState('');
       const [studentChatClassId, setStudentChatClassId] = useState('');
       const [chatMonitorClassId, setChatMonitorClassId] = useState('');
       const [parentChatClassId, setParentChatClassId] = useState('');
@@ -5331,6 +5363,44 @@
           });
         }
 
+        if (role === ROLE.ADMIN) {
+          (principalsHook.rows || []).forEach((principalRow) => addContact({
+            profile_id: String(principalRow.profile_id || '').trim(),
+            full_name: principalRow.full_name || 'Principal',
+            role_name: 'principal',
+            class_id: null,
+            class_name: '',
+            note: 'School principal live chat'
+          }, 'School principal live chat'));
+
+          (mergedTeachersRows || []).forEach((teacher) => {
+            const teacherProfileId = String(teacher.profile_id || '').trim();
+            const classIds = Array.from(teacherProfileToClassIds.get(teacherProfileId) || []);
+            if (!classIds.length) {
+              addContact({
+                profile_id: teacherProfileId,
+                full_name: teacher.full_name || 'Teacher',
+                role_name: 'teacher',
+                class_id: null,
+                class_name: '',
+                note: 'Teacher in your school'
+              }, 'Teacher in your school');
+              return;
+            }
+            classIds.forEach((classId) => {
+              const normalizedClassId = String(classId || '').trim();
+              addContact({
+                profile_id: teacherProfileId,
+                full_name: teacher.full_name || 'Teacher',
+                role_name: 'teacher',
+                class_id: normalizedClassId,
+                class_name: resolveClassLabel(normalizedClassId, teacher),
+                note: 'Teacher in your school'
+              }, 'Teacher in your school');
+            });
+          });
+        }
+
         if (role === ROLE.TEACHER) {
           (principalsHook.rows || []).forEach((principalRow) => addContact({
             profile_id: String(principalRow.profile_id || '').trim(),
@@ -5490,12 +5560,28 @@
         );
       }, [role, chatContactOptions, chatMonitorClassId]);
 
+      const adminLiveChatRecipientOptions = useMemo(() => {
+        if (role !== ROLE.ADMIN) return [];
+        return chatContactOptions.filter((contact) => ['teacher', 'principal'].includes(String(contact.role_name || '').trim().toLowerCase()));
+      }, [role, chatContactOptions]);
+
+      const teacherPrincipalRecipientOptions = useMemo(() => {
+        if (role !== ROLE.TEACHER) return [];
+        return chatContactOptions.filter((contact) => String(contact.role_name || '').trim().toLowerCase() === 'principal');
+      }, [role, chatContactOptions]);
+
       const activeChatContactOptions = useMemo(() => {
+        if (role === ROLE.ADMIN) return adminChatMode === 'live' ? adminLiveChatRecipientOptions : [];
         if (role === ROLE.PARENT) return parentTeacherChatRecipientOptions;
-        if (role === ROLE.STUDENT) return studentChatTab === 'teachers' ? studentChatTeacherRecipientOptions : studentChatStudentRecipientOptions;
-        if (role === ROLE.TEACHER) return teacherChatTab === 'parents' ? teacherChatParentRecipientOptions : teacherChatStudentRecipientOptions;
+        if (role === ROLE.STUDENT) return studentChatMode === 'live' ? (studentChatTab === 'teachers' ? studentChatTeacherRecipientOptions : studentChatStudentRecipientOptions) : [];
+        if (role === ROLE.TEACHER) {
+          if (teacherChatMode !== 'live') return [];
+          if (teacherLiveChatTab === 'principal') return teacherPrincipalRecipientOptions;
+          if (teacherLiveChatTab === 'parents') return teacherChatParentRecipientOptions;
+          return teacherChatStudentRecipientOptions;
+        }
         return chatContactOptions;
-      }, [role, parentTeacherChatRecipientOptions, studentChatTab, studentChatStudentRecipientOptions, studentChatTeacherRecipientOptions, teacherChatTab, teacherChatStudentRecipientOptions, teacherChatParentRecipientOptions, chatContactOptions]);
+      }, [role, adminChatMode, adminLiveChatRecipientOptions, parentTeacherChatRecipientOptions, studentChatMode, studentChatTab, studentChatStudentRecipientOptions, studentChatTeacherRecipientOptions, teacherChatMode, teacherLiveChatTab, teacherPrincipalRecipientOptions, teacherChatStudentRecipientOptions, teacherChatParentRecipientOptions, chatContactOptions]);
 
       useEffect(() => {
         if (role === ROLE.PARENT) {
@@ -5579,13 +5665,16 @@
 
       const directVisibleChatMessages = useMemo(() => {
         const currentProfileId = String(profile?.id || '').trim();
-        if (!currentProfileId || role === ROLE.ADMIN) return [];
+        if (!currentProfileId) return [];
         return visibleChatMessages.filter((message) => {
           const participantIds = [String(message.sender_profile_id || '').trim(), String(message.recipient_profile_id || '').trim()];
           if (!participantIds.includes(currentProfileId)) return false;
           const senderRole = String(message.sender_role_name || '').trim().toLowerCase();
           const recipientRole = String(message.recipient_role_name || '').trim().toLowerCase();
           const messageType = message.chat_type || deriveChatTypeFromRoles(senderRole, recipientRole);
+          if (role === ROLE.ADMIN) {
+            return ['teacher', 'principal', 'admin'].includes(senderRole) || ['teacher', 'principal', 'admin'].includes(recipientRole) || messageType === 'direct';
+          }
           if (role === ROLE.PRINCIPAL) return messageType === 'principal_teacher';
           if (role === ROLE.TEACHER) return ['principal_teacher', 'student_teacher', 'parent_teacher', 'direct'].includes(messageType);
           if (role === ROLE.STUDENT) return ['student_student', 'student_teacher', 'direct'].includes(messageType);
@@ -5629,6 +5718,15 @@
       }, [unreadChatMessages, profile?.id]);
 
       const chatUnreadCount = useMemo(() => unreadChatMessages.length, [unreadChatMessages]);
+      const chatWorkspaceTabs = useMemo(() => getChatWorkspaceTabs(role), [role]);
+      const currentChatWorkspaceMode = role === ROLE.ADMIN
+        ? adminChatMode
+        : role === ROLE.TEACHER
+          ? teacherChatMode
+          : role === ROLE.STUDENT
+            ? studentChatMode
+            : 'live';
+
 
       useEffect(() => {
         const currentProfileId = String(profile?.id || '').trim();
@@ -5766,14 +5864,69 @@
         setChatForm((current) => ({ ...current, message_text: `${current.message_text || ''}${emoji}` }));
       };
 
+      const canCurrentUserEditChatMessage = (message) => {
+        return String(message?.sender_profile_id || '').trim() === String(profile?.id || '').trim();
+      };
+
+      const canCurrentUserHideChatMessage = (message) => {
+        const currentProfileId = String(profile?.id || '').trim();
+        if (!currentProfileId) return false;
+        const senderId = String(message?.sender_profile_id || '').trim();
+        const recipientId = String(message?.recipient_profile_id || '').trim();
+        return senderId === currentProfileId || recipientId === currentProfileId;
+      };
+
+      const handleStartEditChatMessage = (message) => {
+        if (!canCurrentUserEditChatMessage(message)) return;
+        setChatEditingMessageId(String(message?.id || '').trim());
+        setChatForm((current) => ({
+          ...current,
+          recipient_profile_id: String(message?.recipient_profile_id || current.recipient_profile_id || '').trim(),
+          message_text: String(message?.message_text || '')
+        }));
+        setNotice({ type: '', text: '' });
+      };
+
+      const handleCancelEditChatMessage = () => {
+        setChatEditingMessageId('');
+        setChatEditingMessageId('');
+        setChatForm((current) => ({ ...current, message_text: '' }));
+      };
+
       const handleHideChatMessageForCurrentUser = async (message) => {
-        if (!message?.id || !profile?.id) return;
+        if (!message?.id || !profile?.id || !canCurrentUserHideChatMessage(message)) return;
         setNotice({ type: '', text: '' });
         const { error } = await supabaseClient.from('chat_message_hides').upsert({ message_id: message.id, profile_id: profile.id });
         if (error) {
           setNotice({ type: 'danger', text: error.message });
           return;
         }
+        setNotice({ type: 'success', text: String(message.sender_profile_id || '').trim() === String(profile.id || '').trim() ? 'Sent message removed from your chat.' : 'Received message removed from your chat.' });
+        await refreshAll();
+      };
+
+      const handleSaveEditedChatMessage = async () => {
+        const messageId = String(chatEditingMessageId || '').trim();
+        const currentProfileId = String(profile?.id || '').trim();
+        const nextText = String(chatForm.message_text || '').trim();
+        if (!messageId || !currentProfileId) return;
+        if (!nextText) {
+          setNotice({ type: 'danger', text: 'Enter a message before saving your changes.' });
+          return;
+        }
+        const editableMessage = visibleChatMessages.find((message) => String(message.id || '').trim() === messageId && String(message.sender_profile_id || '').trim() === currentProfileId);
+        if (!editableMessage) {
+          setNotice({ type: 'danger', text: 'Only the sender can edit this message.' });
+          return;
+        }
+        const { error } = await supabaseClient.from('chat_messages').update({ message_text: nextText, updated_at: new Date().toISOString() }).eq('id', messageId).eq('sender_profile_id', currentProfileId);
+        if (error) {
+          setNotice({ type: 'danger', text: error.message });
+          return;
+        }
+        setChatEditingMessageId('');
+        setChatForm((current) => ({ ...current, message_text: '' }));
+        setNotice({ type: 'success', text: 'Message updated.' });
         await refreshAll();
       };
 
@@ -5790,6 +5943,27 @@
           return;
         }
         setNotice({ type: 'success', text: 'Student chat message permanently deleted.' });
+        await refreshAll();
+      };
+
+      const handleDeleteAllFilteredStudentChatMessages = async () => {
+        if (role !== ROLE.ADMIN) return;
+        const messageIds = monitoredStudentChatMessages
+          .filter((message) => String(message.chat_type || '').trim() === 'student_student')
+          .map((message) => message.id)
+          .filter(Boolean);
+        if (!messageIds.length) {
+          setNotice({ type: 'warning', text: 'No filtered student messages were found to delete.' });
+          return;
+        }
+        const confirmed = window.confirm(`Delete permanently ${messageIds.length} filtered student message(s)? This cannot be undone.`);
+        if (!confirmed) return;
+        const { error } = await supabaseClient.from('chat_messages').delete().in('id', messageIds);
+        if (error) {
+          setNotice({ type: 'danger', text: error.message });
+          return;
+        }
+        setNotice({ type: 'success', text: `${messageIds.length} student message(s) permanently deleted.` });
         await refreshAll();
       };
 
@@ -5909,6 +6083,15 @@
 
         if (role === ROLE.TEACHER && recipient.role_name === 'principal') {
           chatType = 'principal_teacher';
+        }
+
+        if (role === ROLE.ADMIN && recipient.role_name === 'principal') {
+          chatType = 'direct';
+        }
+
+        if (role === ROLE.ADMIN && recipient.role_name === 'teacher') {
+          chatType = 'direct';
+          sharedClassId = String(recipient.class_id || '').trim() || null;
         }
 
         setNotice({ type: '', text: '' });
@@ -8513,219 +8696,136 @@
             {page === 'reports' && <ReportsView school={school} selectedReport={selectedReport} gradeRows={gradesHook.rows.filter(r => !currentStudent || r.student_id === currentStudent.student_id)} feeRows={visibleFeeRows.filter(r => !currentStudent || r.student_id === currentStudent.student_id)} currentStudent={currentStudent} />}
 
             {page === 'chat' && (
-              <div className={classNames('chat-layout', role === ROLE.ADMIN && 'monitor-only', role !== ROLE.ADMIN && role !== ROLE.TEACHER && 'no-monitor')}>
-                {role !== ROLE.ADMIN && (
-                  <div className="card chat-sidebar">
-                    <div className="chat-panel-cap">
-                      <div>
-                        <h3 className="chat-section-title">Chat</h3>
-                        <div className="subtle">{chatRuleDescription(role)}</div>
-                      </div>
-                      <span className="chat-status-chip">
+              <div className="grid" style={{ gap: 18 }}>
+                <div className="card" style={{ paddingBottom: 14 }}>
+                  <div className="chat-panel-cap" style={{ marginBottom: 10 }}>
+                    <div>
+                      <h3 className="chat-section-title" style={{ color: 'var(--text)' }}>System Chat Management</h3>
+                      <div className="subtle">{chatRuleDescription(role)}</div>
+                    </div>
+                    {role !== ROLE.ADMIN ? (
+                      <span className="chat-status-chip" style={{ background: 'rgba(124,58,237,0.12)', color: 'var(--text)' }}>
                         <span className={classNames('chat-user-status', isPresenceActive(chatDirectoryMap.get(String(profile?.id || '').trim())) ? 'online' : 'offline')} />
                         {getPresenceStateLabel(chatDirectoryMap.get(String(profile?.id || '').trim()))}
                       </span>
-                    </div>
-                    {role === ROLE.STUDENT && (
-                      <>
-                        <div className="chat-tab-switch">
-                          <button type="button" className={classNames('chat-tab-btn', studentChatTab === 'students' && 'active')} onClick={() => setStudentChatTab('students')}>Students</button>
-                          <button type="button" className={classNames('chat-tab-btn', studentChatTab === 'teachers' && 'active')} onClick={() => setStudentChatTab('teachers')}>Teachers</button>
-                        </div>
-                        <div className="toolbar" style={{ marginBottom: 14 }}>
-                          <div className="field-inline">
-                            <label>Class Filter</label>
-                            <select value={studentChatClassId} onChange={(event) => setStudentChatClassId(event.target.value)}>
-                              {studentChatClassOptionsForTabs.length === 0 ? <option value="">No Class</option> : studentChatClassOptionsForTabs.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                            </select>
-                          </div>
-                          <div className="field-inline">
-                            <label>{studentChatTab === 'teachers' ? 'Teacher' : 'Student'}</label>
-                            <select
-                              value={activeChatContactOptions.some((contact) => String(contact.profile_id || '').trim() === String(chatForm.recipient_profile_id || '').trim()) ? chatForm.recipient_profile_id : ''}
-                              onChange={(event) => setChatForm((current) => ({ ...current, recipient_profile_id: event.target.value }))}
-                            >
-                              <option value="">{studentChatTab === 'teachers' ? 'Select teacher' : 'Select student'}</option>
-                              {activeChatContactOptions.map((contact) => <option key={`${contact.profile_id}-${String(contact.class_id || '')}`} value={contact.profile_id}>{contact.full_name}{contact.class_name ? ` (${contact.class_name})` : ''}</option>)}
-                            </select>
-                          </div>
-                        </div>
-                      </>
+                    ) : (
+                      <span className="chip info">School Admin Control</span>
                     )}
-                    {role === ROLE.PARENT && (
-                      <div className="toolbar" style={{ marginBottom: 14 }}>
-                        <div className="field-inline">
-                          <label>Filter Teacher by Class</label>
-                          <select value={parentChatClassId} onChange={(event) => setParentChatClassId(event.target.value)}>
-                            {parentChatClassOptions.length === 0 ? <option value="">No Linked Class</option> : parentChatClassOptions.map((option) => <option key={option.value || 'parent-chat-class-all'} value={option.value}>{option.label}</option>)}
-                          </select>
-                        </div>
-                      </div>
-                    )}
-                    {role === ROLE.TEACHER && (
-                      <>
-                        <div className="chat-tab-switch">
-                          <button type="button" className={classNames('chat-tab-btn', teacherChatTab === 'students' && 'active')} onClick={() => setTeacherChatTab('students')}>Students</button>
-                          <button type="button" className={classNames('chat-tab-btn', teacherChatTab === 'parents' && 'active')} onClick={() => setTeacherChatTab('parents')}>Parents</button>
-                        </div>
-                        <div className="toolbar" style={{ marginBottom: 14 }}>
-                          <div className="field-inline">
-                            <label>Class Filter</label>
-                            <select value={chatMonitorClassId} onChange={(event) => setChatMonitorClassId(event.target.value)}>
-                              {teacherChatClassOptionsForTabs.length === 0 ? <option value="">No Assigned Class</option> : teacherChatClassOptionsForTabs.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                            </select>
-                          </div>
-                          <div className="field-inline">
-                            <label>{teacherChatTab === 'parents' ? 'Parent' : 'Student'}</label>
-                            <select
-                              value={activeChatContactOptions.some((contact) => String(contact.profile_id || '').trim() === String(chatForm.recipient_profile_id || '').trim()) ? chatForm.recipient_profile_id : ''}
-                              onChange={(event) => setChatForm((current) => ({ ...current, recipient_profile_id: event.target.value }))}
-                            >
-                              <option value="">{teacherChatTab === 'parents' ? 'Select parent' : 'Select student'}</option>
-                              {activeChatContactOptions.map((contact) => <option key={`${contact.profile_id}-${String(contact.class_id || '')}`} value={contact.profile_id}>{contact.full_name}{contact.class_name ? ` (${contact.class_name})` : ''}</option>)}
-                            </select>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                    <div className="field-inline" style={{ marginBottom: 14 }}>
-                      <label>Search contact</label>
-                      <input
-                        className="chat-search-input"
-                        value={chatMonitorSearch}
-                        onChange={(event) => setChatMonitorSearch(event.target.value)}
-                        placeholder="Search by name, role, or class"
-                      />
-                    </div>
-                    <div className="chat-contacts">
-                      {(role === ROLE.PARENT || role === ROLE.STUDENT || role === ROLE.TEACHER ? activeChatContactOptions : chatContactOptions).filter((contact) => {
-                        const q = String(chatMonitorSearch || '').trim().toLowerCase();
-                        if (!q) return true;
-                        return [contact.full_name, contact.role_name, contact.class_name, contact.note].some((value) => String(value || '').toLowerCase().includes(q));
-                      }).length === 0 ? <div className="empty">No chat contacts are available for this account yet.</div> : (role === ROLE.PARENT || role === ROLE.STUDENT || role === ROLE.TEACHER ? activeChatContactOptions : chatContactOptions).filter((contact) => {
-                        const q = String(chatMonitorSearch || '').trim().toLowerCase();
-                        if (!q) return true;
-                        return [contact.full_name, contact.role_name, contact.class_name, contact.note].some((value) => String(value || '').toLowerCase().includes(q));
-                      }).map((contact) => {
-                        const contactId = String(contact.profile_id || '').trim();
-                        const unread = chatUnreadByContact[contactId] || 0;
-                        const contactPresence = chatDirectoryMap.get(contactId);
-                        const initials = String(contact.full_name || 'U').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'U';
-                        const isOnline = isPresenceActive(contactPresence);
-                        return (
-                          <button key={`${contactId}-${String(contact.class_id || '')}`} className={classNames('chat-contact-btn', String(chatForm.recipient_profile_id || '').trim() === contactId && 'active')} onClick={() => setChatForm((current) => ({ ...current, recipient_profile_id: contactId }))}>
-                            <div className="chat-contact-row">
-                              <div className="chat-avatar sm">{initials}</div>
-                              <div style={{ flex:1, minWidth:0 }}>
-                                <div className="chat-contact-title">
-                                  <strong>{contact.full_name || '-'}</strong>
-                                  {unread > 0 ? <span className="chat-unread-pill">{unread}</span> : <span className="chat-contact-date">{isOnline ? 'online' : 'offline'}</span>}
-                                </div>
-                                <div className="chat-header-status">
-                                  <span className={classNames('chat-user-status', isOnline ? 'online' : 'offline')} />
-                                  <span>{contact.role_name}{contact.class_name ? ` | ${contact.class_name}` : ''}</span>
-                                </div>
-                                <div className="chat-contact-snippet">{contact.note || chatTypeLabel(deriveChatTypeFromRoles(role, contact.role_name))}</div>
-                              </div>
-                              {role === ROLE.PARENT ? <span className="chat-action-icon" aria-hidden="true">💬</span> : null}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
                   </div>
-                )}
+                  <div className="chat-tab-switch" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.16)' }}>
+                    {chatWorkspaceTabs.map((tab) => (
+                      <button
+                        key={tab.value}
+                        type="button"
+                        className={classNames('chat-tab-btn', currentChatWorkspaceMode === tab.value && 'active')}
+                        onClick={() => {
+                          if (role === ROLE.ADMIN) setAdminChatMode(tab.value);
+                          else if (role === ROLE.TEACHER) setTeacherChatMode(tab.value);
+                          else if (role === ROLE.STUDENT) setStudentChatMode(tab.value);
+                        }}
+                        style={{ color: currentChatWorkspaceMode === tab.value ? '#fff' : 'var(--text)' }}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                {role !== ROLE.ADMIN && (
-                  <div className="card chat-thread-panel">
-                    <div className="chat-thread-topbar">
-                      <div className="chat-avatar-row">
-                        <div className="chat-avatar">{String(currentChatRecipient?.full_name || 'C').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'C'}</div>
+                {(role === ROLE.ADMIN && adminChatMode === 'live') && (
+                  <div className="chat-layout no-monitor">
+                    <div className="card chat-sidebar">
+                      <div className="chat-panel-cap">
+                        <div>
+                          <h3 className="chat-section-title">Admin Live Chat</h3>
+                          <div className="subtle">School admin can chat only with teachers and principal.</div>
+                        </div>
+                        <span className="chip info">{adminLiveChatRecipientOptions.length} contacts</span>
+                      </div>
+                      <div className="field-inline" style={{ marginBottom: 14 }}>
+                        <label>Search contact</label>
+                        <input className="chat-search-input" value={chatMonitorSearch} onChange={(event) => setChatMonitorSearch(event.target.value)} placeholder="Search teacher or principal" />
+                      </div>
+                      <div className="chat-contacts">
+                        {adminLiveChatRecipientOptions.filter((contact) => {
+                          const q = String(chatMonitorSearch || '').trim().toLowerCase();
+                          if (!q) return true;
+                          return [contact.full_name, contact.role_name, contact.class_name, contact.note].some((value) => String(value || '').toLowerCase().includes(q));
+                        }).map((contact) => {
+                          const contactId = String(contact.profile_id || '').trim();
+                          const initials = String(contact.full_name || 'U').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'U';
+                          return (
+                            <button key={`${contactId}-${String(contact.class_id || '')}`} className={classNames('chat-contact-btn', String(chatForm.recipient_profile_id || '').trim() === contactId && 'active')} onClick={() => setChatForm((current) => ({ ...current, recipient_profile_id: contactId }))}>
+                              <div className="chat-contact-row">
+                                <div className="chat-avatar sm">{initials}</div>
+                                <div style={{ flex:1, minWidth:0 }}>
+                                  <div className="chat-contact-title"><strong>{contact.full_name}</strong></div>
+                                  <div className="chat-contact-snippet">{contact.role_name}{contact.class_name ? ` | ${contact.class_name}` : ''}</div>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                        {adminLiveChatRecipientOptions.length === 0 ? <div className="empty">No principal or teacher contacts are available yet.</div> : null}
+                      </div>
+                    </div>
+                    <div className="card chat-thread-panel">
+                      <div className="chat-thread-topbar">
                         <div>
                           <h3 style={{ margin:'0 0 4px' }}>{currentChatRecipient ? currentChatRecipient.full_name : 'Select a contact'}</h3>
-                          <div className="chat-header-status">
-                            <span className={classNames('chat-user-status', currentChatRecipient && isPresenceActive(chatDirectoryMap.get(String(currentChatRecipient.profile_id || '').trim())) ? 'online' : 'offline')} />
-                            <span>{currentChatRecipient ? `${getPresenceStateLabel(chatDirectoryMap.get(String(currentChatRecipient.profile_id || '').trim()))}, ${currentChatRecipient.role_name}${currentChatRecipient.class_name ? ` | ${currentChatRecipient.class_name}` : ''}` : 'Choose a contact from the selected tab and class to start chatting.'}</span>
-                          </div>
+                          <div className="subtle">{currentChatRecipient ? `${currentChatRecipient.role_name}${currentChatRecipient.class_name ? ` | ${currentChatRecipient.class_name}` : ''}` : 'Choose a teacher or principal to start a live chat.'}</div>
+                        </div>
+                        <div className="chat-thread-actions">
+                          <span className="chip info">Live Chat</span>
                         </div>
                       </div>
-                      <div className="chat-thread-actions">
-                        {chatUnreadCount > 0 ? <span className="chip info">{chatUnreadCount} unread</span> : <span className="chip success">Up to date</span>}
-                        <button className="btn secondary" onClick={markChatSeen}>Mark Chat Seen</button>
-                      </div>
+                      {currentChatRecipient ? (
+                        <>
+                          <div className="chat-thread-surface">
+                            <VirtualizedChatList
+                              messages={currentConversationMessages}
+                              currentProfileId={profile.id}
+                              canHideMessage={canCurrentUserHideChatMessage}
+                              onHideMessage={handleHideChatMessageForCurrentUser}
+                              canEditMessage={canCurrentUserEditChatMessage}
+                              onEditMessage={handleStartEditChatMessage}
+                              canPermanentDelete={false}
+                              onPermanentDelete={() => {}}
+                              getPresenceStateLabel={getPresenceStateLabel}
+                              isPresenceActive={isPresenceActive}
+                              resolveProfileMeta={(profileId) => chatDirectoryMap.get(String(profileId || '').trim())}
+                            />
+                          </div>
+                          <div className="chat-compose">
+                            <div className="chat-compose-panel">
+                              {chatEditingMessageId ? <div className="banner warning">Editing your sent message. Save changes or cancel.</div> : null}
+                              <div className="chat-input-shell">
+                                <textarea className="chat-textarea" placeholder="Type your message" value={chatForm.message_text} onChange={(event) => setChatForm((current) => ({ ...current, message_text: event.target.value }))} />
+                              </div>
+                              <div className="chat-compose-toolbar" style={{ marginTop: 12 }}>
+                                <div className="chat-composer-actions">
+                                  <button className="chat-round-btn" type="button" onClick={() => setShowEmojiPanel((current) => !current)} title="More emoji">😊</button>
+                                </div>
+                                <div className="chat-composer-actions">
+                                  {chatEditingMessageId ? <button className="btn secondary" type="button" onClick={handleCancelEditChatMessage}>Cancel Edit</button> : null}
+                                  <button className="chat-send-btn" type="button" onClick={() => handleSendSystemChatMessage()}>{chatEditingMessageId ? 'Save Changes' : 'Send Message'}</button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      ) : <div className="chat-empty-state">Choose a teacher or principal to open the conversation.</div>}
                     </div>
-
-                    {currentChatRecipient ? (
-                      <>
-                        <div className="chat-thread-surface">
-                          <VirtualizedChatList
-                            messages={currentConversationMessages}
-                            currentProfileId={profile.id}
-                            canDeleteForMe={true}
-                            onDeleteForMe={handleHideChatMessageForCurrentUser}
-                            canPermanentDelete={false}
-                            onPermanentDelete={() => {}}
-                            getPresenceStateLabel={getPresenceStateLabel}
-                            isPresenceActive={isPresenceActive}
-                            resolveProfileMeta={(profileId) => chatDirectoryMap.get(String(profileId || '').trim())}
-                          />
-                        </div>
-                        <div className="chat-compose">
-                          <div className="chat-compose-panel">
-                            <div className="chat-compose-toolbar">
-                              <div className="chat-composer-actions">
-                                <button className="chat-round-btn" type="button" onClick={() => setShowEmojiPanel((current) => !current)} title="More emoji">😊</button>
-                                <button
-                                  className={classNames('chat-record-btn', isRecordingAudio && 'recording')}
-                                  type="button"
-                                  onMouseDown={handleStartChatAudioRecording}
-                                  onMouseUp={() => handleStopChatAudioRecording(true)}
-                                  onMouseLeave={() => isRecordingAudio && handleStopChatAudioRecording(false)}
-                                  onTouchStart={handleStartChatAudioRecording}
-                                  onTouchEnd={() => handleStopChatAudioRecording(true)}
-                                >
-                                  {isRecordingAudio ? 'Release to send audio' : 'Hold to record audio'}
-                                </button>
-                                <button className="chat-round-btn" type="button" onClick={() => setChatForm((current) => ({ ...current, message_text: '' }))} title="Clear text">🧹</button>
-                              </div>
-                              <div className="chat-recording-meta">
-                                {isRecordingAudio ? <><span>🎙️ Recording</span><strong>{recordingDurationSec}s</strong></> : <span>Realtime text, emoji, and audio chat</span>}
-                              </div>
-                            </div>
-                            {audioRecorderError ? <div className="banner danger" style={{ marginTop: 12, marginBottom: 0 }}>{audioRecorderError}</div> : null}
-                            {showEmojiPanel ? (
-                              <div className="chat-emoji-panel">
-                                {['😀','😁','😂','🤣','😊','😍','😘','😎','🤩','😮','😢','😭','😡','👍','👏','🙏','🎉','🔥','❤️','💙','💚','💯','✅','❗','📚','🧠','📝','🎓','🏫','👨‍🏫','👩‍🏫','👨‍🎓','👩‍🎓'].map((emoji) => (
-                                  <button key={emoji} className="emoji-btn" type="button" onClick={() => insertEmojiIntoChat(emoji)}>{emoji}</button>
-                                ))}
-                              </div>
-                            ) : null}
-                            <div className="chat-input-shell">
-                              <textarea className="chat-textarea" value={chatForm.message_text} onChange={(event) => setChatForm({ ...chatForm, message_text: event.target.value })} placeholder="Type something..." />
-                            </div>
-                            <div className="chat-compose-toolbar">
-                              <div className="chat-header-status">
-                                <span className={classNames('chat-user-status', currentChatRecipient && isPresenceActive(chatDirectoryMap.get(String(currentChatRecipient.profile_id || '').trim())) ? 'online' : 'offline')} />
-                                <span>{currentChatRecipient ? `${currentChatRecipient.full_name} is ${getPresenceStateLabel(chatDirectoryMap.get(String(currentChatRecipient.profile_id || '').trim()))}` : 'No user selected'}</span>
-                              </div>
-                              <div className="chat-composer-actions">
-                                <button className="btn secondary" type="button" onClick={() => setShowEmojiPanel((current) => !current)}>More Emoji</button>
-                                <button className="chat-send-btn" type="button" onClick={() => handleSendSystemChatMessage()}>Send Message</button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="chat-empty-state">Choose a contact to open the conversation.</div>
-                    )}
                   </div>
                 )}
 
-                {(role === ROLE.ADMIN || role === ROLE.TEACHER) ? (
+                {((role === ROLE.ADMIN && adminChatMode === 'monitor') || (role === ROLE.TEACHER && teacherChatMode === 'monitor')) && (
                   <div className="card chat-monitor-panel">
-                    <h3 style={{ marginTop:0 }}>{role === ROLE.ADMIN ? 'Student Chat Monitor' : 'Student Chat Monitor and Teacher Reply'}</h3>
-                    <p className="subtle">Filter by class and review student to student messages. Teachers can quick reply to students. School admins can allow or disallow students and permanently delete student to student messages.</p>
+                    <h3 style={{ marginTop:0 }}>{role === ROLE.ADMIN ? 'Monitor All Student Chats' : 'Monitor All Student Chats'}</h3>
+                    <p className="subtle">
+                      {role === ROLE.ADMIN
+                        ? 'Review student chats only, filter by class, reply is disabled here, and permanently delete student messages when necessary.'
+                        : 'Teachers can monitor student chats only for their assigned classes and can quick reply to students from this monitor.'}
+                    </p>
                     <div className="toolbar">
                       <div className="field-inline">
                         <label>Class Filter</label>
@@ -8737,6 +8837,12 @@
                         <label>Search Messages</label>
                         <input className="chat-search-input" value={chatMonitorSearch} onChange={(event) => setChatMonitorSearch(event.target.value)} placeholder="Search by student or message text" />
                       </div>
+                      {role === ROLE.ADMIN ? (
+                        <div className="field-inline" style={{ justifyContent: 'flex-end' }}>
+                          <label>&nbsp;</label>
+                          <button className="btn danger" type="button" onClick={handleDeleteAllFilteredStudentChatMessages}>Delete All Filtered Student Messages</button>
+                        </div>
+                      ) : null}
                     </div>
                     <div className="chat-monitor-list">
                       {monitoredStudentChatMessages.length === 0 ? <div className="empty">No monitored student chats found for the selected class.</div> : monitoredStudentChatMessages.map((message) => {
@@ -8756,57 +8862,390 @@
                             </div>
                             <div className="chat-monitor-message">{message.message_text}</div>
                             <div className="chat-monitor-actions">
-                              {role === ROLE.TEACHER && <button className="icon-btn" onClick={() => quickReplyToChatStudent(message.sender_profile_id)}>Reply to Sender</button>}
-                              {role === ROLE.TEACHER && <button className="icon-btn" onClick={() => quickReplyToChatStudent(message.recipient_profile_id)}>Reply to Recipient</button>}
-                              {role === ROLE.ADMIN && <button className={classNames('icon-btn', senderAllowed ? 'warning' : '')} onClick={() => handleToggleStudentChatPermission(message.sender_profile_id, !senderAllowed)}>{senderAllowed ? 'Disallow Sender' : 'Allow Sender'}</button>}
-                              {role === ROLE.ADMIN && <button className={classNames('icon-btn', recipientAllowed ? 'warning' : '')} onClick={() => handleToggleStudentChatPermission(message.recipient_profile_id, !recipientAllowed)}>{recipientAllowed ? 'Disallow Recipient' : 'Allow Recipient'}</button>}
+                              {role === ROLE.TEACHER && <button className="icon-btn" onClick={() => { setTeacherChatMode('live'); setTeacherLiveChatTab('students'); quickReplyToChatStudent(message.sender_profile_id); }}>Reply to Sender</button>}
+                              {role === ROLE.TEACHER && <button className="icon-btn" onClick={() => { setTeacherChatMode('live'); setTeacherLiveChatTab('students'); quickReplyToChatStudent(message.recipient_profile_id); }}>Reply to Recipient</button>}
+                              {role === ROLE.ADMIN && <button className={classNames('icon-btn', senderAllowed ? 'warning' : '')} onClick={() => handleToggleStudentChatPermission(message.sender_profile_id, !senderAllowed)}>{senderAllowed ? 'Ban Sender' : 'Restore Sender'}</button>}
+                              {role === ROLE.ADMIN && <button className={classNames('icon-btn', recipientAllowed ? 'warning' : '')} onClick={() => handleToggleStudentChatPermission(message.recipient_profile_id, !recipientAllowed)}>{recipientAllowed ? 'Ban Recipient' : 'Restore Recipient'}</button>}
                               {role === ROLE.ADMIN && <button className="icon-btn danger" onClick={() => handlePermanentDeleteChatMessage(message)}>Delete Permanently</button>}
                             </div>
                           </div>
                         );
                       })}
                     </div>
-                    {role === ROLE.ADMIN && (
-                      <div style={{ marginTop:16 }}>
-                        <h4 style={{ margin:'0 0 10px' }}>Student Chat Status</h4>
-                        <div className="chat-rule-list">
-                          {monitoredStudentParticipants.length === 0 ? <div className="empty">No students to manage in this filter.</div> : monitoredStudentParticipants.map((student) => {
-                            const permission = chatPermissionByStudentProfileId.get(String(student.profile_id || '').trim());
-                            const isAllowed = permission ? permission.is_allowed !== false : true;
-                            return (
-                              <div key={student.profile_id} className="chat-rule-item">
-                                <div style={{ display:'flex', justifyContent:'space-between', gap:10, flexWrap:'wrap' }}>
-                                  <div>
-                                    <strong>{student.full_name}</strong>
-                                    <div className="subtle">{student.class_name || '-'}</div>
+                  </div>
+                )}
+
+                {(role === ROLE.ADMIN && adminChatMode === 'access') && (
+                  <div className="card chat-monitor-panel">
+                    <h3 style={{ marginTop:0 }}>Student Chat Access Control</h3>
+                    <p className="subtle">Ban or restore student chat access here. Permanent deletion remains available only for student messages.</p>
+                    <div className="toolbar">
+                      <div className="field-inline">
+                        <label>Class Filter</label>
+                        <select value={chatMonitorClassId} onChange={(event) => setChatMonitorClassId(event.target.value)}>
+                          {chatMonitorClassOptions.map((option) => <option key={option.value || 'all-classes'} value={option.value}>{option.label}</option>)}
+                        </select>
+                      </div>
+                      <div className="field-inline">
+                        <label>Search Student</label>
+                        <input className="chat-search-input" value={chatMonitorSearch} onChange={(event) => setChatMonitorSearch(event.target.value)} placeholder="Search by student name or class" />
+                      </div>
+                    </div>
+                    <div className="chat-rule-list">
+                      {monitoredStudentParticipants.length === 0 ? <div className="empty">No students to manage in this filter.</div> : monitoredStudentParticipants.map((student) => {
+                        const permission = chatPermissionByStudentProfileId.get(String(student.profile_id || '').trim());
+                        const isAllowed = permission ? permission.is_allowed !== false : true;
+                        return (
+                          <div key={student.profile_id} className="chat-rule-item">
+                            <div style={{ display:'flex', justifyContent:'space-between', gap:10, flexWrap:'wrap', alignItems:'center' }}>
+                              <div>
+                                <strong>{student.full_name}</strong>
+                                <div className="subtle">{student.class_name || '-'}</div>
+                              </div>
+                              <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+                                <span className={classNames('chip', isAllowed ? 'success' : 'danger')}>{isAllowed ? 'Active' : 'Banned'}</span>
+                                <button className={classNames('icon-btn', isAllowed ? 'warning' : 'success')} onClick={() => handleToggleStudentChatPermission(student.profile_id, !isAllowed)}>{isAllowed ? 'Ban Chat' : 'Restore Chat'}</button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {(role !== ROLE.ADMIN && role !== ROLE.TEACHER) && (
+                  <div className="chat-layout no-monitor">
+                    {currentChatWorkspaceMode === 'live' ? (
+                      <>
+                        <div className="card chat-sidebar">
+                          <div className="chat-panel-cap">
+                            <div>
+                              <h3 className="chat-section-title">Live Chat</h3>
+                              <div className="subtle">{chatRuleDescription(role)}</div>
+                            </div>
+                            <span className="chat-status-chip">
+                              <span className={classNames('chat-user-status', isPresenceActive(chatDirectoryMap.get(String(profile?.id || '').trim())) ? 'online' : 'offline')} />
+                              {getPresenceStateLabel(chatDirectoryMap.get(String(profile?.id || '').trim()))}
+                            </span>
+                          </div>
+                          {role === ROLE.STUDENT && (
+                            <>
+                              <div className="chat-tab-switch">
+                                <button type="button" className={classNames('chat-tab-btn', studentChatTab === 'students' && 'active')} onClick={() => setStudentChatTab('students')}>Same Class Students</button>
+                                <button type="button" className={classNames('chat-tab-btn', studentChatTab === 'teachers' && 'active')} onClick={() => setStudentChatTab('teachers')}>Assigned Teachers</button>
+                              </div>
+                              <div className="toolbar" style={{ marginBottom: 14 }}>
+                                <div className="field-inline">
+                                  <label>Class Filter</label>
+                                  <select value={studentChatClassId} onChange={(event) => setStudentChatClassId(event.target.value)}>
+                                    {studentChatClassOptionsForTabs.length === 0 ? <option value="">No Class</option> : studentChatClassOptionsForTabs.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                  </select>
+                                </div>
+                                <div className="field-inline">
+                                  <label>{studentChatTab === 'teachers' ? 'Teacher' : 'Student'}</label>
+                                  <select
+                                    value={activeChatContactOptions.some((contact) => String(contact.profile_id || '').trim() === String(chatForm.recipient_profile_id || '').trim()) ? chatForm.recipient_profile_id : ''}
+                                    onChange={(event) => setChatForm((current) => ({ ...current, recipient_profile_id: event.target.value }))}
+                                  >
+                                    <option value="">{studentChatTab === 'teachers' ? 'Select teacher' : 'Select student'}</option>
+                                    {activeChatContactOptions.map((contact) => <option key={`${contact.profile_id}-${String(contact.class_id || '')}`} value={contact.profile_id}>{contact.full_name}{contact.class_name ? ` (${contact.class_name})` : ''}</option>)}
+                                  </select>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                          {role === ROLE.PARENT && (
+                            <div className="toolbar" style={{ marginBottom: 14 }}>
+                              <div className="field-inline">
+                                <label>Filter Teacher by Class</label>
+                                <select value={parentChatClassId} onChange={(event) => setParentChatClassId(event.target.value)}>
+                                  {parentChatClassOptions.length === 0 ? <option value="">No Linked Class</option> : parentChatClassOptions.map((option) => <option key={option.value || 'parent-chat-class-all'} value={option.value}>{option.label}</option>)}
+                                </select>
+                              </div>
+                            </div>
+                          )}
+                          {role === ROLE.PRINCIPAL ? (
+                            <div className="banner success" style={{ marginBottom: 14 }}>Principal live chat is limited to teachers only.</div>
+                          ) : null}
+                          <div className="field-inline" style={{ marginBottom: 14 }}>
+                            <label>Search contact</label>
+                            <input
+                              className="chat-search-input"
+                              value={chatMonitorSearch}
+                              onChange={(event) => setChatMonitorSearch(event.target.value)}
+                              placeholder="Search by name, role, or class"
+                            />
+                          </div>
+                          <div className="chat-contacts">
+                            {activeChatContactOptions.filter((contact) => {
+                              const q = String(chatMonitorSearch || '').trim().toLowerCase();
+                              if (!q) return true;
+                              return [contact.full_name, contact.role_name, contact.class_name, contact.note].some((value) => String(value || '').toLowerCase().includes(q));
+                            }).length === 0 ? <div className="empty">No chat contacts are available for this account yet.</div> : activeChatContactOptions.filter((contact) => {
+                              const q = String(chatMonitorSearch || '').trim().toLowerCase();
+                              if (!q) return true;
+                              return [contact.full_name, contact.role_name, contact.class_name, contact.note].some((value) => String(value || '').toLowerCase().includes(q));
+                            }).map((contact) => {
+                              const contactId = String(contact.profile_id || '').trim();
+                              const unread = chatUnreadByContact[contactId] || 0;
+                              const contactPresence = chatDirectoryMap.get(contactId);
+                              const initials = String(contact.full_name || 'U').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'U';
+                              const isOnline = isPresenceActive(contactPresence);
+                              return (
+                                <button key={`${contactId}-${String(contact.class_id || '')}`} className={classNames('chat-contact-btn', String(chatForm.recipient_profile_id || '').trim() === contactId && 'active')} onClick={() => setChatForm((current) => ({ ...current, recipient_profile_id: contactId }))}>
+                                  <div className="chat-contact-row">
+                                    <div className="chat-avatar sm">{initials}</div>
+                                    <div style={{ flex:1, minWidth:0 }}>
+                                      <div className="chat-contact-title">
+                                        <strong>{contact.full_name || '-'}</strong>
+                                        {unread > 0 ? <span className="chat-unread-pill">{unread}</span> : <span className="chat-contact-date">{isOnline ? 'online' : 'offline'}</span>}
+                                      </div>
+                                      <div className="chat-header-status">
+                                        <span className={classNames('chat-user-status', isOnline ? 'online' : 'offline')} />
+                                        <span>{contact.role_name}{contact.class_name ? ` | ${contact.class_name}` : ''}</span>
+                                      </div>
+                                      <div className="chat-contact-snippet">{contact.note || chatTypeLabel(deriveChatTypeFromRoles(role, contact.role_name))}</div>
+                                    </div>
+                                    {role === ROLE.PARENT ? <span className="chat-action-icon" aria-hidden="true">💬</span> : null}
                                   </div>
-                                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                                    <span className={classNames('chip', isAllowed ? 'success' : 'danger')}>{isAllowed ? 'Allowed' : 'Disallowed'}</span>
-                                    <button className={classNames('icon-btn', isAllowed ? 'warning' : '')} onClick={() => handleToggleStudentChatPermission(student.profile_id, !isAllowed)}>{isAllowed ? 'Disallow' : 'Allow'}</button>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="card chat-thread-panel">
+                          <div className="chat-thread-topbar">
+                            <div className="chat-avatar-row">
+                              <div className="chat-avatar">{String(currentChatRecipient?.full_name || 'C').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'C'}</div>
+                              <div>
+                                <h3 style={{ margin:'0 0 4px' }}>{currentChatRecipient ? currentChatRecipient.full_name : 'Select a contact'}</h3>
+                                <div className="chat-header-status">
+                                  <span className={classNames('chat-user-status', currentChatRecipient && isPresenceActive(chatDirectoryMap.get(String(currentChatRecipient.profile_id || '').trim())) ? 'online' : 'offline')} />
+                                  <span>{currentChatRecipient ? `${getPresenceStateLabel(chatDirectoryMap.get(String(currentChatRecipient.profile_id || '').trim()))}, ${currentChatRecipient.role_name}${currentChatRecipient.class_name ? ` | ${currentChatRecipient.class_name}` : ''}` : 'Choose a contact from live chat to start chatting.'}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="chat-thread-actions">
+                              {chatUnreadCount > 0 ? <span className="chip info">{chatUnreadCount} unread</span> : <span className="chip success">Up to date</span>}
+                              <button className="btn secondary" onClick={markChatSeen}>Mark Chat Seen</button>
+                            </div>
+                          </div>
+
+                          {currentChatRecipient ? (
+                            <>
+                              <div className="chat-thread-surface">
+                                <VirtualizedChatList
+                                  messages={currentConversationMessages}
+                                  currentProfileId={profile.id}
+                                  canHideMessage={(message) => {
+                                    const currentProfileId = String(profile?.id || '').trim();
+                                    const senderId = String(message?.sender_profile_id || '').trim();
+                                    const recipientId = String(message?.recipient_profile_id || '').trim();
+                                    return senderId === currentProfileId || recipientId === currentProfileId;
+                                  }}
+                                  onHideMessage={handleHideChatMessageForCurrentUser}
+                                  canEditMessage={(message) => String(message?.sender_profile_id || '').trim() === String(profile?.id || '').trim()}
+                                  onEditMessage={handleStartEditChatMessage}
+                                  canPermanentDelete={false}
+                                  onPermanentDelete={() => {}}
+                                  getPresenceStateLabel={getPresenceStateLabel}
+                                  isPresenceActive={isPresenceActive}
+                                  resolveProfileMeta={(profileId) => chatDirectoryMap.get(String(profileId || '').trim())}
+                                />
+                              </div>
+                              <div className="chat-compose">
+                                <div className="chat-compose-panel">
+                                  {chatEditingMessageId ? <div className="banner warning">Editing your sent message. Only the sender can edit a message.</div> : null}
+                                  <div className="chat-compose-toolbar">
+                                    <div className="chat-composer-actions">
+                                      <button className="chat-round-btn" type="button" onClick={() => setShowEmojiPanel((current) => !current)} title="More emoji">😊</button>
+                                      <button
+                                        className={classNames('chat-record-btn', isRecordingAudio && 'recording')}
+                                        type="button"
+                                        onMouseDown={handleStartChatAudioRecording}
+                                        onMouseUp={() => handleStopChatAudioRecording(true)}
+                                        onMouseLeave={() => isRecordingAudio && handleStopChatAudioRecording(false)}
+                                        onTouchStart={handleStartChatAudioRecording}
+                                        onTouchEnd={() => handleStopChatAudioRecording(true)}
+                                      >
+                                        {isRecordingAudio ? 'Release to send audio' : 'Hold to record audio'}
+                                      </button>
+                                    </div>
+                                    <div className="chat-recording-meta">
+                                      {isRecordingAudio ? <><span className="chat-unread-pill">{recordingDurationSec}s</span><span>Recording audio message</span></> : <span>Sent and received sounds are active across system chat.</span>}
+                                    </div>
+                                  </div>
+                                  <div className="chat-input-shell">
+                                    <textarea className="chat-textarea" placeholder={chatEditingMessageId ? 'Edit your sent message' : 'Type your message'} value={chatForm.message_text} onChange={(event) => setChatForm((current) => ({ ...current, message_text: event.target.value }))} />
+                                  </div>
+                                  {showEmojiPanel ? <div className="chat-emoji-panel">{['😀','😁','😂','😍','🤝','👏','👍','🙏','🎉','📚','📝','✅','⭐','💡','💬','🔥'].map((emoji) => <button key={emoji} className="emoji-btn" type="button" onClick={() => insertEmojiIntoChat(emoji)}>{emoji}</button>)}</div> : null}
+                                  <div className="chat-compose-toolbar" style={{ marginTop: 12 }}>
+                                    <div className="chat-composer-actions">
+                                      <button className="btn secondary" type="button" onClick={() => setShowEmojiPanel((current) => !current)}>More Emoji</button>
+                                    </div>
+                                    <div className="chat-composer-actions">
+                                      {chatEditingMessageId ? <button className="btn secondary" type="button" onClick={handleCancelEditChatMessage}>Cancel Edit</button> : null}
+                                      <button className="chat-send-btn" type="button" onClick={() => handleSendSystemChatMessage()}>{chatEditingMessageId ? 'Save Changes' : 'Send Message'}</button>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                            );
-                          })}
+                            </>
+                          ) : (
+                            <div className="chat-empty-state">Choose a contact to open the conversation.</div>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="card chat-monitor-panel">
+                        <h3 style={{ marginTop:0 }}>Chat Rules and Notifications</h3>
+                        <div className="chat-rule-list">
+                          <div className="chat-rule-item">Only the sender can edit a sent message.</div>
+                          <div className="chat-rule-item">Sent messages can be deleted only by the sender, and received messages can be deleted only by the receiver.</div>
+                          <div className="chat-rule-item">Student messages can be permanently deleted only by the school admin.</div>
+                          <div className="chat-rule-item">Message send and receive sounds are enabled across the system chat.</div>
                         </div>
                       </div>
                     )}
                   </div>
-                ) : (
-                  role !== ROLE.ADMIN && (
-                    <div className="card chat-monitor-panel">
-                      <h3 style={{ marginTop:0 }}>Chat Rules and Notifications</h3>
-                      <div className="chat-rule-list">
-                        <div className="chat-rule-item">Unread messages show as blue badges beside the System Chat tab and beside each contact name.</div>
-                        <div className="chat-rule-item">Messages stay stored in the system unless a user chooses Delete for Me. Student to student messages can be permanently deleted only by the school admin.</div>
-                        <div className="chat-rule-item">Student to student chat is restricted to JHS students in the same class. Student to teacher, parent to teacher, and principal to teacher chats follow their role permissions automatically.</div>
+                )}
+
+                {(role === ROLE.TEACHER && teacherChatMode === 'live') && (
+                  <div className="chat-layout no-monitor">
+                    <div className="card chat-sidebar">
+                      <div className="chat-panel-cap">
+                        <div>
+                          <h3 className="chat-section-title">Teacher Live Chat</h3>
+                          <div className="subtle">Teachers can chat with students, parents, and principal.</div>
+                        </div>
+                        <span className="chat-status-chip">
+                          <span className={classNames('chat-user-status', isPresenceActive(chatDirectoryMap.get(String(profile?.id || '').trim())) ? 'online' : 'offline')} />
+                          {getPresenceStateLabel(chatDirectoryMap.get(String(profile?.id || '').trim()))}
+                        </span>
+                      </div>
+                      <div className="chat-tab-switch">
+                        <button type="button" className={classNames('chat-tab-btn', teacherLiveChatTab === 'students' && 'active')} onClick={() => setTeacherLiveChatTab('students')}>Students</button>
+                        <button type="button" className={classNames('chat-tab-btn', teacherLiveChatTab === 'parents' && 'active')} onClick={() => setTeacherLiveChatTab('parents')}>Parents</button>
+                        <button type="button" className={classNames('chat-tab-btn', teacherLiveChatTab === 'principal' && 'active')} onClick={() => setTeacherLiveChatTab('principal')}>Principal</button>
+                      </div>
+                      <div className="toolbar" style={{ marginBottom: 14 }}>
+                        <div className="field-inline">
+                          <label>Class Filter</label>
+                          <select value={chatMonitorClassId} onChange={(event) => setChatMonitorClassId(event.target.value)}>
+                            {teacherChatClassOptionsForTabs.length === 0 ? <option value="">No Assigned Class</option> : teacherChatClassOptionsForTabs.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                          </select>
+                        </div>
+                        <div className="field-inline">
+                          <label>{teacherLiveChatTab === 'parents' ? 'Parent' : teacherLiveChatTab === 'principal' ? 'Principal' : 'Student'}</label>
+                          <select
+                            value={activeChatContactOptions.some((contact) => String(contact.profile_id || '').trim() === String(chatForm.recipient_profile_id || '').trim()) ? chatForm.recipient_profile_id : ''}
+                            onChange={(event) => setChatForm((current) => ({ ...current, recipient_profile_id: event.target.value }))}
+                          >
+                            <option value="">{teacherLiveChatTab === 'parents' ? 'Select parent' : teacherLiveChatTab === 'principal' ? 'Select principal' : 'Select student'}</option>
+                            {activeChatContactOptions.map((contact) => <option key={`${contact.profile_id}-${String(contact.class_id || '')}`} value={contact.profile_id}>{contact.full_name}{contact.class_name ? ` (${contact.class_name})` : ''}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="field-inline" style={{ marginBottom: 14 }}>
+                        <label>Search contact</label>
+                        <input className="chat-search-input" value={chatMonitorSearch} onChange={(event) => setChatMonitorSearch(event.target.value)} placeholder="Search by name, role, or class" />
+                      </div>
+                      <div className="chat-contacts">
+                        {activeChatContactOptions.filter((contact) => {
+                          const q = String(chatMonitorSearch || '').trim().toLowerCase();
+                          if (!q) return true;
+                          return [contact.full_name, contact.role_name, contact.class_name, contact.note].some((value) => String(value || '').toLowerCase().includes(q));
+                        }).length === 0 ? <div className="empty">No chat contacts are available for this teacher view yet.</div> : activeChatContactOptions.filter((contact) => {
+                          const q = String(chatMonitorSearch || '').trim().toLowerCase();
+                          if (!q) return true;
+                          return [contact.full_name, contact.role_name, contact.class_name, contact.note].some((value) => String(value || '').toLowerCase().includes(q));
+                        }).map((contact) => {
+                          const contactId = String(contact.profile_id || '').trim();
+                          const unread = chatUnreadByContact[contactId] || 0;
+                          const contactPresence = chatDirectoryMap.get(contactId);
+                          const initials = String(contact.full_name || 'U').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'U';
+                          const isOnline = isPresenceActive(contactPresence);
+                          return (
+                            <button key={`${contactId}-${String(contact.class_id || '')}`} className={classNames('chat-contact-btn', String(chatForm.recipient_profile_id || '').trim() === contactId && 'active')} onClick={() => setChatForm((current) => ({ ...current, recipient_profile_id: contactId }))}>
+                              <div className="chat-contact-row">
+                                <div className="chat-avatar sm">{initials}</div>
+                                <div style={{ flex:1, minWidth:0 }}>
+                                  <div className="chat-contact-title">
+                                    <strong>{contact.full_name || '-'}</strong>
+                                    {unread > 0 ? <span className="chat-unread-pill">{unread}</span> : <span className="chat-contact-date">{isOnline ? 'online' : 'offline'}</span>}
+                                  </div>
+                                  <div className="chat-header-status">
+                                    <span className={classNames('chat-user-status', isOnline ? 'online' : 'offline')} />
+                                    <span>{contact.role_name}{contact.class_name ? ` | ${contact.class_name}` : ''}</span>
+                                  </div>
+                                  <div className="chat-contact-snippet">{contact.note || chatTypeLabel(deriveChatTypeFromRoles(role, contact.role_name))}</div>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
-                  )
+                    <div className="card chat-thread-panel">
+                      <div className="chat-thread-topbar">
+                        <div>
+                          <h3 style={{ margin:'0 0 4px' }}>{currentChatRecipient ? currentChatRecipient.full_name : 'Select a contact'}</h3>
+                          <div className="subtle">{currentChatRecipient ? `${currentChatRecipient.role_name}${currentChatRecipient.class_name ? ` | ${currentChatRecipient.class_name}` : ''}` : 'Choose a student, parent, or principal to start chatting.'}</div>
+                        </div>
+                        <div className="chat-thread-actions">
+                          {chatUnreadCount > 0 ? <span className="chip info">{chatUnreadCount} unread</span> : <span className="chip success">Up to date</span>}
+                          <button className="btn secondary" onClick={markChatSeen}>Mark Chat Seen</button>
+                        </div>
+                      </div>
+                      {currentChatRecipient ? (
+                        <>
+                          <div className="chat-thread-surface">
+                            <VirtualizedChatList
+                              messages={currentConversationMessages}
+                              currentProfileId={profile.id}
+                              canHideMessage={(message) => {
+                                const currentProfileId = String(profile?.id || '').trim();
+                                const senderId = String(message?.sender_profile_id || '').trim();
+                                const recipientId = String(message?.recipient_profile_id || '').trim();
+                                return senderId === currentProfileId || recipientId === currentProfileId;
+                              }}
+                              onHideMessage={handleHideChatMessageForCurrentUser}
+                              canEditMessage={(message) => String(message?.sender_profile_id || '').trim() === String(profile?.id || '').trim()}
+                              onEditMessage={handleStartEditChatMessage}
+                              canPermanentDelete={false}
+                              onPermanentDelete={() => {}}
+                              getPresenceStateLabel={getPresenceStateLabel}
+                              isPresenceActive={isPresenceActive}
+                              resolveProfileMeta={(profileId) => chatDirectoryMap.get(String(profileId || '').trim())}
+                            />
+                          </div>
+                          <div className="chat-compose">
+                            <div className="chat-compose-panel">
+                              {chatEditingMessageId ? <div className="banner warning">Editing your sent message. Only the sender can edit a message.</div> : null}
+                              <div className="chat-input-shell">
+                                <textarea className="chat-textarea" placeholder={chatEditingMessageId ? 'Edit your sent message' : 'Type your message'} value={chatForm.message_text} onChange={(event) => setChatForm((current) => ({ ...current, message_text: event.target.value }))} />
+                              </div>
+                              {showEmojiPanel ? <div className="chat-emoji-panel">{['😀','😁','😂','😍','🤝','👏','👍','🙏','🎉','📚','📝','✅','⭐','💡','💬','🔥'].map((emoji) => <button key={emoji} className="emoji-btn" type="button" onClick={() => insertEmojiIntoChat(emoji)}>{emoji}</button>)}</div> : null}
+                              <div className="chat-compose-toolbar" style={{ marginTop: 12 }}>
+                                <div className="chat-composer-actions">
+                                  <button className="chat-round-btn" type="button" onClick={() => setShowEmojiPanel((current) => !current)} title="More emoji">😊</button>
+                                </div>
+                                <div className="chat-composer-actions">
+                                  {chatEditingMessageId ? <button className="btn secondary" type="button" onClick={handleCancelEditChatMessage}>Cancel Edit</button> : null}
+                                  <button className="chat-send-btn" type="button" onClick={() => handleSendSystemChatMessage()}>{chatEditingMessageId ? 'Save Changes' : 'Send Message'}</button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      ) : <div className="chat-empty-state">Choose a contact to open the conversation.</div>}
+                    </div>
+                  </div>
                 )}
               </div>
             )}
-
 
             {page === 'notifications' && (
               <div className="grid cards-2">
